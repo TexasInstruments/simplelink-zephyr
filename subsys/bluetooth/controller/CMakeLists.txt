@@ -28,6 +28,12 @@ zephyr_library_sources(
   util/dbuf.c
   util/util.c
   ticker/ticker.c
+ )
+if(CONFIG_SOC_CC2340R5)
+
+else()
+
+zephyr_library_sources(
   ll_sw/ll_feat.c
   ll_sw/ll_tx_pwr.c
   ll_sw/ll_addr.c

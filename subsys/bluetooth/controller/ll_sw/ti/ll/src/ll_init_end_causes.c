@@ -1,0 +1,788 @@
+/******************************************************************************
+
+ @file  ll_init_end_causes.c
+
+ @brief This file contains the Link Layer (LL) handlers for the various
+        initiator end causes that result from a PHY task completion completion
+        completion.
+
+ Group: WCS, BTS
+ $Target Device: DEVICES $
+
+ ******************************************************************************
+ $License: TI_TEXT 2009 $
+ ******************************************************************************
+ $Release Name: PACKAGE NAME $
+ $Release Date: PACKAGE RELEASE DATE $
+ *****************************************************************************/
+
+/*******************************************************************************
+ * INCLUDES
+ */
+
+
+#ifdef USE_RCL
+#include <ti/drivers/rcl/RCL.h>
+#include <ti/drivers/rcl/commands/ble5.h>
+#else
+#include <ti/drivers/rf/RF.h>
+#include "rf_api.h"
+#endif
+#include "bcomdef.h"
+#include "hal_mcu.h"
+#include "hci_event.h"
+#include "../../ll/inc/ll_common.h"
+#include "../../ll/inc/ll_enc.h"
+#include "../../ll/inc/ll_privacy.h"
+#include "../../ll/inc/ll_rat.h"
+#include "../../ll/inc/ll_timer_drift.h"
+#include "../../ll/inc/ll_ae.h"
+#include "hal_gpio_wrapper.h"
+//
+#include "rom_jt.h"
+
+// SW Tracer
+#ifdef DEBUG_SW_TRACE
+#define DBG_ENABLE
+#include "dbgid_sys_mst.h"
+#endif // DEBUG_SW_TRACE
+
+/*******************************************************************************
+ * MACROS
+ */
+
+/*******************************************************************************
+ * CONSTANTS
+ */
+
+/*******************************************************************************
+ * TYPEDEFS
+ */
+
+/*******************************************************************************
+ * LOCAL VARIABLES
+ */
+
+/*******************************************************************************
+ * GLOBAL VARIABLES
+ */
+#ifdef USE_RCL
+extern void LL_rclCentralCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
+extern RCL_MultiBuffer *initDataQueue;
+#endif
+/*******************************************************************************
+ * Functions
+ */
+
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
+/*******************************************************************************
+ * @fn          llInit_TaskConnect
+ *
+ * @brief       This function is used to handle the connect end cause that
+ *              results when a CONNECT_IND has been received and accepted.
+ *              When this occurs, a transition to the Central role is started,
+ *              and the Host is notified.
+ *
+ *              Note: A timestamp for the end of the CONNECT_IND has been
+ *                    captured, from which the window offset and window size
+ *                    will be based.
+ *
+ * input parameters
+ *
+ * @param       None.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void llInit_TaskConnect( void )
+{
+  uint8         *advPkt;
+  llConnState_t *connPtr;
+
+#ifdef DEBUG_GPIO_CONN
+  GPIO_writeDio(HAL_GPIO_2, 0);
+#endif // DEBUG_GPIO_CONN
+
+#ifdef DEBUG_SW_TRACE
+  DBG_PRINT0(DBGSYS, "");
+  DBG_PRINT0(DBGSYS, "##########################");
+  DBG_PRINT0(DBGSYS, "INIT: CONNECT_IND sent!");
+  DBG_PRINT0(DBGSYS, "##########################");
+  DBG_PRINT0(DBGSYS, "");
+#endif // DEBUG_SW_TRACE
+
+  // get the connection
+  connPtr = MAP_llDataGetConnPtr( extInitInfo->connId );
+
+  // disable scanning
+  // Note: It is possible scanMode is already LL_SCAN_STOP due to a Create
+  //       Connection Cancel, but at this point, it is too late as the
+  //       CONNECT_IND was already sent to the Adv->Central.
+  extInitInfo->scanMode = LL_SCAN_STOP;
+
+  // free the associated task block as we are done with advertising
+  // Note: If the last task, llState will be set to Idle.
+  MAP_llFreeTask( &extInitInfo->llTask );
+
+  // mark the connection as active
+  connPtr->activeConn = TRUE;
+
+  // update health check
+  MAP_llHealthUpdate(LL_STATE_CONN_CENTRAL);
+  // increment the number of active connections
+  llConns.numActiveConns++;
+
+  BLE_LOG_INT_INT(0, BLE_LOG_MODULE_CTRL, "CTRL: llInit_TaskConnect: send CONNECT_IND status=%d, numActiveConns=%d\n", 0, llConns.numActiveConns);
+  // get a task block for this BLE state/role
+  // Note: There will always be a valid pointer, so no NULL check required.
+  // Note: Since Init was the current task, this central connection will now
+  //       become the current task.
+  connPtr->llTask = MAP_llAllocTask( LL_TASK_ID_CENTRAL );
+
+  // read/save the the anchor point capture from RAT
+  // Note: Timestamp is based on the actual connect time that results after
+  //       dynamic offset is applied. That is, the window offset does not have
+  //       to be used as connectTime includes the dynamic window offset.
+#ifdef USE_RCL
+  connPtr->llTask->anchorPoint = extInitCmd.connectTime;
+#else
+  connPtr->llTask->anchorPoint = extInitParam.connectTime;
+#endif
+  // window offset in 1.25ms auto-generated by radio FW; convert to 625us
+#ifndef CC23X0
+  connPtr->curParam.winOffset = (connReqData[extInitParam.phyMode].winOffset << 1);
+#else
+  connPtr->curParam.winOffset = (connReqData[extInitIndex].winOffset << 1);
+#endif
+  // window size in 1.25ms auto-generated by radio FW
+#ifndef CC23X0
+  connPtr->curParam.winSize = connReqData[extInitParam.phyMode].winSize;
+#else
+  connPtr->curParam.winSize = connReqData[extInitIndex].winSize;
+#endif
+
+  // adjust time units to 625us
+  connPtr->curParam.winSize      <<= 1; // in 1.25ms units so convert to 625us
+  connPtr->curParam.connInterval <<= 1; // in 1.25ms units so convert to 625us
+  connPtr->curParam.connTimeout  <<= 4; // in 10ms units so convert to 625us
+
+  // convert the LSTO from time to an expiration connection event count
+  MAP_llConvertLstoToEvent( connPtr, &connPtr->curParam );
+
+  // set the expiration connection event count to a specified limited number
+  // Note: This is required in case the Central never sends that first packet.
+  connPtr->expirationEvent = LL_LINK_SETUP_TIMEOUT;
+
+  // convert the Control Procedure timeout into connection event count
+  MAP_llConvertCtrlProcTimeoutToEvent( connPtr );
+#ifdef USE_RCL
+  RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
+
+  // Nothing to read from the RX buffer, disconnect and returned to scheduling
+  if ( rxEntry == NULL )
+  {
+    MAP_llConnTerminate( connPtr, LL_STATUS_ERROR_OUT_OF_CONN_RESOURCES );
+
+    // determine next task (if any) and schedule it
+    MAP_llScheduler();
+
+    return;
+  }
+
+  advPkt = (uint8 *)&rxEntry->data[2];
+  RCL_MultiBuffer_clear(initDataQueue);
+
+#else
+  // mark entry as free
+  extInitParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
+
+  // get a pointer directly to the ADV packet (i.e. data entry payload)
+  advPkt = ((uint8 *)MAP_RFHAL_GetNextDataEntry( extInitParam.pRXQ )) +
+           sizeof( dataEntry_t );
+#endif
+  // get the Adv address type and set it as the peer address type
+  connPtr->peerInfo.peerAddrType =
+    MASK_ID_ADDRTYPE(advPkt[0] >> LL_ADV_PDU_HDR_TXADDR);
+
+  // check if AE packet
+  if ( LL_LEGACY_ADV_PDU(advPkt[0]) )
+  {
+    // get the Adv address and set it as the peer address
+    MAP_osal_memcpy( connPtr->peerInfo.peerAddr,
+                     &advPkt[LL_PKT_HDR_LEN],
+                     LL_DEVICE_ADDR_LEN );
+  }
+#ifdef USE_AE
+  else // !legacy
+  {
+    // get the Adv address and set it as the peer address
+    MAP_osal_memcpy( connPtr->peerInfo.peerAddr,
+                     &advPkt[LL_PKT_HDR_LEN      +
+                             AE_EXT_HDR_LEN_SIZE +
+                             AE_EXT_HDR_FLAGS_SIZE],
+                     LL_DEVICE_ADDR_LEN );
+  }
+#endif
+#ifdef USE_RCL
+  /* Initialize connection command and structures */
+  linkCmd[connPtr->connId] = RCL_CmdBle5Connection_DefaultRuntime();
+#else
+  // only one BLE operation command here
+  linkCmd[connPtr->connId].rfOpCmd.cmdNum    = CMD_BLE5_CENTRAL;
+  linkCmd[connPtr->connId].rfOpCmd.status    = RFSTAT_IDLE;
+  linkCmd[connPtr->connId].rfOpCmd.pNextRfOp = NULL;
+#endif
+  // determine the data channel algorithm to use for this connection
+#ifdef USE_AE
+  if ( !LL_LEGACY_ADV_PDU(advPkt[0]) )
+  {
+    // for AE, CSA#2 must be supported
+    connPtr->pChSelAlgo = MAP_llGetNextDataChanAlgo2;
+  }
+  else // legacy
+#endif
+  {
+    // check if we support Channel Selection Algorithm #2
+    // Note: Connection creation defaults to Channel Selection Algorithm #1.
+    if ( deviceFeatureSet.featureSet[1] & (uint8)LL_FEATURE_CHAN_ALGO_2 )
+    {
+      // channel selection algorithm #2 is supported by our device, but which
+      // algorithm we use depends on the peer
+#ifdef USE_RCL
+      connPtr->pChSelAlgo = (LL_ADV_HDR_GET_CHSEL( advPkt[0] ) == LL_CHANNEL_SELECT_ALGO_1) ?
+#else
+      connPtr->pChSelAlgo = (taskEndStatus == BLESTAT_DONE_CONNECT_CHSEL0) ?
+#endif
+                            MAP_llGetNextDataChanAlgo1          :
+                            MAP_llGetNextDataChanAlgo2;
+    }
+  }
+
+  // set the channel number and enable BLE whitening
+#ifdef USE_RCL
+    linkCmd[connPtr->connId].channel = connPtr->pChSelAlgo( connPtr );
+    connPtr->currentMappedChan = linkCmd[connPtr->connId].channel;
+#else
+    linkCmd[connPtr->connId].chan = connPtr->pChSelAlgo( connPtr );
+    connPtr->currentMappedChan = linkCmd[connPtr->connId].chan;
+    SET_WHITENING_BLE( linkCmd[connPtr->connId].whitening );
+#endif
+
+    connPtr->currentChan = connPtr->nextChan;
+
+    uint8 rxPhy;
+
+    // get the second status byte for the received phy
+    if ( LL_LEGACY_ADV_PDU(advPkt[0]) )
+    {
+      // ADV_X packet
+      rxPhy = BLE5_1M_PHY;
+    }
+#ifdef USE_AE
+    else // !legacy
+    {
+      // AUX_CONNECT_RSP packet
+      // TODO: Find the correct offset for rxPhy indication in RCL adv packet
+      rxPhy = advPkt[LL_PKT_HDR_LEN         +
+                     AE_EXT_HDR_LEN_SIZE    +
+                     AE_EXT_HDR_FLAGS_SIZE  +
+                     (2*LL_DEVICE_ADDR_LEN) + 1];
+    }
+#endif
+
+    llSetPhy(connPtr, rxPhy);
+
+    llSetRangeDelay(connPtr);
+
+    // use the Host's choice
+    if (!RfBleDpl_txPowerIsValid( extInitCmd.txPower))
+    {
+      /* Check valid Tx Parameter. In case invalid - return with error */
+      // tx power value is invalid, so terminate
+      MAP_llConnTerminate( connPtr, LL_STATUS_ERROR_BAD_PARAMETER );
+
+      // determine next task (if any) and schedule it
+      MAP_llScheduler();
+
+      return;
+    }
+    llSetPower((uint32 *)&linkCmd[connPtr->connId], curTxPowerVal, extInitCmd.txPower);
+
+#ifdef DEBUG_SW_TRACE
+  DBG_PRINT0(DBGSYS, "");
+  DBG_PRINTL1(DBGSYS, "INIT Adv Timestamp: = 0x%08X", initOutput.timeStamp );
+  DBG_PRINTL1(DBGSYS, "INIT Anchor Point:  = 0x%08X", connPtr->llTask->anchorPoint );
+  DBG_PRINT1(DBGSYS, "INIT Window Offset: = %d", connPtr->curParam.winOffset );
+  DBG_PRINT1(DBGSYS, "INIT Window Size:   = %d", connPtr->curParam.winSize );
+  DBG_PRINT1(DBGSYS, "INIT Set Next Chan: = %d", linkCmd[connPtr->connId].chan );
+  DBG_PRINT0(DBGSYS, "");
+#endif // DEBUG_SW_TRACE
+
+  // use common parameters and output
+#ifdef USE_RCL
+  linkCmd[connPtr->connId].ctx = &linkParam[connPtr->connId];
+  linkCmd[connPtr->connId].stats = &connOutput;
+  linkParam[connPtr->connId] = RCL_CtxConnection_DefaultRuntime();
+  connOutput = RCL_StatsConnection_DefaultRuntime();
+  linkParam[connPtr->connId].isPeripheral = FALSE;
+  // setup the Central Receive Queue
+  MAP_llSetupConnRxDataEntryQueue( connPtr->connId );
+  // attach data queues to the connection
+  txDataQ[connPtr->connId].rfDataBuffers = &linkParam[connPtr->connId].txBuffers;
+
+  connPtr->pTxDataEntryQ = (void *) &txDataQ[connPtr->connId];
+  connPtr->pRxDataEntryQ = (void *) &linkParam[connPtr->connId].rxBuffers;
+#else
+  linkCmd[connPtr->connId].pParams = (uint8 *)&linkParam[connPtr->connId];
+  linkCmd[connPtr->connId].pOutput = (uint8 *)&connOutput;
+  // setup the Central Receive Queue
+  linkParam[connPtr->connId].pRXQ = MAP_llSetupConnRxDataEntryQueue( connPtr->connId );
+
+  // check if the receive ring buffer is properly setup
+  if ( linkParam[connPtr->connId].pRXQ == NULL )
+  {
+    // it isn't, so terminate
+    MAP_llConnTerminate( connPtr, LL_STATUS_ERROR_OUT_OF_CONN_RESOURCES );
+
+    // determine next task (if any) and schedule it
+    MAP_llScheduler();
+
+    return;
+  }
+
+    // set max packet length allowed on connection
+    // Note: Default to standard size.
+    linkParam[connPtr->connId].maxRxPktLen   = LL_MIN_LINK_DATA_LEN +
+                                               LL_PKT_MIC_LEN;
+
+    // set max Tx packet length allowed on connection when using LR S=8.
+    // Note: A value of zero means "no limit".
+    linkParam[connPtr->connId].maxTxLenForLR = 0;
+
+  // setup the Central Transmit Linked List Queue
+  // Note: Initialize the static TX data queue.
+  MAP_RFHAL_InitDataQueue( (dataEntryQ_t *)&txDataQ[ connPtr->connId ] );
+  linkParam[connPtr->connId].pTXQ = (dataEntryQ_t *)&txDataQ[ connPtr->connId ];
+
+  // attach data queues to connection
+  connPtr->pTxDataEntryQ = linkParam[connPtr->connId].pTXQ;
+  connPtr->pRxDataEntryQ = linkParam[connPtr->connId].pRXQ;
+
+  // set the Central Rx queue configuration
+  linkParam[connPtr->connId].rxCfg =
+    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT                                                                      |
+      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT                                                                      |
+      RXQ_CFG_AUTOFLUSH_EMPTY_PKT                                                                        |
+      RXQ_CFG_INCLUDE_PKT_LEN_BYTE                                                                       |
+      ((llConfigTable.rxPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG)       ? RXQ_CFG_INCLUDE_CRC      : 0) |
+      ((llConfigTable.rxPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG)      ? RXQ_CFG_APPEND_RSSI      : 0) |
+      ((llConfigTable.rxPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG)    ? RXQ_CFG_APPEND_STATUS    : 0) |
+      ((llConfigTable.rxPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0) );
+
+  // init connection flow control and enable first packet flag on connection
+  linkParam[connPtr->connId].seqStat = SEQ_NUM_CFG_LAST_RX_SN |
+                                       SEQ_NUM_CFG_LAST_TX_SN |
+                                       SEQ_NUM_CFG_FIRST_PKT;
+
+  // set limit for the number of NACKS allowed to be received before ending task
+  linkParam[connPtr->connId].maxNAck = LL_MAX_NUM_RX_NACKS_ALLOWED;
+
+  // check if one packet per event is enabled
+  if ( onePktPerEvt == TRUE )
+  {
+    // set limit for the number of packets to transmit before it ends
+    linkParam[connPtr->connId].maxTxPkt = ONE_PKT_PER_EVENT;
+  }
+  else // one packet per event is disabled and number of connections is one
+  {
+    // restore configured limit
+    linkParam[connPtr->connId].maxTxPkt = llConfigTable.maxPktsPerEvtPtr->maxMstPktsPerEvt;
+  }
+#endif //USE_RCL
+  // set access address
+  linkParam[connPtr->connId].accessAddress = connPtr->accessAddr;
+
+#ifdef LL_TEST_MODE
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_ENC_ADV_BI_02:
+      // override access address to make it invalid
+      linkParam[connPtr->connId].accessAddress = ~connPtr->accessAddr;
+      break;
+
+    case LL_TEST_MODE_TP_CON_ADV_BI_01:
+      connPtr->crcInit = MAP_llGenerateCRC();
+      break;
+
+    default:
+      break;
+  }
+#endif // LL_TEST_MODE
+
+  // set CRC init
+#ifdef USE_RCL
+  linkParam[connPtr->connId].crcInit = connPtr->crcInit;
+#else
+  linkParam[connPtr->connId].crcInit[0] = (connPtr->crcInit & 0xFF);
+  linkParam[connPtr->connId].crcInit[1] = (connPtr->crcInit >> 8) & 0xFF;
+  linkParam[connPtr->connId].crcInit[2] = (connPtr->crcInit >> 16) & 0xFF;
+#endif
+  // Note: Output Parameter Counters are cleared in llScheduleTask!
+
+  // notify the Host
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_CENTRAL_CONN_CREATED );
+
+#if LL_TEST_MODE
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_JIRA_2756:
+      // adjust anchor point by calibration time.
+      connPtr->llTask->anchorPoint -= (START_SYNTH_TO_RAT_OFFSET * RAT_TICKS_IN_1US);
+
+      // falsify the central start time towards the end of the Rx window
+      connPtr->llTask->anchorPoint += RAT_TICKS_IN_700US;
+      break;
+
+    default:
+      break;
+  }
+#endif // LL_TEST_MODE
+
+  // setup the start time for first Central packet
+#ifdef USE_RCL
+  linkCmd[connPtr->connId].common.timing.absStartTime = connPtr->llTask->anchorPoint;
+#else
+  linkCmd[connPtr->connId].rfOpCmd.startTime = connPtr->llTask->anchorPoint;
+#endif
+  connPtr->llTask->lastStartTime = connPtr->llTask->anchorPoint;
+  connPtr->llTask->startTime     = connPtr->llTask->anchorPoint;
+
+#ifdef USE_RCL
+  // set start trigger
+  linkCmd[connPtr->connId].common.scheduling = RCL_Schedule_AbsTime;
+  linkCmd[connPtr->connId].common.allowDelay = TRUE;
+
+  // setup the connection event End Time relative to the timestamp
+  linkCmd[connPtr->connId].common.timing.relHardStopTime =
+    (((connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
+    (2 * RAT_TICKS_IN_150US);
+#else
+#ifdef DEBUG_SW_TRACE
+  DBG_PRINT0(DBGSYS, "");
+  DBG_PRINTL1(DBGSYS, "CENTRAL Start Time = 0x%08X", linkCmd[connPtr->connId].rfOpCmd.startTime );
+  DBG_PRINT0(DBGSYS, "");
+#endif // DEBUG_SW_TRACE
+
+  // set start trigger
+  CLR_RFOP_ALT_TRIG_CMD( linkCmd[connPtr->connId].rfOpCmd.startTrig );
+  CLR_RFOP_PAST_TRIG( linkCmd[connPtr->connId].rfOpCmd.startTrig );
+  SET_RFOP_TRIG_TYPE( linkCmd[connPtr->connId].rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
+
+  // set condition
+  SET_RFOP_COND_RULE( linkCmd[connPtr->connId].rfOpCmd.condition, CONDTYPE_NEVER_RUN_NEXT_CMD );
+
+  // setup the connection event End Time relative to the timestamp
+  // Note: Per the spec, this an be as late as 150us (i.e. T_IFS) before the
+  //       next connection event, but we'll provide 2*T_IFS for some extra
+  //       margin for post processing. Extended Data could potentially require
+  //       us to end the connection event at least 4.54ms before. In any case,
+  //       to allow some build time flexibility, the amount of back-off can
+  //       be set at build time using llConfig.connEvtCutoff as a percent
+  //       of the connection interval wanted.
+  // Note: The Central connection parameter structure differs from the Peripheral
+  //       connection parameter structure in that there is no timeout trigger
+  //       or timeout time. In all other ways these two structures are
+  //       identical. So when using the Peripheral connection parameter structure
+  //       as the common link parameter structure, the end time offset in
+  //       the structure corresponds to the timeoutTime field.
+  //linkParam[connPtr->connId].endTime =
+  linkParam[connPtr->connId].timeoutTime =
+    (((connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
+    (2 * RAT_TICKS_IN_150US);
+
+  // set end trigger
+  // set the End Trigger
+  // Note: The Central connection parameter structure differs from the Peripheral
+  //       connection parameter structure in that there is no timeout trigger
+  //       or timeout time. In all other ways these two structures are
+  //       identical. So when using the Peripheral connection parameter structure
+  //       as the common link parameter structure, the end trigger offset in
+  //       the structure corresponds to the timeoutTrig field.
+  //SET_RFOP_TRIG_TYPE( linkParam[connPtr->connId].endTrig, TRIGTYPE_REL_CMD_START );
+  SET_RFOP_TRIG_TYPE( linkParam[connPtr->connId].timeoutTrig, TRIGTYPE_REL_CMD_START );
+#endif
+
+  // pointer to first radio operation command
+  connPtr->llTask->command = (uint32)&linkCmd[connPtr->connId];
+
+  // Do not initiate the central autonomously feature exchange if disabled
+  // This is recommended to be disabled for qualification testing
+  if (MAP_checkAutoFeatureExchangeStatus())
+  {
+    // initiate a central feature set control procedure
+    MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_FEATURE_REQ );
+  }
+
+  // set LL state
+  llState = LL_STATE_CONN_CENTRAL;
+
+  // make this new connection be the current connection for the scheduler
+  llConns.currentConn = connPtr->connId;
+
+  // callback function for scheduler
+  connPtr->llTask->setup = MAP_llLinkSchedSetup;
+
+#ifdef USE_RCL
+  linkCmd[connPtr->connId].common.runtime.callback = LL_rclCentralCallback;
+  linkCmd[connPtr->connId].common.runtime.lrfCallbackMask.value = LRF_EventTxDone.value |LRF_EventRxOk.value;
+  linkCmd[connPtr->connId].common.runtime.rclCallbackMask.value =
+                              RCL_EventLastCmdDone.value  |
+                              RCL_EventRxEntryAvail.value |
+                              RCL_EventTxBufferFinished.value;
+#else
+  // set RF events
+  connPtr->llTask->rfEvents = RF_EventLastCmdDone   |
+                              RF_EventInternalError |
+                              RF_EventRxEntryDone   |
+                              RF_EventTxEntryDone;
+#endif
+
+  // determine next task (if any) and schedule it
+  MAP_llScheduler();
+
+  return;
+}
+
+/*******************************************************************************
+ * @fn          llExtInit_PostProcess
+ *
+ * @brief       This routine is used to post process the Extended Init command.
+ *
+ * input parameters
+ *
+ * @param       None.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void llExtInit_PostProcess( void )
+{
+  volatile uint32 currentTime;
+
+#ifdef DEBUG_GPIO_CONN
+  GPIO_writeDio(HAL_GPIO_2, 0);
+#endif // DEBUG_GPIO_CONN
+
+#ifdef USE_RCL
+  // clear all RX entries
+  RCL_MultiBuffer_clear(initDataQueue);
+#endif
+
+  // check if still active
+  if ( extInitInfo->scanMode == LL_SCAN_STOP )
+  {
+    // free task and teardown privacy if need be
+    MAP_llEndExtInitTask();
+
+    // schedule another task, if any
+    MAP_llScheduler();
+
+    return;
+  }
+
+  // update health check
+  MAP_llHealthUpdate(LL_STATE_INIT);
+  // clear command status value
+#ifdef USE_RCL
+  extInitCmd.common.status = RCL_CommandStatus_Idle;
+#else
+  extInitCmd.rfOpCmd.status = RFSTAT_IDLE;
+#endif
+  // get current time with some margin
+  currentTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_625US;
+
+  // check if there's more time before the end of the scan window
+  // Note: True when first parameter is greater than second.
+#ifdef USE_RCL
+  if ( (MAP_llTimeCompare( extInitCmd.common.timing.absStartTime +
+                           extInitCmd.common.timing.relGracefulStopTime, currentTime )) &&
+       (extInitCmd.common.timing.relHardStopTime != 0) &&
+       (MAP_llTimeCompare( extInitCmd.common.timing.absStartTime +
+                           extInitCmd.common.timing.relHardStopTime, currentTime ) ))
+  {
+    // update start time to the future
+    // Note: Once the CM0 follows an auxPtr to a secondary channel, it never
+    //       returns to the primary channel! (sigh)
+    // Note: Scan Window trigger is absolute, so there's no need to adjust it.
+    extInitCmd.common.timing.absStartTime = currentTime;
+#else
+  if ( MAP_llTimeCompare( extInitParam.timeoutTime, currentTime ) &&
+       ( extInitParam.endTime != 0 ) &&
+       ( MAP_llTimeCompare( extInitParam.endTime, currentTime ) ) )
+  {
+    // update start time to the future
+    // Note: Once the CM0 follows an auxPtr to a secondary channel, it never
+    //       returns to the primary channel! (sigh)
+    // Note: Scan Window trigger is absolute, so there's no need to adjust it.
+    extInitCmd.rfOpCmd.startTime = currentTime;
+#endif
+    // restart immediately
+    // Note: Already the current task.
+    // Note: Scan Window trigger is absolute.
+    MAP_llScheduleTask( extInitInfo->llTask );
+  }
+  else // we're done so on to the next scan interval
+  {
+    // update the next Scan channel
+#ifdef USE_RCL
+    extInitCmd.channel = ((extInitCmd.channel == LL_SCAN_ADV_CHAN_39) ?
+                          (LL_SCAN_ADV_CHAN_37)                       :
+                          (extInitCmd.channel + 1));
+#else
+    extInitCmd.chan = ((extInitCmd.chan==LL_SCAN_ADV_CHAN_39) ?
+                      (LL_SCAN_ADV_CHAN_37)                   :
+                      (extInitCmd.chan + 1));
+#endif
+    // set the primary PHY; check if there's more than one Scan primary PHY
+    if ( (extInitInfo->pCreateConn->initPhys & LL_PHY_1_MBPS) &&
+         (extInitInfo->pCreateConn->initPhys & LL_PHY_CODED) )
+    {
+      // check if connection parameters were provided for 2M
+      if ( extInitInfo->pCreateConn->initPhys & LL_PHY_2_MBPS )
+      {
+        // both 1M and Coded are being used with 2M parameters, so parameter
+        // array includes 2M connection paramters, so skip by two modulo four
+        extInitIndex = (extInitIndex + 2) & 0x03;
+
+        // set primary PHY
+        // Note: The index is 0 for 1M and 2 for Coded, so extScanIndex directly
+        //       provides the PHY value.
+        // OPT: ALLOW USER TO SPECIFY THE CODED SCHEME FOR AUX_SCAN_REQ?
+#ifdef USE_RCL
+        extInitCmd.common.phyFeatures = extInitIndex;
+#else
+        extInitCmd.phyMode = extInitIndex;
+#endif
+      }
+      else // only 1M and Coded
+      {
+        // both 1M and Coded are being used without 2M parameters, so the
+        // 2M parameters are no included, so toggle index
+        extInitIndex ^= 1;
+
+        // set primary PHY
+        // Note: The index is 0 for 1M and 1 for Coded, so 2*extScanIndex
+        //       provides a value of 0 for PHY 1M, and 2 for PHY Coded.
+        // OPT: ALLOW USER TO SPECIFY THE CODED SCHEME FOR AUX_SCAN_REQ?
+#ifdef USE_RCL
+        extInitCmd.common.phyFeatures = extInitIndex << 1;
+#else
+        extInitCmd.phyMode = extInitIndex << 1;
+#endif
+      }
+
+      // reset the start time as we have switched Init parameters
+      // Note: This means SI is not enforced as we are always changing the PHY.
+      extInitInfo->initStartTime   = currentTime;
+#ifdef USE_RCL
+      extInitCmd.common.timing.absStartTime = extInitInfo->initStartTime;
+#else
+      extInitCmd.rfOpCmd.startTime = extInitInfo->initStartTime;
+#endif
+
+#ifndef CC23X0
+      // set range delay based on PHY
+      extInitCmd.rangeDelay = ( extInitCmd.phyMode == BLE5_1M_PHY ) ? LL_UNCODED_RANGE_DELAY_RAT_TICKS : LL_CODED_RANGE_DELAY_RAT_TICKS;
+#endif
+    }
+    else // only one PHY is active, so leave the index alone
+    {
+#ifdef USE_RCL
+      // check if continuous
+      if ( extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow ==
+           extInitInfo->pCreateConn->extInitParam[extInitIndex].scanInterval )
+      {
+        // update Start Time based on current time
+        extInitCmd.common.timing.absStartTime = currentTime;
+      }
+      else // scan window is less than scan interval
+      {
+        // update Start Time based on Scan Interval
+        extInitCmd.common.timing.absStartTime = extInitInfo->initStartTime +
+                                               (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanInterval * RAT_TICKS_IN_625US);
+
+        // save the absolute start time of the scanner for post-processing
+        // Note: The start time has to be adjusted for AE packets because the CMO
+        //       ends after following a secondary channel. Thus, the time the
+        //       event first started has to be preserved.
+        extInitInfo->initStartTime = extInitCmd.common.timing.absStartTime;
+      }
+#else
+      // check if continuous
+      if ( extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow ==
+           extInitInfo->pCreateConn->extInitParam[extInitIndex].scanInterval )
+      {
+        // update Start Time based on current time
+        extInitCmd.rfOpCmd.startTime = currentTime;
+      }
+      else // scan window is less than scan interval
+      {
+        // update Start Time based on Scan Interval
+        extInitCmd.rfOpCmd.startTime = extInitInfo->initStartTime +
+                                       (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanInterval * RAT_TICKS_IN_625US);
+
+        // save the absolute start time of the scanner for post-processing
+        // Note: The start time has to be adjusted for AE packets because the CMO
+        //       ends after following a secondary channel. Thus, the time the
+        //       event first started has to be preserved.
+        extInitInfo->initStartTime = extInitCmd.rfOpCmd.startTime;
+      }
+#endif
+    }
+
+    // set window
+#ifdef USE_RCL
+    extInitCmd.common.timing.relGracefulStopTime = extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US;
+#else
+    extInitParam.timeoutTime =
+      extInitCmd.rfOpCmd.startTime +
+      (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US);
+#endif
+
+    // only if address resolution is enabled
+    if ( privInfo.addrResolution )
+    {
+      // check if RPA has changed, and if so, update Adv address
+      if ( LL_IS_ADDR_TYPE_RPA(extInitInfo->ownAddrType) &&
+           !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK ) )
+      {
+        // update the RPA (whether it has changed or not)
+        // Note: initParam.pDeviceAddr points to initInfo->ownAddr.
+        // Note: It would take just as long (longer actually) to first compare
+        //       the address to see if it has changed. Faster to just copy.
+        // Note: Sadly, we can't just point advParam.pDeviceAddr to the RL RPA
+        //       (if valid) as we could end up changing it while the radio is
+        //       using it.
+        MAP_osal_memcpy( extInitInfo->ownAddr,
+                         resolvingList[LOCAL_RL_INDEX].RPA,
+                         B_ADDR_LEN );
+      }
+    }
+
+    // schedule this task
+    MAP_llScheduler();
+  }
+
+  return;
+}
+
+#endif // INIT_CFG
+
+/*******************************************************************************
+ */

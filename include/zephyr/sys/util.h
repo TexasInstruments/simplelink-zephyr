@@ -124,8 +124,10 @@ extern "C" {
  *
  * In C, passing a pointer as @p array causes a compile error.
  */
+#ifndef ARRAY_SIZE
 #define ARRAY_SIZE(array) \
 	((size_t) (IS_ARRAY(array) + (sizeof(array) / sizeof((array)[0]))))
+#endif /* ifndef ARRAY_SIZE */
 
 #endif /* __cplusplus */
 
