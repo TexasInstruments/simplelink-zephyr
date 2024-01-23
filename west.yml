@@ -244,7 +244,7 @@ manifest:
       groups:
         - hal
     - name: hal_ti
-      revision: f653da01252f55813982aaa581e9e599ae562423
+      revision: d82d542
       path: modules/hal/ti
       groups:
         - hal
