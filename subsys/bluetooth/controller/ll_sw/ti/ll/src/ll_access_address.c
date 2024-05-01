@@ -20,16 +20,14 @@
  * INCLUDES
  */
 
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
 
-#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#endif
-#include "../../ll/inc/ll_common.h"
+#include "ll_common.h"
 #ifndef CC23X0
 #include "trng_api.h"
 #endif
-#include "../../ll/inc/ll_enc.h"
+#include "ll_enc.h"
 #include "rom_jt.h"
 
 /*******************************************************************************

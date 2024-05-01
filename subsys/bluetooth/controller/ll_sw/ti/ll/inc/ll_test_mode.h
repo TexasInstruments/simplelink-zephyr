@@ -38,7 +38,7 @@ extern "C"
  * INCLUDES
  */
 #include "comdef.h"
-#include "../../ll/inc/ll.h"
+#include "ll.h"
 
 /*******************************************************************************
  * MACROS

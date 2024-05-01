@@ -29,12 +29,12 @@
 #include "bcomdef.h"
 #include "hal_mcu.h"
 #include "hci_event.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_privacy.h"
-#include "../../ll/inc/ll_rat.h"
-#include "../../ll/inc/ll_timer_drift.h"
-#include "../../ll/inc/ll_ae.h"
+#include "ll_common.h"
+#include "ll_enc.h"
+#include "ll_privacy.h"
+#include "ll_rat.h"
+#include "ll_timer_drift.h"
+#include "ll_ae.h"
 #include "hal_gpio_wrapper.h"
 #include "rom_jt.h"
 #include "hci_event.h"
@@ -68,6 +68,8 @@
  * @fn          llExtScan_PostProcess
  *
  * @brief       This routine is used to post process the Extended Scan command.
+ *
+ * @Design:     BLE_LOKI-1455
  *
  * input parameters
  *
@@ -140,16 +142,23 @@ void llExtScan_PostProcess( void )
 #ifdef USE_RCL
   if ( (MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
                           extScanCmd.common.timing.relGracefulStopTime, currentTime ) ) &&
+       (extScanCmd.common.timing.relHardStopTime == 0) ||
        (extScanCmd.common.timing.relHardStopTime != 0) &&
        (MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
                           extScanCmd.common.timing.relHardStopTime, currentTime ) ))
   {
-    // update start time to the future
+    // Update start time to the future
+    uint32 timeDiff = currentTime - extScanCmd.common.timing.absStartTime;
     extScanCmd.common.timing.absStartTime = currentTime;
+    // Update relGracefulStopTime with the time left to scan since the last command done
+    // received because the RCL stopped scanning after it finished receiving AUX packet
+    // and not becaus the scan window ended
+    extScanCmd.common.timing.relGracefulStopTime -= timeDiff;
 #else
   if ( MAP_llTimeCompare( extScanParam.timeoutTime, currentTime ) &&
-       ( extScanParam.endTime != 0 ) &&
-       ( MAP_llTimeCompare( extScanParam.endTime, currentTime ) ) )
+       (( extScanParam.endTime == 0 ) ||
+       (( extScanParam.endTime != 0 ) &&
+        ( MAP_llTimeCompare( extScanParam.endTime, currentTime )))))
   {
     // update start time to the future
     // Note: Once the CM0 follows an auxPtr to a secondary channel, it never
@@ -193,6 +202,8 @@ void llExtScan_PostProcess( void )
       extScanCmd.common.timing.absStartTime = extScanInfo->scanStartTime +
                                              (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
       extScanInfo->scanStartTime = extScanCmd.common.timing.absStartTime;
+      // Restart the Graceful Stop Time
+      extScanCmd.common.timing.relGracefulStopTime = extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US;
       extScanCmd.common.phyFeatures = extScanIndex << 1;
 #else
       // update the type of scan based on changed extScanIndex

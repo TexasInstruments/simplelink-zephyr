@@ -19,13 +19,14 @@
  * INCLUDES
  */
 
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll_ae.h"
-#include "../../ll/inc/ll_al.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_privacy.h"
 #include "bcomdef.h"
+#include "ll_common.h"
+#include "ll_config.h"
+#include "ble.h"
+#include "ll_ae.h"
+#include "ll_al.h"
+#include "ll_privacy.h"
+//
 #include "rom_jt.h"
 
 /*******************************************************************************
@@ -89,6 +90,7 @@ llConnState_t *llDataGetConnPtr( uint8 connId )
  */
 llStatus_t llDynamicAlloc( void )
 {
+  llStatus_t status;
 
 #if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG))
 
@@ -136,6 +138,17 @@ llStatus_t llDynamicAlloc( void )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
+  else // dtmInfo
+  {
+    dtmInfo->rfChan      = 0;
+    dtmInfo->packetLen   = 0;
+    dtmInfo->packetType  = LL_DIRECT_TEST_PAYLOAD_UNDEFINED;
+    dtmInfo->numPackets  = 0;
+    dtmInfo->numRxCrcNOK = 0;
+    dtmInfo->lastRssi    = LL_RF_RSSI_UNDEFINED;
+    dtmInfo->txPktCnt    = LL_EXT_DTM_TX_CONTINUOUS;
+  }
+
   // allocate Scheduler task space
   llTaskList.llTasks = (taskInfo_t *)MAP_osal_mem_alloc( sizeof( taskInfo_t ) *
                                            (maxNumConns + LL_NUM_TASK_BLOCKS) );
@@ -146,6 +159,14 @@ llStatus_t llDynamicAlloc( void )
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
 
+  // allocate and initialize RX window task when the SDAA module is enable.
+    status = MAP_llSDAASetupRXWindowCmd();
+    if ( status != LL_STATUS_SUCCESS )
+    {
+        // return LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED if
+        // MAP_llSDAASetupRXWindowCmd() fail to allocate memory
+        return ( status );
+    }
 #ifdef LL_CONN_SIZE
   totalConnSize = sizeInfo.sizeTaskInfo;
 #endif // LL_CONN_SIZE
@@ -314,7 +335,6 @@ llStatus_t llDynamicAlloc( void )
   }
 
 #ifndef CC23X0
-  llStatus_t status;
   status = MAP_llDmmDynamicAlloc();
   if (!status)
   {
@@ -425,6 +445,13 @@ void llDynamicFree( void )
   {
     // free already allocated data
     MAP_osal_mem_free( llTaskList.llTasks );
+  }
+
+  // check if ptr for RX window task is exist
+  if ( pRXWindowTask )
+  {
+    // free already allocated data
+    MAP_osal_mem_free( pRXWindowTask );
   }
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))

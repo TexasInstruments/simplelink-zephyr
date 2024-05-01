@@ -19,7 +19,6 @@
  * INCLUDES
  */
 
-#include "bcomdef.h"
 #include "stdint.h"
 #include "stdbool.h"
 #include <ti/devices/DeviceFamily.h>
@@ -28,6 +27,7 @@
 #include <driverlib/prcm.h>
 #endif //!CC23X0 && !CC33xx
 //
+#include "bcomdef.h"
 #ifdef USE_RCL
 #include "LRF.h"
 #else
@@ -40,22 +40,22 @@
 #include "osal_tasks.h"
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_scheduler.h"
-#include "../../ll/inc/ll_enc.h"
+#include "ll.h"
+#include "ll_common.h"
+#include "ll_config.h"
+#include "ll_scheduler.h"
+#include "ll_enc.h"
 #include "hci_event.h"
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll_al.h"
-#include "../../ll/inc/ll_rat.h"
-#include "../../ll/inc/ll_timer_drift.h"
-#include "../../ll/inc/ll_privacy.h"
+#include "ble.h"
+#include "ll_al.h"
+#include "ll_rat.h"
+#include "ll_timer_drift.h"
+#include "ll_privacy.h"
 #include "hal_gpio_wrapper.h"
+#include <ti/bleapp/health_toolkit/inc/debugInfo_internal.h>
 //
 #include "rom_jt.h"
-#include "../../ll/inc/ll_ae.h"
-
+#include "ll_ae.h"
 #ifdef CC33xx
 #include "ble_thermal_protection.h"
 #endif
@@ -1305,19 +1305,22 @@ void llSetupConn( uint8 connId )
  */
 void llSetupDataEntry( RCL_Buffer_TxBuffer *dataEntry, uint8 cmdLen, uint8 encEnabled )
 {
-  dataEntry->state = RCL_BufferStatePending;
-  dataEntry->numPad = RCL_BUFFER_MAX_PAD_BYTES;
-  if (encEnabled == TRUE)
+  if( dataEntry != NULL )
   {
-    cmdLen += LL_PKT_MIC_LEN;
+    dataEntry->state = RCL_BufferStatePending;
+    dataEntry->numPad = RCL_BUFFER_MAX_PAD_BYTES;
+    if (encEnabled == TRUE)
+    {
+      cmdLen += LL_PKT_MIC_LEN;
+    }
+    dataEntry->length = cmdLen + dataEntry->numPad + LL_PKT_HDR_LEN + 1;
+    dataEntry->pad0   = 0;
+    dataEntry->data[0] = 0; //pad
+    dataEntry->data[1] = 0; //pad
+    // write the header
+    dataEntry->data[2] = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
+    dataEntry->data[3] = cmdLen;
   }
-  dataEntry->length = cmdLen + dataEntry->numPad + LL_PKT_HDR_LEN + 1;
-  dataEntry->pad0   = 0;
-  dataEntry->data[0] = 0; //pad
-  dataEntry->data[1] = 0; //pad
-  // write the header
-  dataEntry->data[2] = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-  dataEntry->data[3] = cmdLen;
 }
 #endif
 
@@ -2864,8 +2867,17 @@ void llEnqueueCtrlPkt( llConnState_t *connPtr,
 {
   halIntState_t intState;
 
-  LL_ASSERT( connPtr != NULL );
-  LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount < LL_MAX_NUM_CTRL_PROC_PKTS );
+  // Sanity Check
+  if ( connPtr == NULL )
+  {
+    LL_ASSERT( connPtr != NULL );
+    return;
+  }
+  if ( connPtr->ctrlPktInfo.ctrlPktCount >= LL_MAX_NUM_CTRL_PROC_PKTS )
+  {
+    LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount < LL_MAX_NUM_CTRL_PROC_PKTS );
+    return;
+  }
 
   if (ctrlType <= LL_CTRL_BLE_LOG_STRINGS_MAX)
   {
@@ -2927,33 +2939,46 @@ void llEnqueueCtrlPkt( llConnState_t *connPtr,
 void llDequeueCtrlPkt( llConnState_t *connPtr )
 {
   halIntState_t intState;
+  uint8 status = USUCCESS;
 
-  LL_ASSERT( connPtr != NULL );
-  LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount > 0 );
-
-  HAL_ENTER_CRITICAL_SECTION(intState);
-
-  // decrement the number of control packets left
-  if ( --connPtr->ctrlPktInfo.ctrlPktCount == 0 )
+  // Sanity Check
+  if ( connPtr == NULL )
   {
-    connPtr->ctrlPktInfo.ctrlPkts[0] = LL_CTRL_UNDEFINED_PKT;
+    LL_ASSERT( connPtr != NULL );
+    status = UFAILURE;
   }
-  else // more control packets queued up
+  if (( status == USUCCESS ) && ( connPtr->ctrlPktInfo.ctrlPktCount == 0 ))
   {
-    // shift remaining packets, if any, up one spot
-    for (uint8 i=0; i<LL_MAX_NUM_CTRL_PROC_PKTS-1; i++)
+    LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount > 0 );
+    status = UFAILURE;
+  }
+
+  if ( status == USUCCESS )
+  {
+    HAL_ENTER_CRITICAL_SECTION(intState);
+
+    // decrement the number of control packets left
+    if ( --connPtr->ctrlPktInfo.ctrlPktCount == 0 )
     {
-      connPtr->ctrlPktInfo.ctrlPkts[i] = connPtr->ctrlPktInfo.ctrlPkts[i+1];
+      connPtr->ctrlPktInfo.ctrlPkts[0] = LL_CTRL_UNDEFINED_PKT;
+    }
+    else // more control packets queued up
+    {
+      // shift remaining packets, if any, up one spot
+      for (uint8 i=0; i<LL_MAX_NUM_CTRL_PROC_PKTS-1; i++)
+      {
+        connPtr->ctrlPktInfo.ctrlPkts[i] = connPtr->ctrlPktInfo.ctrlPkts[i+1];
+      }
+
+      // stuff an undefined packet at the end of the queue
+      connPtr->ctrlPktInfo.ctrlPkts[LL_MAX_NUM_CTRL_PROC_PKTS-1] = LL_CTRL_UNDEFINED_PKT;
     }
 
-    // stuff an undefined packet at the end of the queue
-    connPtr->ctrlPktInfo.ctrlPkts[LL_MAX_NUM_CTRL_PROC_PKTS-1] = LL_CTRL_UNDEFINED_PKT;
+    // set the control processing to inactive for next packet
+    connPtr->ctrlPktInfo.ctrlPktActive = FALSE;
+
+    HAL_EXIT_CRITICAL_SECTION(intState);
   }
-
-  // set the control processing to inactive for next packet
-  connPtr->ctrlPktInfo.ctrlPktActive = FALSE;
-
-  HAL_EXIT_CRITICAL_SECTION(intState);
 
   return;
 }
@@ -2995,55 +3020,59 @@ void llReplaceCtrlPkt( llConnState_t *connPtr,
   halIntState_t intState;
   uint8 replaceIdx;
 
+  // Sanity Check
   LL_ASSERT( connPtr != NULL );
 
-  HAL_ENTER_CRITICAL_SECTION(intState);
-
-  if ( ctrlTypeToReplace == LL_CTRL_UNDEFINED_PKT )
+  if (connPtr != NULL)
   {
-    // don't care which control packet to replace.
-    // just pick one at the head of the queue and replace
-    replaceIdx = 0;
-    connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] = ctrlTypeToReplaceWith;
+    HAL_ENTER_CRITICAL_SECTION(intState);
 
-    // check if there was nothing on the queue
-    if ( connPtr->ctrlPktInfo.ctrlPktCount == 0 )
+    if ( ctrlTypeToReplace == LL_CTRL_UNDEFINED_PKT )
     {
-      // there isn't, so bump the counter
-      connPtr->ctrlPktInfo.ctrlPktCount++;
-    }
-  }
-  else
-  {
-    // find the control packet to replace in the queue
-    for ( replaceIdx = 0; replaceIdx < LL_MAX_NUM_CTRL_PROC_PKTS; replaceIdx++ )
-    {
-      if ( connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] == ctrlTypeToReplace)
+      // don't care which control packet to replace.
+      // just pick one at the head of the queue and replace
+      replaceIdx = 0;
+      connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] = ctrlTypeToReplaceWith;
+
+      // check if there was nothing on the queue
+      if ( connPtr->ctrlPktInfo.ctrlPktCount == 0 )
       {
-        // found the control packet to replace.
+        // there isn't, so bump the counter
+        connPtr->ctrlPktInfo.ctrlPktCount++;
+      }
+    }
+    else
+    {
+      // find the control packet to replace in the queue
+      for ( replaceIdx = 0; replaceIdx < LL_MAX_NUM_CTRL_PROC_PKTS; replaceIdx++ )
+      {
+        if ( connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] == ctrlTypeToReplace)
+        {
+          // found the control packet to replace.
+          connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] = ctrlTypeToReplaceWith;
+          break;
+        }
+      }
+
+      // check if there was nothing to replace in the queue
+      if ( replaceIdx == LL_MAX_NUM_CTRL_PROC_PKTS )
+      {
+        // there isn't, so add
+        replaceIdx = connPtr->ctrlPktInfo.ctrlPktCount++;
         connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] = ctrlTypeToReplaceWith;
-        break;
       }
     }
 
-    // check if there was nothing to replace in the queue
-    if ( replaceIdx == LL_MAX_NUM_CTRL_PROC_PKTS )
+    if ( replaceIdx == 0 )
     {
-      // there isn't, so add
-      replaceIdx = connPtr->ctrlPktInfo.ctrlPktCount++;
-      connPtr->ctrlPktInfo.ctrlPkts[replaceIdx] = ctrlTypeToReplaceWith;
+      // set the control processing to inactive
+      connPtr->ctrlPktInfo.ctrlPktActive = FALSE;
     }
+
+    LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount < LL_MAX_NUM_CTRL_PROC_PKTS );
+
+    HAL_EXIT_CRITICAL_SECTION(intState);
   }
-
-  if ( replaceIdx == 0 )
-  {
-    // set the control processing to inactive
-    connPtr->ctrlPktInfo.ctrlPktActive = FALSE;
-  }
-
-  LL_ASSERT( connPtr->ctrlPktInfo.ctrlPktCount < LL_MAX_NUM_CTRL_PROC_PKTS );
-
-  HAL_EXIT_CRITICAL_SECTION(intState);
 
   return;
 }
@@ -5227,19 +5256,11 @@ uint16 llGetMinCI( uint16 connInterval )
  * @fn          llConnExists
  *
  * @brief       This function determines whether we are already in a connection
-                with the peer device. If we Advertise, we'll become a Peripheral, so
- *              we want to check if this device is already in a connection with
- *              the peer device as a Central. If we Init, we'll become a Central,
- *              so we want to check if this device is already in a connection
- *              with the peer device as a Central. For both Adv and Init,
- *              depending on accept list policy, the peer device address and
- *              address type may be checked against the accept list. The peer
- *              address and address type may also be checked against every
- *              active connection that matches the peerRole.
+ *              with the peer device. The peer address and address type may be
+ *              checked against every active connection.
  *
  * input parameters
  *
- * @param       peerRole     - LL_TASK_ID_CENTRAL | LL_TASK_ID_PERIPHERAL
  * @param       peerAddr     - Peer device address.
  * @param       peerAddrType - Peer device address type.
  *
@@ -5250,147 +5271,45 @@ uint16 llGetMinCI( uint16 connInterval )
  * @return      TRUE:  Already in a connection with this peer device.
  *              FALSE: Not in a connection with this peer device.
  */
-uint8 llConnExists( uint8  peerRole,
-                    uint8 *peerAddr,
+uint8 llConnExists( uint8 *peerAddr,
                     uint8  peerAddrType )
 {
   uint8 i;
-  uint8 usePeerAddr;
-
-  LL_ASSERT( (peerRole == LL_TASK_ID_CENTRAL) ||
-             (peerRole == LL_TASK_ID_PERIPHERAL) );
+  uint8 rlIndex = INVALID_RESOLVE_LIST_INDEX;
 
   // first, check if there's at least one connection
   if ( llConns.numActiveConns == 0 ) return( FALSE );
 
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  advSet_t *pAdvSet;
-
-  // get the Adv Set, if there is one
-  pAdvSet = MAP_LL_SearchAdvSet( aeCurAdvEnableHandle );
-
-  // Sanity Check
-  // Note: This pointer must be non-null when peer is CENTRAL because this function is called from
-  //       LE_SetExtAdvEnable, and the pointer has already been created or
-  //       located in the Advertisement Set.
-  if (peerRole == LL_TASK_ID_CENTRAL)
+  if ( MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr ) )
   {
-      LL_ASSERT( pAdvSet != NULL );
-      LL_ASSERT( pAdvSet->pAdvParam != NULL );
-  }
-#endif // ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-  // Sanity Check
-  // Note: This pointer must be non-null when peer is PERIPHERAL because this function is called from
-  //       LE_ExtCreateConn, and the pointer has already been created or
-  //       located in extInitInfo.
-  if (peerRole == LL_TASK_ID_PERIPHERAL)
-  {
-      LL_ASSERT( extInitInfo != NULL );
-      LL_ASSERT( extInitInfo->pCreateConn != NULL );
-  }
-#endif // INIT_CFG
-
-  // check the following:
-  //  - if Advertising Directed, or Initiating without the accept list, then
-  //    check the provided peer device address and address type against the
-  //    connection peer device address and address type.
-  // - if Advertising Undirected using the accept list, or Initiating using the
-  //   accept list, then check the connection peer device address and address
-  //   type of each connection against the accept list.
-  // Note: Advertising Undirected without using the accept list for the
-  //       connection request is the one case where there is no way to figure
-  //       out whether we're already in a connection as a Central with a peer
-  //       device. This is because any connection request is accepted. So we
-  //       have to assume we are not already in a connection with this peer, or
-  //       that if we are, the Initiator peer device will prevent a reverse
-  //       connection with this device.
-  // Note: If the peerRole is CENTRAL then the call is from Adv.
-  // Note: If the peerRole is PERIPHERAL then the call is from Init.
-  if (
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-       ((peerRole == LL_TASK_ID_CENTRAL) &&
-        ((TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) &&
-         ((pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT) ||
-          (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_LDC_DIRECTED_EVT)))      ||
-        (!TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) &&
-          TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps))))                  ||
-#else // !ADV_CONN_CFG
-       (FALSE) ||
-#endif //  ADV_CONN_CFG
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-       ((peerRole == LL_TASK_ID_PERIPHERAL) &&
-        (extInitInfo->pCreateConn->initFilterPolicy == LL_INIT_AL_POLICY_USE_PEER_ADDR))
-#else // !INIT_CFG
-       (FALSE)
-#endif // INIT_CFG
-      )
-  {
-    usePeerAddr = TRUE;
-  }
-  else if (
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-           ((peerRole == LL_TASK_ID_CENTRAL) &&
-            ((TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) &&
-             (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_UNDIRECTED_EVT) &&
-             ((pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_CONNECT_IND) ||
-              (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ)))       ||
-            (!TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) &&
-             !TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) &&
-             ((pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_CONNECT_IND) ||
-              (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ)))))       ||
-#else // !ADV_CONN_CFG
-           (FALSE) ||
-#endif // ADV_CONN_CFG
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-           ((peerRole == LL_TASK_ID_PERIPHERAL) &&
-            (extInitInfo->pCreateConn->initFilterPolicy == LL_INIT_AL_POLICY_USE_ACCEPT_LIST))
-#else // !INIT_CFG
-           (FALSE)
-#endif // INIT_CFG
-      )
-  {
-    usePeerAddr = FALSE;
-  }
-  else
-  {
-    return( FALSE );
+    // Try to resolve RPA to find ID address
+    rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
   }
 
-  // check each connection's peer device address and address type
-  for (i=0; i<maxNumConns; i++)
+  // Check each connection's peer device address and address type
+  for ( i = 0; i < maxNumConns; i++ )
   {
     llConnState_t *connPtr = MAP_llDataGetConnPtr( i );
 
     if ( connPtr->activeConn )
     {
-      // validate this connection matches the role to check
-      /*
-      Remove this condition in order to check the existing
-      connection in case of both roles (Central and Peripheral) - BLESTACK-4417
-      if ( connPtr->llTask->taskID == peerRole )
-      */
       {
-        // check if we should compare to the connection peer address
-        if ( usePeerAddr )
+        // Check if the peer address is in the resolvingList
+        if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
         {
-          // check the peer address and address type against the connection
-          if ( (connPtr->peerInfo.peerAddrType == peerAddrType) &&
-                LL_CMP_BDADDR(connPtr->peerInfo.peerAddr, peerAddr) )
+          // Check the resolvable peer address and address type against the connection
+          if ( (connPtr->peerInfo.peerAddrType == resolvingList[rlIndex].idAddrType) &&
+                LL_CMP_BDADDR( connPtr->peerInfo.peerAddr, resolvingList[rlIndex].idAddr ) )
           {
             return( TRUE );
           }
         }
-        else // check the peer address and address type against the accept list
+        else
         {
-          // check if the connection's device peer address and address type
-          // are in the accept list
-          if ( MAP_AL_FindEntry( alTable,
-                                 connPtr->peerInfo.peerAddr,
-                                 connPtr->peerInfo.peerAddrType ) < alTable->numAlEntries )
+          // Check the peer address and address type against the connection
+          if ( (connPtr->peerInfo.peerAddrType == peerAddrType) &&
+                LL_CMP_BDADDR( connPtr->peerInfo.peerAddr, peerAddr ) )
           {
-            // address and address type found in AL
             return( TRUE );
           }
         }
@@ -5430,175 +5349,179 @@ void llConnCleanup( llConnState_t *connPtr )
 #endif
   halIntState_t  cs;
 
+  // Sanity check
   LL_ASSERT( connPtr != NULL );
 
-  HAL_ENTER_CRITICAL_SECTION(cs);
-
-  // stop the APTO timer, if running
-  MAP_osal_CbTimerStop( connPtr->aptoTimerId );
-
-  // free all Tx entries, finished or not
-  // Note: The memory for the Tx Data queue is currently static in the sense
-  //       that it is malloc'ed once and never freed. However, the connection's
-  //       pointer to the queue is cleared whenever the connection is alloc'ed.
-  if ( connPtr->pTxDataEntryQ != NULL )
+  if (connPtr != NULL)
   {
+    HAL_ENTER_CRITICAL_SECTION(cs);
+
+    // stop the APTO timer, if running
+    MAP_osal_CbTimerStop( connPtr->aptoTimerId );
+
+    // free all Tx entries, finished or not
+    // Note: The memory for the Tx Data queue is currently static in the sense
+    //       that it is malloc'ed once and never freed. However, the connection's
+    //       pointer to the queue is cleared whenever the connection is alloc'ed.
+    if ( connPtr->pTxDataEntryQ != NULL )
+    {
 #ifdef USE_RCL
-    // remove the buffer from the LL list
-    while( (pEntry=RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers)) != NULL )
-    {
-      // check if its last packet
-      if ( (*((uint8 *)(pEntry->data + (pEntry->numPad -1))) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-           (CHECK_LAST_PKT(pEntry->pad0)))
+      // remove the buffer from the LL list
+      while( (pEntry=RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers)) != NULL )
       {
-        // bump the number of buffers freed
-        numComplPkts++;
+        // check if its last packet
+        if ( (*((uint8 *)(pEntry->data + (pEntry->numPad -1))) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
+             (CHECK_LAST_PKT(pEntry->pad0)))
+        {
+          // bump the number of buffers freed
+          numComplPkts++;
+        }
+        // free the TX data buffer
+        MAP_osal_bm_free( (void *)pEntry );
       }
-      // free the TX data buffer
-      MAP_osal_bm_free( (void *)pEntry );
-    }
-    // check temp Tx queue for any remaining entries and remove
-    while( (pEntry = RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->tmpDataBuffers)) != NULL )
-    {
-      //check if its last packet
-      if ( (*((uint8 *)(pEntry->data + (pEntry->numPad -1))) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-           (CHECK_LAST_PKT(pEntry->pad0)))
+      // check temp Tx queue for any remaining entries and remove
+      while( (pEntry = RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->tmpDataBuffers)) != NULL )
       {
-        // bump the number of buffers freed
-        numComplPkts++;
+        //check if its last packet
+        if ( (*((uint8 *)(pEntry->data + (pEntry->numPad -1))) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
+             (CHECK_LAST_PKT(pEntry->pad0)))
+        {
+          // bump the number of buffers freed
+          numComplPkts++;
+        }
+        // free the TX data buffer
+        MAP_osal_bm_free( (void *)pEntry );
       }
-      // free the TX data buffer
-      MAP_osal_bm_free( (void *)pEntry );
-    }
-    // clear the RCL TX queue
-    List_clearList(((txDataQ_t *)(connPtr->pTxDataEntryQ))->rfDataBuffers);
+      // clear the RCL TX queue
+      List_clearList(((txDataQ_t *)(connPtr->pTxDataEntryQ))->rfDataBuffers);
 #else
-    while( (pEntry=MAP_RFHAL_GetNextDataEntry(connPtr->pTxDataEntryQ)) != NULL )
-    {
-      // check the header - only count completed if it was a data packet and
-      // it was the last Tx packet transmitted (i.e. due to fragmentation)
-      if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-           (pEntry->config & DATA_ENTRY_LAST_PACKET) )
+      while( (pEntry=MAP_RFHAL_GetNextDataEntry(connPtr->pTxDataEntryQ)) != NULL )
       {
-        // bump the number of buffers freed
-        numComplPkts++;
+        // check the header - only count completed if it was a data packet and
+        // it was the last Tx packet transmitted (i.e. due to fragmentation)
+        if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
+             (pEntry->config & DATA_ENTRY_LAST_PACKET) )
+        {
+          // bump the number of buffers freed
+          numComplPkts++;
+        }
+
+        // TX entry at head of internal connection queue is done, so free it
+        MAP_RFHAL_FreeNextTxDataEntry( connPtr->pTxDataEntryQ );
       }
 
-      // TX entry at head of internal connection queue is done, so free it
-      MAP_RFHAL_FreeNextTxDataEntry( connPtr->pTxDataEntryQ );
-    }
+      // check temp Tx queue for any remaining entries and remove
+      pEntry = MAP_RFHAL_GetTempDataEntry( connPtr->pTxDataEntryQ );
+     while ( pEntry != NULL )
+     {
+        // check the header - only count completed if it was a data packet and
+        // it was the last Tx packet transmitted (i.e. due to fragmentation)
+        if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
+             (pEntry->config & DATA_ENTRY_LAST_PACKET) )
+        {
+          // bump the number of buffers freed
+          numComplPkts++;
+        }
 
-    // check temp Tx queue for any remaining entries and remove
-    pEntry = MAP_RFHAL_GetTempDataEntry( connPtr->pTxDataEntryQ );
-    while ( pEntry != NULL )
-    {
-      // check the header - only count completed if it was a data packet and
-      // it was the last Tx packet transmitted (i.e. due to fragmentation)
-      if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-           (pEntry->config & DATA_ENTRY_LAST_PACKET) )
-      {
-        // bump the number of buffers freed
-        numComplPkts++;
+        // store next entry before free the current
+        pNextTempDataEntry = pEntry->pNextEntry;
+
+        // free the TX data entry
+        MAP_osal_bm_free( (void *)pEntry );
+
+        // point to next temp entry
+        pEntry = pNextTempDataEntry;
       }
 
-      // store next entry before free the current
-      pNextTempDataEntry = pEntry->pNextEntry;
-
-      // free the TX data entry
-      MAP_osal_bm_free( (void *)pEntry );
-
-      // point to next temp entry
-      pEntry = pNextTempDataEntry;
-    }
-
-    // cleanup queue pointers
-    MAP_RFHAL_InitDataQueue( connPtr->pTxDataEntryQ );
+      // cleanup queue pointers
+      MAP_RFHAL_InitDataQueue( connPtr->pTxDataEntryQ );
 #endif
-  }
+    }
 
-  // reset the number of Tx data buffers
-  numTxDataBufs = maxNumTxDataBufs;
+    // reset the number of Tx data buffers
+    numTxDataBufs = maxNumTxDataBufs;
 
-  // check that the shared RX Queue could be free.
-  // set the RX Queue pointer to NULL in case this is NOT the last connection,
+    // check that the shared RX Queue could be free.
+    // set the RX Queue pointer to NULL in case this is NOT the last connection,
 #ifdef USE_RCL
-  linkParam[connPtr->connId].rxBuffers.head = NULL;
-  linkParam[connPtr->connId].rxBuffers.tail = NULL;
-  linkParam[connPtr->connId].txBuffers.head = NULL;
-  linkParam[connPtr->connId].txBuffers.tail = NULL;
+    linkParam[connPtr->connId].rxBuffers.head = NULL;
+    linkParam[connPtr->connId].rxBuffers.tail = NULL;
+    linkParam[connPtr->connId].txBuffers.head = NULL;
+    linkParam[connPtr->connId].txBuffers.tail = NULL;
 
-  if ((llConns.numLLConns == 1) && ( connPtr->pRxDataEntryQ != NULL ))
-  {
-    List_clearList((List_List *)connPtr->pRxDataEntryQ);
-    List_clearList(&rxDataQ.finishedBuffers);
-    List_clearList(&rxDataQ.multiBuffers);
-    // check the entire Rx buffers
-    for (uint8 i=0; i<NUM_RX_DATA_ENTRIES; i++)
+    if ((llConns.numLLConns == 1) && ( connPtr->pRxDataEntryQ != NULL ))
     {
-      // free the buffer
-      MAP_osal_bm_free( rxDataQ.dataBuffers[i] );
-      rxDataQ.dataBuffers[i] = NULL;
-    }
-    rxDataQ.length = 0;
-  }
-#else
-  if ((llConns.numLLConns == 1) && ( connPtr->pRxDataEntryQ != NULL ))
-  {
-    dataEntry_t *pNext;
-    uint8       *pBuf;
-
-    pEntry = MAP_RFHAL_GetNextDataEntry( connPtr->pRxDataEntryQ );
-    pNext  = pEntry;
-
-    // check the entire Rx ring buffer
-    do
-    {
-      // check if there is a data buffer
-      if ( (pBuf = ((dataEntryPtr_t *)pNext)->pData) != NULL )
+      List_clearList((List_List *)connPtr->pRxDataEntryQ);
+      List_clearList(&rxDataQ.finishedBuffers);
+      List_clearList(&rxDataQ.multiBuffers);
+      // check the entire Rx buffers
+      for (uint8 i=0; i<NUM_RX_DATA_ENTRIES; i++)
       {
-        // this buffer will freed using BM
-        MAP_osal_bm_free( (void *)pBuf );
-
-        // clear pointer to data buffer
-        ((dataEntryPtr_t *)pNext)->pData = NULL;
+        // free the buffer
+        MAP_osal_bm_free( rxDataQ.dataBuffers[i] );
+        rxDataQ.dataBuffers[i] = NULL;
       }
+      rxDataQ.length = 0;
+    }
+#else
+    if ((llConns.numLLConns == 1) && ( connPtr->pRxDataEntryQ != NULL ))
+    {
+      dataEntry_t *pNext;
+      uint8       *pBuf;
 
-      // on to next ring buffer entry
-      pNext = pNext->pNextEntry;
+      pEntry = MAP_RFHAL_GetNextDataEntry( connPtr->pRxDataEntryQ );
+      pNext  = pEntry;
 
-    } while( pNext != pEntry );
+      // check the entire Rx ring buffer
+      do
+      {
+        // check if there is a data buffer
+        if ( (pBuf = ((dataEntryPtr_t *)pNext)->pData) != NULL )
+        {
+          // this buffer will freed using BM
+          MAP_osal_bm_free( (void *)pBuf );
 
-    // cleanup queue pointers
-    MAP_RFHAL_InitDataQueue( connPtr->pRxDataEntryQ );
-  }
-  else
-  {
-    connPtr->pRxDataEntryQ = NULL;
-  }
+          // clear pointer to data buffer
+          ((dataEntryPtr_t *)pNext)->pData = NULL;
+        }
+
+        // on to next ring buffer entry
+        pNext = pNext->pNextEntry;
+
+      } while( pNext != pEntry );
+
+      // cleanup queue pointers
+      MAP_RFHAL_InitDataQueue( connPtr->pRxDataEntryQ );
+    }
+    else
+    {
+      connPtr->pRxDataEntryQ = NULL;
+    }
 #endif
 
-  // check if we completed any packets
-  if ( numComplPkts > 0 )
-  {
-    uint16 connId = connPtr->connId;
-    uint16 numCompletedPackets = numComplPkts;
+    // check if we completed any packets
+    if ( numComplPkts > 0 )
+    {
+      uint16 connId = connPtr->connId;
+      uint16 numCompletedPackets = numComplPkts;
 
-    // and send credits to the Host
-    MAP_HCI_NumOfCompletedPacketsEvent( 1,
-                                        &connId,
-                                        &numCompletedPackets );
+      // and send credits to the Host
+      MAP_HCI_NumOfCompletedPacketsEvent( 1,
+                                          &connId,
+                                          &numCompletedPackets );
 
-    // clear count
-    numComplPkts = 0;
-  }
-  // release the connection
-  MAP_llReleaseConnId( connPtr );
+      // clear count
+      numComplPkts = 0;
+    }
+    // release the connection
+    MAP_llReleaseConnId( connPtr );
 
-  // free the associated task block
-  // Note: If the last task, llState will be set to Idle.
-  MAP_llFreeTask( &connPtr->llTask );
+    // free the associated task block
+    // Note: If the last task, llState will be set to Idle.
+    MAP_llFreeTask( &connPtr->llTask );
 
-  HAL_EXIT_CRITICAL_SECTION(cs);
+    HAL_EXIT_CRITICAL_SECTION(cs);
+  } // connPtr != NULL
 
   return;
 }
@@ -5628,14 +5551,17 @@ void llConnTerminate( llConnState_t *connPtr,
 {
   LL_ASSERT( connPtr != NULL );
 
-  // let the application know
-  MAP_LL_DisconnectCback( (uint16)connPtr->connId, reason );
+  if ( connPtr != NULL )
+  {
+    // let the application know
+    MAP_LL_DisconnectCback( (uint16)connPtr->connId, reason );
 
-  // cleanup the connection data structures and task
-  MAP_llConnCleanup( connPtr );
+    // cleanup the connection data structures and task
+    MAP_llConnCleanup( connPtr );
 
-  // determine next task (if any) and schedule it
-  MAP_llScheduler();
+    // determine next task (if any) and schedule it
+    MAP_llScheduler();
+  }
 
   return;
 }
@@ -8452,7 +8378,8 @@ uint8 llGetSlowestPhy( uint8 phys )
 void llShellSortActiveConns(uint8 *activeConnsArray, uint8 numActiveConns)
 {
   uint8 gap,i,j;
-  uint32 tempST,tempST1,tempIndex;
+  uint32 tempST,tempST1;
+  uint8 tempIndex;
   for (gap = numActiveConns/2; gap > 0; gap /= 2)
   {
     for (i = gap; i < numActiveConns; i++)
@@ -8477,7 +8404,7 @@ void llShellSortActiveConns(uint8 *activeConnsArray, uint8 numActiveConns)
 #endif
         if (tempST1 > tempST)
         {
-        	activeConnsArray[j]  = activeConnsArray [j - gap];
+          activeConnsArray[j]  = activeConnsArray [j - gap];
           j -= gap;
         }
         else
@@ -9077,6 +9004,12 @@ void llSendConnEvtCallback(uint8 connEvtStatus, uint16 numPkts, llConnState_t *c
     {
       sendReport   = TRUE;
       curEventType = LL_CONN_EVT_ALL;
+    }
+    else
+    {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
     }
   }
 
@@ -10658,8 +10591,8 @@ void llProcessPeripheralConnectionCreated( void )
         // update peer address type and address in packet
         // Note: This is done to ensure the command HCI_EXT_GetConnInfo
         //       displays the proper peer address and address type.
-        connPtr->peerInfo.peerAddrType = MASK_ID_ADDRTYPE(pAdvSet->pAdvParam->peerAddrType);
-        MAP_osal_memcpy( connPtr->peerInfo.peerAddr, pAdvSet->pAdvParam->peerAddr, B_ADDR_LEN );
+        connPtr->peerInfo.peerAddrType = MASK_ID_ADDRTYPE(peerType);
+        MAP_osal_memcpy( connPtr->peerInfo.peerAddr, peerAddr , B_ADDR_LEN );
       }
     }
     else if ( MAP_LL_PRIV_IsIDA( peerType, peerAddr ) )
@@ -10774,6 +10707,10 @@ void llProcessConnectionEstablishFailed( uint8 role, uint8 reason )
 void llProcessAdvAddrResolutionTimeout( void )
 {
   advSet_t *pAdvSet = advSetList;
+#ifdef USE_RCL
+  // get pointer to RF command
+  aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
+#endif
 
   // for each Adv Set that is enabled, is Directed, and uses an Identity
   // address, update the peer InitA address' RPA, if in the RL
@@ -10802,6 +10739,14 @@ void llProcessAdvAddrResolutionTimeout( void )
           MAP_osal_memcpy( pAdvSet->peerAddr,
                            resolvingList[rlIndex].RPA,
                            B_ADDR_LEN );
+#ifdef USE_RCL
+          // copy the peer address to the adv params
+          MAP_osal_memcpy(pRf->advParam.peerA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+          // copy the peer address to the adv data
+          MAP_osal_memcpy(pRf->advPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+          // copy the peer address to the scan rsp data
+          MAP_osal_memcpy(pRf->scanRspPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+#endif
         }
       }
     }
@@ -10813,8 +10758,6 @@ void llProcessAdvAddrResolutionTimeout( void )
                        resolvingList[LOCAL_RL_INDEX].RPA,
                        B_ADDR_LEN );
 #ifdef USE_RCL
-      // get pointer to RF command
-      aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
       // copy the advertising address to the adv params
       MAP_osal_memcpy(pRf->advParam.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
       // copy the advertising address to the adv data
@@ -10827,6 +10770,7 @@ void llProcessAdvAddrResolutionTimeout( void )
     pAdvSet = pAdvSet->next;
   }
 }
+
 #endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
@@ -10864,6 +10808,82 @@ uint8 llCheckPeripheralTerminate( uint8 connId )
   return FALSE;
 }
 #endif
+
+/*******************************************************************************
+ * @fn          llDbgInf_addSchedRec
+ *
+ * @brief       This function adds a scheduler record to the debug info module
+ *              Note: this function is implemented here due to use of ll types
+ *
+ * input parameters
+ *
+ * @param       llTask - Pointer to task information
+ *
+ * @return  @ref SUCCESS
+ * @return  @ref INVALIDPARAMETER : the input is not valid
+ * @return  @ref FAILURE : the scheduler domain is not initialized
+ *
+ */
+uint8_t llDbgInf_addSchedRec(taskInfo_t * const llTask)
+{
+  uint8_t status = INVALIDPARAMETER;
+  DbgInf_schedNewRec_t newRec = {0};
+
+  // Validate input
+  if ( llTask != NULL )
+  {
+    // Add new scheduler record info
+    newRec.activeTasks = llTaskList.activeTasks;
+    newRec.taskID = llTask->taskID;
+    newRec.llState = llState;
+    newRec.cmdStartTime = (uint32_t)llTask->startTime;
+    newRec.timeStamp = (uint32_t)MAP_llGetCurrentTime();
+
+    status = MAP_DbgInf_addSchedRec( &newRec );
+  }
+
+  // Return status value
+  return (status);
+}
+
+/*******************************************************************************
+ * @fn          llDbgInf_addConnTerm
+ *
+ * @brief       This function adds a connection terminated record to the debug info module
+ *              Note: this function is implemented here due to use of ll types
+ *
+ * input parameters
+ *
+ * @param       connHandle    - Connection handle
+ * @param       reasonCode - Status of connection complete
+ *
+ * @return  @ref SUCCESS
+ * @return  @ref INVALIDPARAMETER : the input is not valid
+ * @return  @ref FAILURE : the scheduler domain is not initialized
+ *
+ */
+uint8_t llDbgInf_addConnTerm(uint16_t connHandle, uint8_t reasonCode)
+{
+  uint8_t status = INVALIDPARAMETER;
+  llConnState_t *connPtr = NULL;
+  DbgInf_connTermRec_t newRec = {0};
+
+  // Get the struct info of the terminated connection
+  connPtr = (llConnState_t *)MAP_llDataGetConnPtr((uint8)connHandle );
+  if ( connPtr != NULL )
+  {
+    (void)MAP_osal_memcpy(&newRec.peerAddr[0], &connPtr->peerInfo.peerAddr[0], 2);
+    newRec.connId = (uint8_t)connHandle;
+    newRec.termReason = reasonCode;
+    newRec.connInterval = connPtr->curParam.connInterval;
+    newRec.connEvent = connPtr->currentEvent;
+
+    status = MAP_DbgInf_addConnTerm( &newRec );
+  }
+
+  // Return status value
+  return ( status );
+}
 
 /*******************************************************************************
  * @fn          llHealthCheck
@@ -11331,7 +11351,7 @@ uint8 llSetPhy(llConnState_t *connPtr, uint8 blePhy)
   connPtr->lenInfo.connMaxTxTime       = (connPtr->phyInfo.curPhy == LL_PHY_CODED) ? connInitialMaxTxTimeCoded : connInitialMaxTxTimeUncoded;
   connPtr->lenInfo.connRemoteMaxTxTime = (connPtr->phyInfo.curPhy == LL_PHY_CODED) ? connInitialMaxTxTimeCoded : connInitialMaxTxTimeUncoded;
 
-  return RfBleDpl_setPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
+  return RfBleDpl_setConnPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
 }
 
 /*******************************************************************************
@@ -11374,7 +11394,7 @@ void llSetRangeDelay(llConnState_t *connPtr)
  * @return      None
  */
 /********************************************************************************/
-void llSetPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_TYPE txPowerIdx, RFBLEDPL_TX_POWER_TYPE txPower)
+void llSetPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_TYPE txPowerIdx, RFBLEDPL_TX_POWER_HW_TYPE txPower)
 {
 #if defined(CC33xx)
   // limit TX power to the CC33xx thermal TX power limit value
@@ -11507,7 +11527,7 @@ void llSetTxPower( RFBLEDPL_TX_POWER_TYPE txPower )
 }
 
 /*******************************************************************************
- * @fn          RfBleDpl_setPhy
+ * @fn          RfBleDpl_setConnPhy
  *
  * @brief       This routine is used to set PHY value into RCL RF command.
                 LL phy and phyOpts values are converted into RF coded PHY values
@@ -11525,7 +11545,7 @@ void llSetTxPower( RFBLEDPL_TX_POWER_TYPE txPower )
  *              FALSE - in case the set to RF command was not successful.
  */
 /********************************************************************************/
-uint8 RfBleDpl_setPhy(uint8 connId, uint8 phy, uint8 phyOpts)
+uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
 {
   uint16_t phyFeatures;
   switch (phy)
@@ -11553,7 +11573,7 @@ uint8 RfBleDpl_setPhy(uint8 connId, uint8 phy, uint8 phyOpts)
           phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS8;
         break;
         default:
-          // If not specified otherwise, Use the fastest available phy
+          // the default value of aux_Conn_req is S8 coded
           phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS2;
       }
     }
@@ -11565,6 +11585,62 @@ uint8 RfBleDpl_setPhy(uint8 connId, uint8 phy, uint8 phyOpts)
   }
 
   linkCmd[connId].common.phyFeatures = phyFeatures;
+
+  return TRUE;
+}
+
+/*******************************************************************************
+ * @fn          RfBleDpl_setAdvPhy
+ *
+ * @brief       This routine is used to set PHY value into RCL RF command.
+                LL phy and phyOpts values are converted into RF coded PHY values
+                and then set into the RF command.
+ *
+ * input parameters
+ *
+ * @param       pRfCmd  - Pointer to the RF command.
+ * @param       phy     - LL Phy value.
+ * @param       phyOpts - LL Phy Options value.
+ *
+ * output parameters
+ *
+ * @return      TRUE  - in case the set to RF command was successful.
+ *              FALSE - in case the set to RF command was not successful.
+ */
+/********************************************************************************/
+uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 phy)
+{
+  uint16_t phyFeatures;
+
+  switch (phy)
+  {
+    case AE_PHY_1_MBPS:
+      // For 1 MBPS, use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_1MBPS,
+      phyFeatures = llUserConfig.rclPhyFeature1MBPS;
+      break;
+
+    case AE_PHY_2_MBPS:
+      // For 2 Mbps, use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_2MBPS,
+      phyFeatures = llUserConfig.rclPhyFeature2MBPS;
+    break;
+
+    case AE_PHY_CODED:
+      // For coded with S=8 (125 kbps) in TX , use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_CODED | RCL_BLE_PHY_FEATURE_CODING_S8,
+      phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS8;
+      break;
+
+    case AE_PHY_CODED_S2:
+      // For coded with S=2 (500 kbps) in TX , use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_CODED | RCL_BLE_PHY_FEATURE_CODING_S2,
+       phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS2;
+       break;
+
+    default:
+      /* Shouldn't be here */
+      return FALSE;
+      break;
+  }
+
+  ((RCL_Command *)pRfCmd)->phyFeatures = phyFeatures;
 
   return TRUE;
 }
@@ -11592,9 +11668,27 @@ void RfBleDpl_setRangeDelay(uint8 connId, uint8 rangeDelay)
 
 #define SW_TX_POWER_TABLE (llUserConfig.lrfTxPowerTablePtr)
 
-void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_TYPE txPower)
+void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_HW_TYPE txPower)
 {
-  ((RCL_CmdBle5Connection *)pRfCmd)->txPower = txPower;
+  uint16 cmdId = ((RCL_Command *)pRfCmd)->cmdId;
+
+  switch( cmdId )
+  {
+    case RCL_CMDID_BLE5_SCANNER:
+    {
+      ((RCL_CmdBle5Connection *)pRfCmd)->txPower = txPower;
+      break;
+    }
+
+    case RCL_CMDID_BLE5_ADVERTISER:
+    {
+      ((RCL_CmdBle5Advertiser *)pRfCmd)->txPower = txPower;
+      break;
+    }
+
+    default:
+      break;
+  }
 }
 
 RFBLEDPL_TX_POWER_TYPE RfBleDpl_getTxPowerByTxPowerDbm(int8 txPowerDbm, uint8 fraction)
@@ -11649,7 +11743,7 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
 #else // CC23X0
 
 /*******************************************************************************
- * @fn          RfBleDpl_setPhy
+ * @fn          RfBleDpl_setConnPhy
  *
  * @brief       This routine is used to set PHY value into AGAMA/THOR RF command.
                 LL phy and phyOpts values are converted into RF coded PHY values
@@ -11667,7 +11761,7 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
  *              FALSE - in case the set to RF command was not successful.
  */
 /********************************************************************************/
-uint8 RfBleDpl_setPhy(uint8 connId, uint8 phy, uint8 phyOpts)
+uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
 {
   uint8 phyMode;
   // set phy parameters for link command
@@ -11707,6 +11801,70 @@ uint8 RfBleDpl_setPhy(uint8 connId, uint8 phy, uint8 phyOpts)
 }
 
 /*******************************************************************************
+ * @fn          RfBleDpl_setAdvPhy
+ *
+ * @brief       This routine is used to set PHY value into RCL RF command.
+                LL phy and phyOpts values are converted into RF coded PHY values
+                and then set into the RF command.
+ *
+ * input parameters
+ *
+ * @param       pRfCmd  - Pointer to the RF command.
+ * @param       phy     - LL Phy value.
+ * @param       phyOpts - LL Phy Options value.
+ *
+ * output parameters
+ *
+ * @return      TRUE  - in case the set to RF command was successful.
+ *              FALSE - in case the set to RF command was not successful.
+ */
+/********************************************************************************/
+uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 phy)
+{
+  // set PHY
+  // Note: Mask off the MSBit which indicates Coded Scheme.
+  // Note: Parameter value is +1 the values used in the RF command.
+  switch (phy)
+  {
+    case AE_PHY_1_MBPS:
+    case AE_PHY_2_MBPS:
+    {
+      ((ble5OpCmd_t *)pRfCmd)->phyMode = ( phy & AE_PHY_CODED_SCHEME_MASK) - 1;
+
+      // default range delay
+      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_UNCODED_RANGE_DELAY_RAT_TICKS;
+      break;
+    }
+
+    case AE_PHY_CODED_S2:
+    {
+      ((ble5OpCmd_t *)pRfCmd)->phyMode = BLE5_CODED_S2_PHY;
+
+      // set range delay
+      // Note: This is for Long Range (worst case distance of 1km, or 4us).
+      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_CODED_RANGE_DELAY_RAT_TICKS;
+      break;
+    }
+
+    case AE_PHY_CODED_S8:
+    {
+      ((ble5OpCmd_t *)pRfCmd)->phyMode = BLE5_CODED_S8_PHY;
+
+      // set range delay
+      // Note: This is for Long Range (worst case distance of 1km, or 4us).
+      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_CODED_RANGE_DELAY_RAT_TICKS;
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  return TRUE;
+}
+
+
+/*******************************************************************************
  * @fn          RfBleDpl_setRangeDelay
  *
  * @brief       This routine is used to set rangeDelay into AGAMA/THOR RF command.
@@ -11726,7 +11884,7 @@ void RfBleDpl_setRangeDelay(uint8 connId, uint8 rangeDelay)
     linkCmd[connId].rangeDelay = rangeDelay;
 }
 
-void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_TYPE txPower)
+void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_HW_TYPE txPower)
 {
   ((ble5OpCmd_t *)pRfCmd)->txPower = txPower;
 }
@@ -11784,3 +11942,160 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
 }
 
 #endif //USE_RCL
+
+/*********************************************************************
+ * @fn      llSDAASetupRXWindowCmd
+ *
+ * @brief   This function used to allocate memory for RX window task
+ *          and setup init parameters.
+ *
+ * input parameters
+ *
+ * @param   None
+ *
+ * output parameters
+ *
+ * @param   None
+ *
+ * @return  LL_STATUS_SUCCESS, LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED
+ */
+uint8 llSDAASetupRXWindowCmd(void)
+{
+#ifndef USE_RCL
+    // allocate RX window task space
+    pRXWindowTask = MAP_osal_mem_alloc( sizeof(taskInfo_t) );
+
+    // check that there was enough heap
+    if ( pRXWindowTask == NULL )
+    {
+      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
+    }
+
+    // set ptr to radio operation
+    pRXWindowTask->command = (uint32)&sdaaFsRfCmd;
+
+    /////set frequency synthesizer command///
+    sdaaFsRfCmd.rfOpCmd.cmdNum = CMD_FS;
+
+    // common initialization
+    sdaaFsRfCmd.rfOpCmd.status = RFSTAT_IDLE;
+
+    // set the Start Trigger
+    CLR_RFOP_PAST_TRIG( sdaaFsRfCmd.rfOpCmd.startTrig );
+    SET_RFOP_TRIG_TYPE( sdaaFsRfCmd.rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
+
+    // set the command condition
+    SET_RFOP_COND_RULE( sdaaFsRfCmd.rfOpCmd.condition, CONDTYPE_ALWAYS_RUN_NEXT_CMD );
+
+    sdaaFsRfCmd.fractFreq = 0;
+
+    // configure Tx/Rx mode
+    // PG1 Note: Clears 13xx Divider, per the spec.
+    // PG2 Note: Uses default reference frequency.
+    sdaaFsRfCmd.synthCfg = FS_START_IN_RX_MODE;
+
+    // use standard calibration (i.e. no override )
+    // PG1 Note: Perform TDC, coarse, and mid cal.
+    // PG2 Note: Perform TDC, coarse, mid cal. Coarse precal set to zero.
+    sdaaFsRfCmd.calCfg   = FS_USE_STD_CALIBRATION;
+
+    // mid precal
+    sdaaFsRfCmd.midPrecal    = 0;
+    sdaaFsRfCmd.ktPrecal     = 0;
+
+    // TDC precal
+    sdaaFsRfCmd.tdcPrecal    = 0;
+
+    // init default params
+    sdaaRxWindowCmd.rfOpCmd.pNextRfOp = NULL;
+    sdaaRxWindowCmd.rfOpCmd.startTime = 0;
+
+    /////set rx window command///
+    sdaaRxWindowCmd.rfOpCmd.cmdNum = CMD_RX_TEST;
+
+    // common initialization
+    sdaaRxWindowCmd.rfOpCmd.status = RFSTAT_IDLE;
+
+    // set the command condition
+    SET_RFOP_COND_RULE(sdaaRxWindowCmd.rfOpCmd.condition,
+                       CONDTYPE_RUN_TRUE_STOP_FALSE);
+
+    // disable the modem FIFO and turn off FS when done
+    SET_RX_TEST_CONFIG( sdaaRxWindowCmd.config,
+                        RX_DISABLE_MODEM_FIFO,
+                        TRX_TURN_FS_OFF_WHEN_DONE,
+                        RX_NO_SYNC );
+
+    // set the Start Trigger
+    SET_RFOP_TRIG_TYPE( sdaaRxWindowCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
+    SET_RFOP_PAST_TRIG( sdaaRxWindowCmd.rfOpCmd.startTrig );
+
+    // set end trigger.
+    CLR_RFOP_ALT_TRIG_CMD( sdaaRxWindowCmd.endTrig );
+    SET_RFOP_TRIG_TYPE( sdaaRxWindowCmd.endTrig,
+                        TRIGTYPE_AT_ABS_TIME );
+
+    // define sdaa task
+    pRXWindowTask->taskID = LL_TASK_ID_RX_WINDOW;
+    pRXWindowTask->taskState = LL_TASK_STATE_ACTIVE;
+    pRXWindowTask->startTime = 0;
+    pRXWindowTask->anchorPoint = 0;
+    pRXWindowTask->setup = NULL;
+    pRXWindowTask->rfEvents = 0;
+
+    // link the rx window command to the Fs command
+    sdaaFsRfCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&sdaaRxWindowCmd;
+#endif //USE_RCL
+    return( LL_STATUS_SUCCESS );
+}
+
+
+/*********************************************************************
+ * @fn      llBleToRfChannel
+ *
+ * @brief   This function used to convert BLE channel to RF channel.
+ *          The conversion will be convert according to this table:
+ *          BLE channel         ->          RF channel
+ *          0, 1, .. 10         ->          2404, 2406, ... 2424
+ *          11, 12, ..36        ->          2428, 2430, ... 2479
+ *
+ * input parameters
+ *
+ * @param   bleChannel          -   channel in range 0 - 36 to be convert.
+ *
+ * output parameters
+ *
+ * @param   None
+ *
+ * @return  rf Channel in MHZ units.
+ */
+uint16 llBleToRfChannel(uint8 bleChannel)
+{
+    // number of adv channel before the current channel
+    uint8 numOfAdvChan = 0;
+
+    // set the rf Channel to th base rf channel
+    uint16 rfChannel = LL_FIRST_RF_CHAN_FREQ; // 2402 MHz
+
+    // verify that the channal is valid
+    if (bleChannel < LL_TOTAL_NUM_RF_CHAN)
+    {
+        // there is 1 adv channel before the 0-10 BLE channels
+        if (rfChannel < LL_BLE_CHANNEL_11)
+        {
+            numOfAdvChan = LL_ONE_ADV_CHANNEL;
+        }
+
+        // there is 2 adv channel before the 0-10 BLE channels
+        else
+        {
+            numOfAdvChan = LL_TWO_ADV_CHANNEL;
+        }
+
+        // add the difference between the first and current RF channels to
+        // to the base rf channel
+        rfChannel += (bleChannel + numOfAdvChan) * LL_RF_FREQ_HOP;
+    }
+
+    return rfChannel;
+}

@@ -27,6 +27,7 @@
  */
 
 #include "bcomdef.h"
+#include "hal_mcu.h"
 #ifndef USE_RCL
 #include <ti/drivers/rf/RF.h>
 #include "rf_api.h"
@@ -34,20 +35,20 @@
 #else
 #include <ti/drivers/rcl/commands/ble5.h>
 #endif
-#include "../../ll/inc/ble.h"
+#include "ble.h"
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
-#include "../../ll/inc/ble_isr.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_rat.h"
+#include "ble_isr.h"
+#include "ll.h"
+#include "ll_common.h"
+#include "ll_enc.h"
+#include "ll_config.h"
+#include "ll_rat.h"
 #include "hci_event.h"
-#include "../../ll/inc/ll_privacy.h"
+#include "ll_privacy.h"
 #include "icall.h"
 #include "hal_gpio_wrapper.h"
-#include "../../ll/inc/ll_ae.h"
+#include "ll_ae.h"
 //
 #include "rom_jt.h"
 
@@ -89,6 +90,8 @@ extern RF_CmdHandle rfCmdHandle;
 extern rfOpCmd_runImmedCmd_t fwParDtmCmd;
 #endif
 
+extern sortedAdv_t *pNextAdvSet;
+
 void LL_TxDoneCback( void );
 void LL_TxEntryDoneCback( void );
 void LL_RxEmptyCback( void );
@@ -99,10 +102,13 @@ uint32_t LL_LastCmdDoneCback( void );
 void LL_DoorbellErrorCback( void );
 uint32_t LL_AbortedCback( uint8 );
 void llCmdStartedEventHandle( void );
+void llRecordTxUsage( void );
+void llHandleSDAALastCmdDone( void );
 
 #ifdef USE_RCL
 void LL_rclAdvRxEntryDone( void );
 void LL_rclScanRxEntryDone( void );
+void LL_rclAdvTxFinished( void);
 void LL_rclInitRxEntryDone( void );
 void LL_rclUpdateExtAl( RCL_FilterList *filterList,
                      uint16 flags,
@@ -171,6 +177,8 @@ void LL_rclRescheduleCommand(RCL_Command *cmd)
 /*******************************************************************************
  * This is the common RCL callback used for advertise command.
  *
+ * @Design: BLE_LOKI-1453
+ *
  */
 void LL_rclAdvCallback(RCL_Command *cmd,
                     LRF_Events lrfEvents,
@@ -191,6 +199,11 @@ void LL_rclAdvCallback(RCL_Command *cmd,
     llCmdStartedEventHandle();
   }
 
+  if ( events.txBufferFinished )
+  {
+    LL_rclAdvTxFinished();
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Rx Entry Done
   //////////////////////////////////////////////////////////////////////////////
@@ -198,7 +211,7 @@ void LL_rclAdvCallback(RCL_Command *cmd,
   {
     if (lrfEvents.rxOk)
     {
-      LL_rclAdvRxEntryDone();
+      MAP_LL_rclAdvRxEntryDone();
     }
   }
 
@@ -231,6 +244,141 @@ void LL_rclAdvRxEntryDone( void )
   uint8    sendReq = TRUE;
 
   // Get MultiBuffer
+  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
+  {
+    RCL_MultiBuffer_ListInfo_init(&listInfo,&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+  }
+  else
+  {
+#ifdef USE_AE
+    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+#endif
+  }
+  rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
+
+  if( rxEntry != NULL )
+  {
+    // Get the LL PDU header
+    pPkt = LL_GET_PDU_HEADER(rxEntry->data, rxEntry->numPad);
+
+    // Note: LL_PKT_TYPE_SCAN_REQ and LL_PKT_TYPE_AUX_SCAN_REQ have the same value.
+    if ( LL_SCAN_REQ_PDU( *pPkt ) )
+    {
+      MAP_osal_memcpy( peerAddr, &pPkt[2], B_ADDR_LEN );
+      peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pPkt);
+
+      // check if the ScanA is an RPA
+      if ( MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr ) )
+      {
+        uint8 rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
+
+        // Check filter policy
+        if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
+             (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
+        {
+          // see if the Peer Address resolved
+          if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
+          {
+            // check if resolved RPA's ID is in the AL
+            if ( MAP_AL_FindEntry( alTable,
+                                   resolvingList[rlIndex].idAddr,
+                                   resolvingList[rlIndex].idAddrType ) != alTable->numAlEntries )
+            {
+              // update the peer RPA in the extended accept list table
+              MAP_LL_PRIV_UpdateExtALEntry( alTable,
+                                            resolvingList[rlIndex].RPA,
+                                            peerAddr );
+
+              // update RL RPA for this peer with ScanA
+              MAP_osal_memcpy( resolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
+              MAP_osal_memcpy( peerAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN);
+            }
+            else
+            {
+              sendReq = FALSE;
+            }
+          }
+          else
+          {
+            // We didn't find this peer in the resolving list and we are using accept lists
+            sendReq = FALSE;
+          }
+        }
+        else
+        {
+          // see if the Peer Address resolved
+          if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
+          {
+            // Update the RPA in the resolving list
+            MAP_osal_memcpy( resolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
+            // it is, so use ID address and address type
+            peerAddrType = resolvingList[rlIndex].idAddrType | LL_DEV_ADDR_TYPE_ID_MASK;
+            MAP_osal_memcpy( peerAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN );
+          }
+        }
+      }
+      // check if there's a register callback and if a Scan Request Report is needed
+      if (( MAP_llCheckCBack(LL_CBACK_EXT_SCAN_REQ_RECEIVED) == FALSE) ||
+          (( pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_SCAN_REQUEST ) == 0) )
+      {
+         sendReq = FALSE;
+      }
+
+      if ( sendReq )
+      {
+        aeScanReqReceived_t *scanReqRpt;
+
+        // Use allocLimited to avoid overflowing the heap...
+        scanReqRpt = MAP_osal_mem_allocLimited( sizeof(aeScanReqReceived_t) );
+
+        // check if we got the memory
+        if ( scanReqRpt )
+        {
+          scanReqRpt->subCode      = AE_ADV_HCI_BLE_SCAN_REQUEST_RECEIVED_EVENT;
+          scanReqRpt->handle       = aeCurHandle;
+          scanReqRpt->scanAddrType = peerAddrType;
+          scanReqRpt->channel      = GET_CHANNEL_IDX(RCL_BLE5_getRxChannel(rxEntry));
+          scanReqRpt->rssi         = RCL_BLE5_getRxRssi(rxEntry);
+
+          MAP_osal_memcpy( scanReqRpt->scanAddr, peerAddr, B_ADDR_LEN );
+          MAP_llExtAdvCBack( LL_CBACK_EXT_SCAN_REQ_RECEIVED, (void *)scanReqRpt );
+        }
+        else // out of memory
+        {
+          MAP_llExtAdvCBack( LL_CBACK_OUT_OF_MEMORY, NULL );
+        }
+      }
+
+      // We are finished with handling the scan request. Remove it from the RX queue
+      rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
+    }
+  }
+}
+
+/*******************************************************************************
+ * This function is used by LL_rclAdvCallback to handle reception of SCAN_REQ packets
+ * In case a callback was registered by the application, it will be called
+ * This function using with dynamic filter list
+ */
+void LL_rclAdvRxEntryDoneDFL( void )
+{
+  RCL_Buffer_DataEntry      *rxEntry;
+  RCL_MultiBuffer_ListInfo  listInfo;
+  privTestflags_t           policyTests = POLICY_NO_FAILED_TEST;
+  privTestflags_t           testResults = POLICY_NO_FAILED_TEST;
+  dynamicFL_t               *pDynamicFL = NULL;
+  rankDynamicFL_t           *pRankFLTable = NULL;
+  rlEntry_t                 *pResolvingList = NULL;
+  uint8                     rpaTypeAddr = FALSE;
+
+  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
+  uint8    *pPkt;
+  uint8    peerAddrType;
+  uint8    peerAddr[B_ADDR_LEN];
+  uint8    sendReq = TRUE;
+  uint8    rlIndex = INVALID_RESOLVE_LIST_INDEX;
+
+  // Get MultiBuffer
   RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
 
@@ -239,85 +387,107 @@ void LL_rclAdvRxEntryDone( void )
 
   if ( LL_SCAN_REQ_PDU( *pPkt ) )
   {
-    MAP_osal_memcpy( peerAddr, &pPkt[2], B_ADDR_LEN );
+    (void)MAP_osal_memcpy( peerAddr, &pPkt[2], B_ADDR_LEN );
     peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pPkt);
 
-    // check if the ScanA is an RPA
-    if ( MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr ) )
+    // check if the InitA is an RPA address type
+    if ( (MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr )) != TRUE )
     {
-      uint8 rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
+      rpaTypeAddr = TRUE;
 
-      // Check filter policy
-      if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
-           (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
+      // Get resolving List pointer
+      pResolvingList = LL_PRIV_GetResolvingList();
+
+      // Get resolving list entry index
+      rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, pResolvingList );
+
+      // set test flag of address resolution enable
+      SET_ADDRESS_RESOLUTION_TEST( policyTests );
+    }
+    else
+    {
+      // set test flag of privacy mode and IRK validation
+      SET_DPM_OR_INVALID_IRK_TEST( policyTests );
+    }
+    // Check advetiser filter policy
+    if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
+         (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
+    {
+      // set test flag of existance in accept list
+      SET_ADDRESS_IN_ACCEPT_LIST_TEST( policyTests );
+
+      if(rpaTypeAddr == UTRUE)
       {
-        // see if the Peer Address resolved
+        // The RPA address shall be resolvable only when using accept list filter
+        SET_RESOLVABLE_RPA_TEST( policyTests );
+      }
+    }
+    // check all the required test to determine whether to approve the packet
+    // or not
+    testResults = LL_PRIV_PrivacyPolicyTests( peerAddr,
+                                              peerAddrType,
+                                              rlIndex,
+                                              policyTests );
+
+    if ( testResults == POLICY_NO_FAILED_TEST )
+    {
+      // Get pointer to the dynamic filter list
+      pDynamicFL = LL_DFL_GetDynamicFilterlist();
+      pRankFLTable = LL_DFL_GetRankTable();
+
+      if ( rpaTypeAddr == UTRUE )
+      {
         if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
         {
-          // check if resolved RPA's ID is in the AL
-          if ( MAP_AL_FindEntry( alTable,
-                                 resolvingList[rlIndex].idAddr,
-                                 resolvingList[rlIndex].idAddrType ) != alTable->numAlEntries )
-          {
-            // update the peer RPA in the extended accept list table
-            MAP_LL_PRIV_UpdateExtALEntry( alTable,
-                                          resolvingList[rlIndex].RPA,
-                                          peerAddr );
+          // update the peer RPA in the dynamic filter list table
+          (void)LL_DFL_UpdateEntry( pDynamicFL,
+                              pRankFLTable,
+                              pResolvingList[rlIndex].RPA,
+                              peerAddr );
 
-            // update RL RPA for this peer with ScanA
-            MAP_osal_memcpy( resolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
-            MAP_osal_memcpy( peerAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN);
-          }
-          else
-          {
-            sendReq = FALSE;
-          }
-        }
-        else
-        {
-          // We didn't find this peer in the resolving list and we are using accept lists
-          sendReq = FALSE;
+          // update RL RPA for this peer with ScanA
+          (void)MAP_osal_memcpy( pResolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
+          (void)MAP_osal_memcpy( peerAddr, pResolvingList[rlIndex].idAddr, B_ADDR_LEN);
+
+          // it is, so use ID address and address type
+          peerAddrType = pResolvingList[rlIndex].idAddrType | LL_DEV_ADDR_TYPE_ID_MASK;
         }
       }
       else
       {
-        // see if the Peer Address resolved
-        if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-        {
-          // Update the RPA in the resolving list
-          MAP_osal_memcpy( resolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
-          // it is, so use ID address and address type
-          peerAddrType = resolvingList[rlIndex].idAddrType | LL_DEV_ADDR_TYPE_ID_MASK;
-          MAP_osal_memcpy( peerAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN );
-        }
+        (void)LL_DFL_AddEntry( pDynamicFL, pRankFLTable, peerAddr, peerAddrType);
       }
+    }
+    else
+    {
+      sendReq = FALSE;
     }
 
     // check if there's a register callback and if a Scan Request Report is needed
-    if (( MAP_llCheckCBack(LL_CBACK_EXT_SCAN_REQ_RECEIVED) == FALSE) ||
-        (( pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_SCAN_REQUEST ) == 0) )
+    if (( MAP_llCheckCBack(LL_CBACK_EXT_SCAN_REQ_RECEIVED) == UFALSE) ||
+        (( pAdvSet->pAdvParam->notifyEnableFlags & (uint8)AE_NOTIFY_ENABLE_SCAN_REQUEST ) == UFALSE) )
     {
        sendReq = FALSE;
     }
 
-    if ( sendReq )
+    if ( sendReq == UTRUE )
     {
-      aeScanReqReceived_t *scanRequestRpt;
+      aeScanReqReceived_t *scanReqRpt;
 
       // Use allocLimited to avoid overflowing the heap...
-      scanRequestRpt = MAP_osal_mem_allocLimited( sizeof(aeScanReqReceived_t) );
+      scanReqRpt = MAP_osal_mem_allocLimited( sizeof(aeScanReqReceived_t) );
 
       // check if we got the memory
-      if ( scanRequestRpt )
+      if ( scanReqRpt != NULL )
       {
-        scanRequestRpt->subCode      = AE_ADV_HCI_BLE_SCAN_REQUEST_RECEIVED_EVENT;
-        scanRequestRpt->handle       = aeCurHandle;
-        scanRequestRpt->scanAddrType = peerAddrType;
-        scanRequestRpt->channel      = GET_CHANNEL_IDX(RCL_BLE5_getRxChannel(rxEntry));
-        scanRequestRpt->rssi         = RCL_BLE5_getRxRssi(rxEntry);
+        scanReqRpt->subCode      = AE_ADV_HCI_BLE_SCAN_REQUEST_RECEIVED_EVENT;
+        scanReqRpt->handle       = aeCurHandle;
+        scanReqRpt->scanAddrType = peerAddrType;
+        scanReqRpt->channel      = GET_CHANNEL_IDX(RCL_BLE5_getRxChannel(rxEntry));
+        scanReqRpt->rssi         = RCL_BLE5_getRxRssi(rxEntry);
 
-        MAP_osal_memcpy( scanRequestRpt->scanAddr, peerAddr, B_ADDR_LEN );
-        MAP_llExtAdvCBack( LL_CBACK_EXT_SCAN_REQ_RECEIVED, (void *)scanRequestRpt );
+        (void)MAP_osal_memcpy( scanReqRpt->scanAddr, peerAddr, B_ADDR_LEN );
+        MAP_llExtAdvCBack( LL_CBACK_EXT_SCAN_REQ_RECEIVED, (void *)scanReqRpt );
       }
       else // out of memory
       {
@@ -326,11 +496,103 @@ void LL_rclAdvRxEntryDone( void )
     }
   }
 }
+
+
+/*******************************************************************************
+ * This function is used by LL_rclAdvCallback to manage the command TX queue
+ *
+ */
+void LL_rclAdvTxFinished( void)
+{
+  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
+
+  if ( pAdvSet == NULL )
+  {
+    return;
+  }
+
+#ifdef USE_AE
+  // only non-legacy allowed for this ISR
+  if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
+  {
+    aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
+    uint8 remFrag = 0;
+    uint8 auxChainExtHdrSize;
+    uint8 payloadLen;
+    uint8 auxChainHdrFlags = pAdvSet->auxHdrFlags;
+
+    // Check if we have a chain
+    if ( pAdvSet->numFrags > 1 )
+    {
+      // Calculate the number of the packets still needed to be added to the TX queue
+      remFrag = pAdvSet->numFrags - (pAdvSet->txCount + 1);
+    }
+
+      // only scannable and NC/NS modes send AUX_CHAIN_IND
+      // and will enter this section
+      if ( remFrag )
+      {
+        // advance the pointer
+        pRf->comPkt.pAdvData += pAdvSet->fragLen;
+        pRf->comPkt.advDataLen = pAdvSet->fragLen;
+
+        // AUX_CHAIN_IND pkt is not permitted to send ADV A or Target A
+        CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_ADVA );
+        CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_TARGETA );
+
+        // check if the next fragment will be the last fragment
+        if ( remFrag == 1 )
+        {
+          // Clear AuxPtr
+          CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_AUXPTR );
+
+          // Setup last fragment length
+          pRf->comPkt.advDataLen = pAdvSet->lastFragLen;
+        }
+        else
+        {
+          // Add auxPtr because its not the last pkt
+          // we need to make sure its set because in scannable and
+          // connectable mode this flag was cleared in AUX_ADV_IND pkt
+          SET_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_AUXPTR );
+        }
+
+        // Tx power is optional. add Tx Power if asked by App
+        if(TST_AE_PROPS_TX_PWR(pAdvSet->pAdvParam->eventProps) == UTRUE)
+        {
+          SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TXPWR);
+        }
+        // Build AUX_CHAIN_IND packet and add it to the command TX queue
+        MAP_llSetupExtHdr(pAdvSet, auxChainHdrFlags, 0 );
+        auxChainExtHdrSize = MAP_llGetExtHdrLen( auxChainHdrFlags );
+        payloadLen = 1 + auxChainExtHdrSize + pRf->comPkt.advDataLen;
+        pRf->comPkt.extHdrFlags = auxChainHdrFlags;
+        // AUX_CHAIN_IND pkt is needed to be sent as NC/NS mode
+        SET_ADV_MODE( pAdvSet->extHdrInfo,
+                      AE_ADV_MODE_NONCONN_NONSCAN );
+        /* No need to check the status. If an error occured the RCL will not have another
+         * packet in the chain to transmit and it will finish the advertiser command.
+         * A new command will be prepared in llExtAdv_PostProcess */
+        (void)MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_CHAIN_IND, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+
+        // if scannable mode change the state back to scannable
+        if (TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps))
+        {
+          SET_ADV_MODE( pAdvSet->extHdrInfo,
+                        AE_ADV_MODE_SCANNABLE );
+        }
+      }
+    pAdvSet->txCount++;
+  }
+#endif // USE_AE
+}
 #endif // (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************
  * This is the common RCL callback used for scan command.
+ *
+ * @Design: BLE_LOKI-1455
  *
  */
 void LL_rclScanCallback(RCL_Command *cmd,
@@ -388,13 +650,31 @@ void LL_rclScanRxEntryDone( void )
   RCL_MultiBuffer_ListInfo listInfo;
   RCL_MultiBuffer_ListInfo_init(&listInfo, &extScanParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
-  pAdvPkt = (uint8 *)&rxEntry->data[2];
+  pAdvPkt = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
 
-  // copy addresses so there's no race condition or overwrite
-  MAP_osal_memcpy( peerAddr, &pAdvPkt[LL_PKT_HDR_LEN], B_ADDR_LEN );
+  // Extended advertising
+  if (LL_ADV_EXT_IND_PDU( *pAdvPkt ))
+  {
+    // check if there's a peer address
+    if ( TST_EXTHDR_FLAG(pAdvPkt[LL_PKT_HDR_LEN+AE_EXT_HDR_LEN_SIZE], EXTHDR_FLAG_ADVA) )
+    {
+      // copy addresses so there's no race condition or overwrite
+      MAP_osal_memcpy( peerAddr,
+                       &pAdvPkt[LL_PKT_HDR_LEN+AE_EXT_HDR_LEN_SIZE+AE_EXT_HDR_FLAGS_SIZE],
+                       B_ADDR_LEN );
+      // copy address types
+      peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pAdvPkt);
 
-  // copy address types
-  peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pAdvPkt);
+    }
+  }
+  else // Legacy
+  {
+    // copy addresses so there's no race condition or overwrite
+    MAP_osal_memcpy( peerAddr, &pAdvPkt[LL_PKT_HDR_LEN], B_ADDR_LEN );
+
+    // copy address types
+    peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pAdvPkt);
+  }
 
   //  According to the spec Core5.4 Vol6 Part B 4.7 RESOLVING LIST -
   //  when network privacy mode is used: the Controller shall only
@@ -410,9 +690,9 @@ void LL_rclScanRxEntryDone( void )
           (resolvingList[rlIndex].privMode == LL_NETWORK_PRIVACY_MODE) &&
           (!MAP_LL_PRIV_IsZeroIRK( resolvingList[rlIndex].IRK)))
       {
-          // This advertising report should be ignored, so remove the packet from the RX queue
-          rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
-          return;
+        // This advertising report should be ignored, so remove the packet from the RX queue
+        rxEntry = RCL_MultiBuffer_RxEntry_get(&extScanParam.rxBuffers, NULL);
+        return;
       }
   }
   MAP_llProcessExtScanRxFIFO();
@@ -423,6 +703,8 @@ void LL_rclScanRxEntryDone( void )
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 /*******************************************************************************
  * This is the common RCL callback used for init command.
+ *
+ * @Design: BLE_LOKI-1468
  *
  */
 void LL_rclInitCallback(RCL_Command *cmd,
@@ -475,7 +757,13 @@ void LL_rclInitRxEntryDone( void )
   RCL_MultiBuffer_ListInfo listInfo;
   RCL_MultiBuffer_ListInfo_init(&listInfo, &extInitParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
-  pAdvPkt = (uint8 *)&rxEntry->data[2];
+  pAdvPkt = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
+  if(LL_AUX_PDU( *pAdvPkt) && !TST_EXTHDR_FLAG(pAdvPkt[LL_PKT_HDR_LEN +
+                                                       AE_EXT_HDR_LEN_SIZE],
+                                                         EXTHDR_FLAG_ADVA))
+  {
+    rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
+  }
 
   RCL_Ble5_RxPktStatus rclStatus = RCL_BLE5_getRxStatus(rxEntry);
   if ( rclStatus.ignoredRpa )
@@ -483,18 +771,31 @@ void LL_rclInitRxEntryDone( void )
     // This is an ignored advertising report and thus not containing the advertising
     // report a connect_ind was sent on so remove the packet from the RX queue
     rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
-    MAP_osal_memcpy( peerAddr, &pAdvPkt[LL_PKT_HDR_LEN], B_ADDR_LEN );
     peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pAdvPkt);
 
     if ( LL_ADV_IND_PDU( *pAdvPkt ) ||
          LL_ADV_DIRECT_IND_PDU( *pAdvPkt ) )
     {
+      MAP_osal_memcpy( peerAddr, &pAdvPkt[LL_PKT_HDR_LEN], B_ADDR_LEN );
       // check if there is an InitA address
       if ( LL_ADV_DIRECT_IND_PDU( *pAdvPkt ) )
       {
         // copy addresses so there's no race condition or overwrite
         MAP_osal_memcpy( ownAddr, &pAdvPkt[LL_PKT_HDR_LEN+B_ADDR_LEN], B_ADDR_LEN );
 
+        // copy address types
+        ownAddrType = LL_ADV_HDR_GET_RX_ADD( *pAdvPkt );
+      }
+    }
+    // Checks if it's an AE packet
+    else if(LL_AUX_PDU( *pAdvPkt))
+    {
+      MAP_osal_memcpy( peerAddr, &pAdvPkt[AE_AUX_ADVA_INDEX], B_ADDR_LEN );
+      if ( LL_ADV_DIRECT_IND_PDU( *pAdvPkt ) )
+      {
+        // copy addresses so there's no race condition or overwrite
+        MAP_osal_memcpy( ownAddr, &pAdvPkt[AE_AUX_TARGETA_INDEX ],
+                         B_ADDR_LEN );
         // copy address types
         ownAddrType = LL_ADV_HDR_GET_RX_ADD( *pAdvPkt );
       }
@@ -679,6 +980,8 @@ void LL_rclInitRxEntryDone( void )
 /*******************************************************************************
  * This is the common RCL callback used for peripheral command.
  *
+ * @Design: BLE_LOKI-1470
+ *
  */
 void LL_rclPeripheralCallback(RCL_Command *cmd,
                      LRF_Events lrfEvents,
@@ -690,6 +993,12 @@ void LL_rclPeripheralCallback(RCL_Command *cmd,
     LL_rclRescheduleCommand(cmd);
     return;
   }
+  else
+  {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
+  }
   //////////////////////////////////////////////////////////////////////////////
   // Tx_Entry_Done
   //////////////////////////////////////////////////////////////////////////////
@@ -699,6 +1008,12 @@ void LL_rclPeripheralCallback(RCL_Command *cmd,
     llConnState_t *connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
 
     MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_TX_ISR );
+  }
+  else
+  {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -714,12 +1029,22 @@ void LL_rclPeripheralCallback(RCL_Command *cmd,
     {
       MAP_llRxEntryDoneEventHandleStateConnection( TRUE );
     }
+    else
+    {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
+    }
   }
   //////////////////////////////////////////////////////////////////////////////
   // Last Command Done
   //////////////////////////////////////////////////////////////////////////////
   if ( events.lastCmdDone )
   {
+    // Check if there are anymore pakcets in the RX queue that needed to be processed
+    (void)MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
+
+    // Call last command done handling
     MAP_llLastCmdDoneEventHandleStatePeripheral();
   }
 
@@ -728,6 +1053,8 @@ void LL_rclPeripheralCallback(RCL_Command *cmd,
 
 /*******************************************************************************
  * This is the common RCL callback used for central command.
+ *
+ * @Design: BLE_LOKI-1470
  *
  */
 void LL_rclCentralCallback(RCL_Command *cmd,
@@ -764,12 +1091,22 @@ void LL_rclCentralCallback(RCL_Command *cmd,
     {
       MAP_llRxEntryDoneEventHandleStateConnection( TRUE );
     }
+    else
+    {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
+    }
   }
   //////////////////////////////////////////////////////////////////////////////
   // Last Command Done
   //////////////////////////////////////////////////////////////////////////////
   if ( events.lastCmdDone )
   {
+    // Check if there are anymore pakcets in the RX queue that needed to be processed
+    (void)MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
+
+    // Call last command done handling
     MAP_llLastCmdDoneEventHandleStateCentral();
   }
 
@@ -965,6 +1302,9 @@ void rfPUpCallback( RF_Handle    rfHandle,
 
       }
     }
+
+    // Override the pRpaCfg address after power cycle
+    HWREG(CM0_RAM_RPA_CFG_ADDR) = pRpaCfg;
 #else
 #ifdef DEBUG_SW_TRACE
   // enable RF trace output for FPGA
@@ -1036,6 +1376,8 @@ void rfCallback( RF_Handle    rfHandle,
   //////////////////////////////////////////////////////////////////////////////
   if ( events & RF_EventTxDone )
   {
+    //Record Tx Usage if needed by specific module
+    llRecordTxUsage();
     LL_TxDoneCback();
   }
 
@@ -1097,6 +1439,8 @@ void rfCallback( RF_Handle    rfHandle,
   //////////////////////////////////////////////////////////////////////////////
   if ( (events & RF_EventCmdDone) || (events & RF_EventLastCmdDone) )
   {
+    // when SDAA module is enabled, this function analyze the tx consumption stat
+    MAP_LL_SDAA_HandleSDAALastCmdDone();
     LL_LastCmdDoneCback();
   }
 
@@ -1325,6 +1669,14 @@ uint32_t LL_LastCmdDoneCback( void )
       MAP_llLastCmdDoneEventHandleStateTest();
       break;
 
+    // when SDAA module enable, RX window event create to monitor the channels noise level
+    case LL_STATE_SDAA_RX_WINDOW:
+    {
+        taskEndAction = MAP_llScheduler;
+        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+        break;
+    }
+
     default:
       // Sanity Check:
       // This is a fatal error as either the status doesn't make any
@@ -1489,32 +1841,31 @@ void LL_RxEmptyCback( void )
 ////////////////////////////////////////////////////////////////////////////////
 uint8 getNumFinishedEntries( dataEntryQ_t *pRxQ )
 {
-  dataEntry_t *pStart;
-  dataEntry_t *pNext;
+  uint8 i = 0;
   uint8 numFinishedEntries = 0;
+  dataEntry_t   *pDataEntryTemp;
 
-  // get current pointer to ring buffer
-  pStart = pNext = pRxQ->pCurEntry;
-
-  // disconnect the ring buffer to prevent CM0 processing
-  pRxQ->pCurEntry = NULL;
-
-  // count finished entries
-  do
+  // Get the next data entry
+  pDataEntryTemp = MAP_RFHAL_GetNextDataEntry( pRxQ );
+  if ( pDataEntryTemp == NULL )
   {
-    if (pNext->status == DATASTAT_FINISHED)
+    return 0;
+  }
+
+  // Check the number of consecutive RX buffers that are finished
+  for (i = 0; i < NUM_RX_DATA_ENTRIES; i++)
+  {
+    if (pDataEntryTemp->status == DATASTAT_FINISHED)
     {
       numFinishedEntries++;
+      pDataEntryTemp = pDataEntryTemp->pNextEntry;
     }
-
-    // on to next buffer in ring
-    pNext = pNext->pNextEntry;
-
-    // check if we're back to where we started
-  } while ( pNext != pStart);
-
-  // restore current pointer to ring buffer
-  pRxQ->pCurEntry = pStart;
+    else
+    {
+      // Got a buffer that isn't finished yet. Break the loop an return
+      break;
+    }
+  }
 
   return numFinishedEntries;
 }
@@ -1646,12 +1997,40 @@ void LL_RxEntryDoneCback( uint8 crcError )
 uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
 {
 #ifdef USE_RCL
-  if (((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
+  RCL_MultiBuffer_ListInfo listInfo;
+  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) != 0 )
   {
-    RCL_MultiBuffer_ListInfo listInfo;
-    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+      // check if RCL finished and ready to establish a connection
+      if (((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
+      {
+        // initate RCL Rx buffer list
+        RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+      }
+      else
+      {
+          // RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
+          return FALSE;
+      }
+  }
+#ifdef USE_AE
+  else
+  {
+      // check if RCL finished and ready to establish a connection
+      if (((aeRf_t *)pAdvSet->pRfCmds)->extRfCmd.common.status == RCL_CommandStatus_Connect)
+      {
+        // initate RCL Rx buffer list
+        RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+      }
+      else
+      {
+        // RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
+        return FALSE;
+      }
+  }
+#endif
+
     RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
-    uint8 *pData = (uint8 *)&rxEntry->data[2];
+    uint8 *pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
     uint8 rlIndexA;
     uint8 rlIndexB;
     uint8 peerAddrType;
@@ -1659,9 +2038,9 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
     uint8 *pPkt;
 
     // verify the connect indication
-    if ( MAP_llConnExists(LL_TASK_ID_CENTRAL,&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
-                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR))  ||
-         !llValidateConnectIndPkt( pData ) )
+    if ( !llValidateConnectIndPkt( pData )                                                        ||
+         (MAP_llConnExists(&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
+                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR)) == UTRUE))
     {
       // invalid connect_ind - continue with advertising
       return FALSE;
@@ -1766,10 +2145,7 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
     // 2. If a device using a Public Address was added to the Accept List then the RCL will report the CONNECT_IND and we will get here
     //    If a device using a Public Address was not added then the RCL will filter the CONNECT_IND and we will not get here anyway
     return TRUE;
-  }
-
-  // RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
-  return FALSE;
+    
 #else
   uint8 status = FALSE;
 
@@ -1809,11 +2185,11 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
       uint8 *pData = (uint8 *)(pRfCmds->advParam.pRXQ->pCurEntry) + sizeof( dataEntry_t );
 
       // verify the connect indication
-      if(MAP_llConnExists(LL_TASK_ID_CENTRAL,&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
-                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR))  ||
-         (pRfCmds->advParam.pRXQ->pCurEntry->status != DATASTAT_FINISHED)                               ||
+      if((pRfCmds->advParam.pRXQ->pCurEntry->status != DATASTAT_FINISHED)                               ||
          (pRfCmds->advOutput.nRxConnReq != 1)                                                           ||
-         (!llValidateConnectIndPkt( pData )))
+         (!llValidateConnectIndPkt( pData ))                                                            ||
+          MAP_llConnExists(&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
+                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR)))
       {
         //invalid connect_ind - continue with advertising
         // in all cases, treat the same as a Task Done Okay
@@ -1885,6 +2261,152 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
 #endif //USE_RCL
 }
 
+#ifdef USE_RCL
+////////////////////////////////////////////////////////////////////////////////
+// LastCmdDone Event Handle Connect Request - using dynamic filter list
+////////////////////////////////////////////////////////////////////////////////
+uint8 llLastCmdDoneEventHandleConnectRequestDFL( advSet_t *pAdvSet )
+{
+  uint8 connect = FALSE;
+  if (((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
+  {
+    RCL_MultiBuffer_ListInfo listInfo;
+    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+    RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
+    privTestflags_t policyTests = POLICY_NO_FAILED_TEST;
+    privTestflags_t testResults = POLICY_NO_FAILED_TEST;
+    dynamicFL_t *pDynamicFL = NULL;
+    rankDynamicFL_t *pRankFLTable = NULL;
+    rlEntry_t *pResolvingList = NULL;
+    uint8 rpaTypeAddr = FALSE;
+    uint8 *pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
+    uint8 rlIndexA = INVALID_RESOLVE_LIST_INDEX;
+    uint8 rlIndexB = INVALID_RESOLVE_LIST_INDEX;
+    uint8 peerAddrType;
+    uint8 peerAddr[B_ADDR_LEN];
+    uint8 *pPkt;
+    do
+    {
+      // verify the connect indication
+      if ( !llValidateConnectIndPkt( pData ) ||
+            (MAP_llConnExists(&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
+                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR)) == UTRUE))
+      {
+        // invalid connect_ind - continue with advertising
+        connect = FALSE;
+        break;
+      }
+
+      // Connection indication is valid, continue
+      pPkt = LL_GET_PDU_HEADER(rxEntry->data, rxEntry->numPad);
+
+      // Copy peer device address and address type
+      peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pPkt);
+      (void)MAP_osal_memcpy( peerAddr, &pPkt[2], B_ADDR_LEN );
+
+      // Check if directed advertisement
+      if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) ||
+           TST_AE_PROPS_HDC_DIR(pAdvSet->pAdvParam->eventProps) )
+      {
+        rlIndexB = MAP_LL_PRIV_IsResolvable( pAdvSet->peerAddr, resolvingList );
+        if ( rlIndexA != rlIndexB )
+        {
+          // The peer device address doesn't match the advertising
+          // parameter peer address
+          connect = FALSE;
+          break;
+        }
+      }
+
+      // check if the InitA is an RPA address type
+      if ( (MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr )) == UTRUE )
+      {
+        rpaTypeAddr = TRUE;
+
+        // Get resolving List pointer
+        pResolvingList = LL_PRIV_GetResolvingList();
+
+        // Get resolving list entry index
+        rlIndexA = MAP_LL_PRIV_IsResolvable( peerAddr, pResolvingList );
+
+        // set test flag of address resolution enable
+        SET_ADDRESS_RESOLUTION_TEST( policyTests );
+      }
+      else
+      {
+        // set test flag of privacy mode and IRK validation
+        SET_DPM_OR_INVALID_IRK_TEST( policyTests );
+      }
+      // Check advetiser filter policy
+      if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_CONNECT_IND) ||
+           (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
+      {
+        // set test flag of existance in accept list
+        SET_ADDRESS_IN_ACCEPT_LIST_TEST( policyTests );
+
+        if(rpaTypeAddr == UTRUE)
+        {
+          // The RPA address shall be resolvable only when using accept list filter
+          SET_RESOLVABLE_RPA_TEST( policyTests );
+        }
+      }
+      // check all the required test to determine whether to approve the packet
+      // or not
+      testResults = LL_PRIV_PrivacyPolicyTests( peerAddr,
+                                                peerAddrType,
+                                                rlIndexA,
+                                                policyTests );
+
+      // Verify that all the required tests passed in order to accept the packet
+      // and connect to the device
+      if ( testResults == POLICY_NO_FAILED_TEST )
+      {
+        // All the requires policy test passed, thus connect
+        connect = TRUE;
+
+        // Get pointer to the dynamic filter list
+        pDynamicFL = LL_DFL_GetDynamicFilterlist();
+        pRankFLTable = LL_DFL_GetRankTable();
+
+        if ( rpaTypeAddr == UTRUE )
+        {
+          if ( rlIndexA != INVALID_RESOLVE_LIST_INDEX )
+          {
+            // update the peer RPA in the dynamic filter list table
+            (void)LL_DFL_UpdateEntry( pDynamicFL,
+                                pRankFLTable,
+                                resolvingList[rlIndexA].RPA,
+                                peerAddr );
+
+            // update the RPA address in the resolving list entry
+            (void)MAP_osal_memcpy( resolvingList[rlIndexA].RPA, peerAddr, B_ADDR_LEN );
+            // update the identity device address of InitA device in peer address.
+            (void)MAP_osal_memcpy( peerAddr, resolvingList[rlIndexA].idAddr, B_ADDR_LEN);
+          }
+        }
+        else
+        {
+          // add the identity device address to the dynamic filter list
+          (void)LL_DFL_AddEntry( pDynamicFL, pRankFLTable, peerAddr, peerAddrType);
+        }
+      }
+      else // some of the required tests failed, thus reject conn_ind
+      {
+        connect = FALSE;
+        break;
+      }
+
+    } while (FALSE);
+  }
+
+  /* RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
+     Otherwise - connection is initiated - verify with Maxim
+  */
+  return connect;
+}
+
+#else
+#endif //USE_RCL
 ////////////////////////////////////////////////////////////////////////////////
 // Rx Ignore Event Handle Connect Request
 ////////////////////////////////////////////////////////////////////////////////
@@ -1953,6 +2475,23 @@ uint8 llRxIgnoreEventHandleConnectRequest( advSet_t *pAdvSet, uint8 *PeerA, uint
       }
     }
   }
+  else // not RPA
+  {
+    // Check if the ID address can be found in the resolving List
+    uint8 rlIndex = MAP_LL_PRIV_FindPeerInRL( resolvingList,
+                                              PeerAdd,
+                                              PeerA );
+
+    if( rlIndex != INVALID_RESOLVE_LIST_INDEX )
+    {
+      // accept peer ID for Device Privacy Mode and IRK!=0
+      if ( !( MAP_LL_PRIV_IsZeroIRK( resolvingList[rlIndex].IRK )) &&
+            ( resolvingList[rlIndex].privMode == LL_DEVICE_PRIVACY_MODE ))
+      {
+          connect = TRUE;
+      }
+    }
+  }
 
   // check if we should connect
   if ( connect )
@@ -1989,8 +2528,10 @@ uint8 llRxIgnoreEventHandleConnectRequest( advSet_t *pAdvSet, uint8 *PeerA, uint
       aeLegacyRf_t *pRfCmds = (aeLegacyRf_t *)pAdvSet->pRfCmds;
       uint8 *pData = (uint8 *)(pRfCmds->advParam.pRXQ->pCurEntry) + sizeof( dataEntry_t );
       // validate the received connection indication
-      if ((pRfCmds->advParam.pRXQ->pCurEntry->status == DATASTAT_FINISHED ) &&
-          (llValidateConnectIndPkt( pData )) )
+      if ((pRfCmds->advParam.pRXQ->pCurEntry->status == DATASTAT_FINISHED )                     &&
+          (llValidateConnectIndPkt( pData ))                                                    &&
+          (!MAP_llConnExists( &pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
+                                MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR))))
       {
         // set this flag in order to prevent handling the next RF_EventLastCmdDone interrupt
         llUnhandleNextIntFlag = TRUE;
@@ -4260,6 +4801,9 @@ uint8 llLastCmdDoneEventHandleStatePeripheral( void )
     taskEndStatus = linkCmd[llConns.currentConn].rfOpCmd.status;
   } while ((taskEndStatus & 0xFF00) == 0);
 
+  // Check if there are anymore pakcets in the RX queue that needed to be processed
+  LL_RxEntryDoneCback_allEntries(FALSE);
+
   // determine action based on command status
   switch ( taskEndStatus )
   {
@@ -4412,6 +4956,9 @@ uint8 llLastCmdDoneEventHandleStateCentral( void )
   {
     taskEndStatus = linkCmd[llConns.currentConn].rfOpCmd.status;
   } while ((taskEndStatus & 0xFF00) == 0);
+
+  // Check if there are anymore pakcets in the RX queue that needed to be processed
+  LL_RxEntryDoneCback_allEntries(FALSE);
 
   // determine action based on command status
   switch ( taskEndStatus )
@@ -4671,6 +5218,13 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
     // exclude the MIC size
     pktLen -= LL_PKT_MIC_LEN;
 
+    // This connection is already marked for termination from the previous packet process,
+    // we should not continue with the process this packet.
+    if (connPtr->termInfo.termIndRcvd == TRUE)
+    {
+      return TRUE;
+    }
+
     // decrypt/authenticate PDU
     if ( MAP_LL_ENC_Decrypt( connPtr,
                              pktHdrInfo,
@@ -4690,15 +5244,15 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
       // set flag to indicate a termination indication was received
       connPtr->termInfo.termIndRcvd = TRUE;
 
-      // ALT: Halt the radio first, then terminate the connection.
-      // MAP_llHaltRadio( CMD_ABORT );
-      // MAP_llConnTerminate( connPtr, LL_MIC_FAILURE_TERM );
+      // After decryption failure, we should stop the RPA timer and post an LL event to change the RPA properly.
+      if ( privInfo.addrResolution == LL_ENABLE_ADDR_RESOLUTION )
+      {
+        // stop timer
+        (void) MAP_osal_stop_timerEx( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
 
-      // possible problem with IRK, so force update of all RPA in RL
-#ifndef CC23X0
-      MAP_LL_PRIV_UpdateRL( resolvingList );
-#endif
-
+        // set the event
+        (void) MAP_osal_set_event( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
+      }
       return TRUE;
     }
 
@@ -4916,6 +5470,12 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
 
       // back to Idle
       llState = LL_STATE_IDLE;
+    }
+    else
+    {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
     }
   }
   else
@@ -5238,5 +5798,166 @@ uint8 llRxEntryDoneEventHandleStateTest( void )
 #endif // !CC23X0
   return TRUE;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// llRecordTxUsage
+// Note: This function is called after every RF_EventTxDone and
+//       checks whether the next send will cross the limit
+////////////////////////////////////////////////////////////////////////////////
+
+void llRecordTxUsage()
+{
+#ifndef USE_RCL
+    // if SDAA module is disable return
+    if(!MAP_LL_Is_SDAA_Enable())
+    {
+      return;
+    }
+    else
+    {
+      taskInfo_t *llTask = MAP_llGetCurrentTask();
+
+      if(llTask == NULL)
+      {
+        // Unexpected BLE state!
+        LL_ASSERT( FALSE );
+        return;
+      }
+
+      uint8 byteLength =0xFF;
+      uint8 phyType = 0xFF;
+      uint8 curChannel = 0xFF;
+#ifdef USE_PERIODIC_ADV
+      llPeriodicAdvSet_t *pPeriodicAdv;
+#endif //USE_PERIODIC_ADV
+      int8 txPower = llGetTxPower();
+      ble5OpCmd_t *currCmd  = ((ble5OpCmd_t *)llTask->command);
+      switch (llTask->taskID)
+      {
+        case LL_TASK_ID_CENTRAL:
+        case LL_TASK_ID_PERIPHERAL:
+        {
+          llConnState_t * connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
+
+          if(connPtr != NULL)
+          {
+            linkParam_t *currRFCmd = (linkParam_t *)(currCmd->pParams);
+            phyType = connPtr->phyInfo.curPhy;
+            curChannel = currCmd->chan;
+            if(currRFCmd->pTXQ != NULL && currRFCmd->pTXQ->pCurEntry != NULL)
+            {
+              byteLength = currRFCmd->pTXQ->pCurEntry->length;
+            }
+            else
+            {
+              byteLength = 0;
+            }
+          }
+          break;
+        }
+#ifdef USE_PERIODIC_ADV
+        case LL_TASK_ID_PERIODIC_ADVERTISER:
+        {
+          pPeriodicAdv = MAP_llGetCurrentPeriodicAdv();
+          byteLength = pPeriodicAdv->dataCmd.dataLen;
+          curChannel = pPeriodicAdv->currentChan;
+          phyType = pPeriodicAdv->phy;
+          break;
+        }
+#endif //USE_PERIODIC_ADV
+        case LL_TASK_ID_ADVERTISER:
+        {
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+#ifdef USE_AE
+          if(TST_AE_PROPS_LEGACY(pNextAdvSet->AdvEntry->pAdvParam->eventProps) == FALSE)
+          {
+            // extended Adv
+            byteLength = pNextAdvSet->AdvEntry->dataLen;
+            curChannel = pNextAdvSet->AdvEntry->auxChanIndex;
+            phyType = pNextAdvSet->AdvEntry->pAdvParam->secPhy;
+          }
+#endif //USE_AE
+#endif // ADV_NCONN_CFG | ADV_CONN_CFG
+          break;
+        }
+        default:
+          break;
+      }
+      if(curChannel != 0xFF)
+      {
+        MAP_LL_SDAA_RecordTxUsage(byteLength, phyType, txPower, curChannel);
+      }
+    }
+
+#endif //USE_RCL
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// llHandleSDAALastCmdDone
+// Note: This function is called after every RF_EventLastCmdDone and
+//       handle SDAA record dwell time and combine TX queue if is neccessry
+////////////////////////////////////////////////////////////////////////////////
+void llHandleSDAALastCmdDone()
+{
+
+  // if SDAA module is disable return
+  if(!MAP_LL_Is_SDAA_Enable())
+  {
+    return;
+  }
+  else
+  {
+#ifndef USE_RCL
+    taskInfo_t *llTask = MAP_llGetCurrentTask();
+    llConnState_t* connPtr = NULL;
+    if(llTask == NULL)
+    {
+      // Unexpected BLE state!
+      LL_ASSERT( FALSE );
+      return;
+    }
+
+    switch (llTask->taskID)
+    {
+      case LL_TASK_ID_CENTRAL:
+      case LL_TASK_ID_PERIPHERAL:
+      {
+        connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
+
+        if(connPtr != NULL)
+        {
+          ble5OpCmd_t * rfCmd = (ble5OpCmd_t *)llTask->command;
+          linkParam_t * pParam = (linkParam_t *)rfCmd->pParams;
+
+          //If the TX queue is split - merge it
+          if(pParam->pTXQ == NULL)
+          {
+            pParam->pTXQ = connPtr->pTxDataEntryQ;
+          }
+
+          MAP_LL_SDAA_AddDwtRecord(MAP_llGetCurrentTime()-llTask->startTime, llTask->taskID ,connPtr->connId);
+        }
+        break;
+      }
+      case LL_TASK_ID_PERIODIC_ADVERTISER:
+      {
+        MAP_LL_SDAA_AddDwtRecord(MAP_llGetCurrentTime()-llTask->startTime, llTask->taskID ,0);
+        break;
+      }
+      case LL_TASK_ID_ADVERTISER:
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+        if(TST_AE_PROPS_LEGACY(pNextAdvSet->AdvEntry->pAdvParam->eventProps) == FALSE)
+        {
+          MAP_LL_SDAA_AddDwtRecord(MAP_llGetCurrentTime()-llTask->startTime,llTask->taskID, 0);
+          break;
+        }
+#endif // ADV_NCONN_CFG | ADV_CONN_CFG
+        default:
+          break;
+    }
+#endif //USE_RCL
+  }
+}
+
 /*******************************************************************************
  */

@@ -19,13 +19,13 @@
  * INCLUDES
  */
 
-#include "../../ll/inc/ll_scheduler.h"
-
-#include "../../ll/inc/ll_ae.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_privacy.h"
-#include "../../ll/inc/ll_rat.h"
+#include "ll_common.h"
+#include "ll_scheduler.h"
 #include "hal_mcu.h"
+#include "ll_privacy.h"
+#include "ll_rat.h"
+#include "ll_ae.h"
+#include <ti/bleapp/health_toolkit/inc/debugInfo_errno.h>
 #ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #endif //USE_RCL
@@ -66,6 +66,8 @@ extern void LL_rclRescheduleCommand(RCL_Command *cmd);
 
 // BLE Tasks
 taskList_t llTaskList;
+// sdaa task
+taskInfo_t *pRXWindowTask = NULL;
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG | SCAN_CFG))
 
@@ -155,7 +157,6 @@ void llSchedulerInit( void )
   return;
 }
 
-
 /*******************************************************************************
  * @fn          llScheduler
  *
@@ -182,6 +183,7 @@ void llSchedulerInit( void )
  */
 void llScheduler( void )
 {
+  uint8      startTypeSDAA;
   taskInfo_t *curTask = llTaskList.curTask;
 
   // check if there's nothing left to do
@@ -204,6 +206,7 @@ void llScheduler( void )
     case LL_TASK_ID_INITIATOR:
     case LL_TASK_ID_PERIODIC_ADVERTISER:
     case LL_TASK_ID_PERIODIC_SCANNER:
+    case LL_TASK_ID_RX_WINDOW:
     {
       // Sanity Check:
       // Fatal error - Not possible to have no active tasks at this point.
@@ -280,9 +283,38 @@ void llScheduler( void )
           startType = MAP_llFindStartType( nextSecTask, nextConnTask );
         }
 
+        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
+                // therefore llScheduler() will finish here. The function will return the
+                // new start type of next task which can be change when the next channel
+                // is blocked or there isn't sufficient time to schedule RX window for
+                // overloaded channel.
+                // This function can split the TX queue of connection if there
+                // is no time for RX window. In this case the next task type will be
+                // priary task.
+                // This function may do nothing when RX window isn't neccesary or sdaa
+                // module is disable. In this case the function return start type task
+                // equal to the start type that inserted as input.
+                startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, nextSecTask, startType);
+                if(startTypeSDAA != startType)
+                {
+                    if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
+                    {
+                        return;
+                    }
+                    startType = startTypeSDAA;
+                }
+
         // check if the secondary task can start
         if ( startType != LL_SCHED_START_PRIMARY )
         {
+          if ( nextSecTask == NULL )
+          {
+             // Sanity Check:
+             // Fatal Error: Next Secondary task must be valid!
+             LL_ASSERT( FALSE );
+             return;
+          }
+
           // what we do and how we do it depends on secondary task
           switch( nextSecTask->taskID )
           {
@@ -292,7 +324,7 @@ void llScheduler( void )
               break;
 
 #ifdef USE_PERIODIC_ADV
-           case LL_TASK_ID_PERIODIC_ADVERTISER:
+            case LL_TASK_ID_PERIODIC_ADVERTISER:
               MAP_llSetTaskPeriodicAdv();
               break;
 #endif //USE_PERIODIC_ADV
@@ -355,6 +387,23 @@ void llScheduler( void )
           LL_ASSERT( nextSecTask != NULL );
           return;
         }
+
+        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
+        // therefore llScheduler() will finish here. The function will return the
+		// new start type of next task which can be change when the next channel
+		// is blocked or there isn't sufficient time to schedule RX window for
+		// overloaded channel.
+		// This function can split the TX queue of connection if there
+		// is no time for RX window. In this case the next task type will be
+		// priary task.
+		// This function may do nothing when RX window isn't neccesary or sdaa
+		// module is disable. In this case the function return start type task
+		// equal to the start type that inserted as input.
+		startTypeSDAA = MAP_llHandleSDAAControlTX(NULL, nextSecTask, LL_SCHED_START_EVENT);
+		if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
+		{
+			return;
+		}
 
         // check if the next secondary task is the current task
         if ( curTask == nextSecTask )
@@ -478,11 +527,30 @@ void llScheduler( void )
         llConnState_t *nextConnPtr  = MAP_llDataGetConnPtr( MAP_llGetNextConn() );
         taskInfo_t    *nextConnTask = nextConnPtr->llTask;
         void          *nextConnCmd  = ((void *)nextConnTask->command);
-        llConnState_t *curConnPtr   = MAP_llDataGetConnPtr( llConns.currentConn );
 
         // Set the next connection variable
         llConns.nextConn = nextConnPtr->connId;
 
+        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
+		// therefore llScheduler() will finish here. The function will return the
+		// new start type of next task which can be change when the next channel
+		// is blocked or there isn't sufficient time to schedule RX window for
+		// overloaded channel.
+		// This function can split the TX queue of connection if there
+		// is no time for RX window. In this case the next task type will be
+		// priary task.
+		// This function may do nothing when RX window isn't neccesary or sdaa
+		// module is disable. In this case the function return start type task
+		// equal to the start type that inserted as input.
+		startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, NULL, LL_SCHED_START_PRIMARY);
+		if(startTypeSDAA != LL_SCHED_START_PRIMARY)
+		{
+			if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
+			{
+				return;
+			}
+			startType = startTypeSDAA;
+		}
         if (curTask->taskID == LL_TASK_ID_PERIPHERAL)
         {
           if (MAP_llCheckPeripheralTerminate(nextConnPtr->connId) == TRUE)
@@ -541,9 +609,38 @@ void llScheduler( void )
             startType = MAP_llFindStartType( nextSecTask, nextConnTask );
           }
 
+          // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
+          // therefore llScheduler() will finish here. The function will return the
+          // new start type of next task which can be change when the next channel
+          // is blocked or there isn't sufficient time to schedule RX window for
+          // overloaded channel.
+          // This function can split the TX queue of connection if there
+          // is no time for RX window. In this case the next task type will be
+          // priary task.
+          // This function may do nothing when RX window isn't neccesary or sdaa
+          // module is disable. In this case the function return start type task
+          // equal to the start type that inserted as input.
+          startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, NULL, LL_SCHED_START_PRIMARY);
+          if(startTypeSDAA != LL_SCHED_START_PRIMARY)
+          {
+              if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
+              {
+                  return;
+              }
+              startType = startTypeSDAA;
+          }
+
           // check if the secondary task can start
           if ( startType != LL_SCHED_START_PRIMARY )
           {
+            if ( nextSecTask == NULL )
+            {
+               // Sanity Check:
+               // Fatal Error: Next Secondary task must be valid!
+               LL_ASSERT( FALSE );
+               return;
+            }
+
             // what we do and how we do it depends on secondary task
             switch( nextSecTask->taskID )
             {
@@ -600,21 +697,16 @@ void llScheduler( void )
         // before the next connection, or there are no secondary tasks;
         // either way, start next connection
 
-        // check if the next connection is different from the current one
-        // Note: This is only possible witht he Central connection.
-        if ( curConnPtr != nextConnPtr )
+        // which LL state based on role
+        // Note: Currently, Central+Peripheral combo isn't permitted, but will be
+        //       in the future, so leave this here.
+        if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
         {
-          // which LL state based on role
-          // Note: Currently, Central+Peripheral combo isn't permitted, but will be
-          //       in the future, so leave this here.
-          if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
-          {
-            MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
-          }
-          else // assume taskId == LL_TASK_ID_PERIPHERAL
-          {
-            MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
-          }
+          MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
+        }
+        else // assume taskId == LL_TASK_ID_PERIPHERAL
+        {
+          MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
         }
 
         // either way, nextConnPtr is the connection to schedule; if the current
@@ -662,60 +754,60 @@ void llScheduler( void )
             {
               nextSecCmd = MAP_llFindNextSecCmd( nextSecTask );
             }
-          }
 
-          // what we do and how we do it depends on secondary task
-          switch( nextSecTask->taskID )
-          {
+            // what we do and how we do it depends on secondary task
+            switch( nextSecTask->taskID )
+            {
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-            case LL_TASK_ID_ADVERTISER:
-              // check if we have a valid secondary command
-              if ( nextSecCmd == NULL )
-              {
-                // possible there's valid Adv task, but none are enabled
-                return;
-              }
-              MAP_llSetTaskAdv(LL_SCHED_START_UNDEF,nextSecCmd);
-              break;
+              case LL_TASK_ID_ADVERTISER:
+                // check if we have a valid secondary command
+                if ( nextSecCmd == NULL )
+                {
+                  // possible there's valid Adv task, but none are enabled
+                  return;
+                }
+                MAP_llSetTaskAdv(LL_SCHED_START_UNDEF,nextSecCmd);
+                break;
   #ifdef USE_PERIODIC_ADV
-          case LL_TASK_ID_PERIODIC_ADVERTISER:
-              // check if we have a valid secondary command
-              if ( nextSecCmd == NULL )
-              {
-                // possible there's valid Adv task, but none are enabled
-                return;
-              }
-              MAP_llSetTaskPeriodicAdv();
-              break;
+              case LL_TASK_ID_PERIODIC_ADVERTISER:
+                // check if we have a valid secondary command
+                if ( nextSecCmd == NULL )
+                {
+                  // possible there's valid Adv task, but none are enabled
+                  return;
+                }
+                MAP_llSetTaskPeriodicAdv();
+                break;
 #endif
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-            case LL_TASK_ID_SCANNER:
-              MAP_llSetTaskScan(LL_SCHED_START_UNDEF,nextSecTask,nextSecCmd,NULL);
-              break;
+              case LL_TASK_ID_SCANNER:
+                MAP_llSetTaskScan(LL_SCHED_START_UNDEF,nextSecTask,nextSecCmd,NULL);
+                break;
 #ifdef USE_PERIODIC_SCAN
-            case LL_TASK_ID_PERIODIC_SCANNER:
-              // check if we have a valid secondary command
-              if ( nextSecCmd == NULL )
-              {
-                // possible there's valid Adv task, but none are enabled
-                return;
-              }
-              MAP_llSetTaskPeriodicScan();
-              break;
+              case LL_TASK_ID_PERIODIC_SCANNER:
+                // check if we have a valid secondary command
+                if ( nextSecCmd == NULL )
+                {
+                  // possible there's valid Adv task, but none are enabled
+                  return;
+                }
+                MAP_llSetTaskPeriodicScan();
+                break;
 #endif
 #endif // SCAN_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-            case LL_TASK_ID_INITIATOR:
-              MAP_llSetTaskInit(LL_SCHED_START_UNDEF,nextSecTask,nextSecCmd,NULL);
-              break;
+              case LL_TASK_ID_INITIATOR:
+                MAP_llSetTaskInit(LL_SCHED_START_UNDEF,nextSecTask,nextSecCmd,NULL);
+                break;
 #endif // INIT_CFG
 
-            default:
-              break;
-          }  // switch on next secondary task
+              default:
+                break;
+            }  // switch on next secondary task
+          }  // if secondary task != NULL
         }  // if active secondary task
 
         // Note: No active connection or active secondary task
@@ -1547,8 +1639,9 @@ taskInfo_t *llFindNextSecTask( uint8 secTaskID )
 {
   uint32 timeGap = LL_SCHED_PRE_CUTOFF;
 
-  // check if there wasn't a previous secondary task
-  if ( secTaskID == LL_TASK_ID_NONE )
+  // check if there wasn't a previous secondary task or the previous
+  // task was RX window task
+  if ( (secTaskID == LL_TASK_ID_NONE) || (secTaskID == LL_TASK_ID_RX_WINDOW))
   {
     // check if there are any active secondary tasks
     // Note: Either the current task that ended is a secondary task, in which case
@@ -2201,7 +2294,6 @@ taskInfo_t *llAllocTask( uint8 llTaskID )
       if ( llTaskList.activeTasks != llTaskList.lastActiveTasks )
       {
         llTaskList.lastActiveTasks = llTaskList.activeTasks;
-
         if ( llUserConfig.fastStateUpdateCb != NULL )
         {
           llUserConfig.fastStateUpdateCb( llUserConfig.bleStackType,
@@ -2550,262 +2642,264 @@ void llExtAdvSchedSetup( taskInfo_t *llTask )
   // Sanity Check
   LL_ASSERT( pAdvSet != NULL );
 
+  if (( pAdvSet != NULL ) && ( llTask->taskID == LL_TASK_ID_ADVERTISER ))
+  {
 #ifdef USE_RCL
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    // check if the start time is already in the past
-    // TRUE when first param is greater than second.
-    if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
-                          ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime ) )
+    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
-      ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-      pAdvSet->advStartTime = ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime;
+      // check if the start time is already in the past
+      // TRUE when first param is greater than second.
+      if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
+                            ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime ) )
+      {
+        ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
+        pAdvSet->advStartTime = ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime;
+      }
+
+      if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
+      {
+        pAdvSet->txPowerIndex = curTxPowerVal;
+      }
+      aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
+      pRf->advCmd.txPower = pAdvSet->txPowerIndex;
     }
 
-    if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
+    // pointer to first radio operation command
+    pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
+
+    // set RF events
+    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value = LRF_EventOpError.value;
+    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventLastCmdDone.value;
+
+    // check if this is a Scannable advertisement
+    if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
     {
-      pAdvSet->txPowerIndex = curTxPowerVal;
+      ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxEmpty.value;
     }
-    aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-    pRf->advCmd.txPower = pAdvSet->txPowerIndex;
-  }
 
-  // pointer to first radio operation command
-  pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
+    // enable RxEntryDone for directed adv
+    if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
+    {
+      ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
+    }
 
-  // set RF events
-  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value = LRF_EventOpError.value;
-  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value;
+    // check if any start event is requried
+    if ( (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START) ||
+         (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_START) )
+    {
+      // enable the command started event
+      ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventCmdStarted.value;
+    }
 
-  // check if this is a Scannable advertisement
-  if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-  {
-    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxEmpty.value;
-  }
-
-  // enable RxEntryDone for directed adv
-  if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-  {
+    // enable the RCL_EventRxEntryAvail event - this will be used to check for the SCAN_REQ packet
+    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventRxEntryAvail.value;
     ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
-  }
 
-  // check if any start event is requried
-  if ( (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START) ||
-       (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_START) )
-  {
-    // enable the command started event
-    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventCmdStarted.value;
-  }
-
-  // enable the RCL_EventRxEntryAvail event - this will be used to check for the SCAN_REQ packet
-  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventRxEntryAvail.value;
-  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
-
-  // only if address resolution is enabled
-  if ( privInfo.addrResolution )
-  {
-    // check type of advertisement
-    // Note: No Scan/Init response when advertising non-connectable.
-    if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
-         TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
+    // only if address resolution is enabled
+    if ( privInfo.addrResolution )
     {
-      // Enable RCL_EventRxEntryAvail event - to be able to receive privIgn CBs
-	  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventRxEntryAvail.value;
-	  ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
+      // check type of advertisement
+      // Note: No Scan/Init response when advertising non-connectable.
+      if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
+           TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
+      {
+        // Enable RCL_EventRxEntryAvail event - to be able to receive privIgn CBs
+	    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.rclCallbackMask.value |= RCL_EventRxEntryAvail.value;
+	    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
+      }
     }
-  }
-#else
-  // clear the output
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    // get pointer to RF command
-    aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-
-    pRf->advOutput.nTxAdv     = 0;
-    pRf->advOutput.nTxScanRsp = 0;
-    pRf->advOutput.nRxScanReq = 0;
-    pRf->advOutput.nRxConnReq = 0;
-    pRf->advOutput.reserved   = 0;
-    pRf->advOutput.nRxNok     = 0;
-    pRf->advOutput.nRxIgn     = 0;
-    pRf->advOutput.nRxBufFull = 0;
-    pRf->advOutput.lastRssi   = 0;
-    pRf->advOutput.timeStamp  = 0;
-
-    // check if the start time is already in the past
-    // TRUE when first param is greater than second.
-    if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
-                            pRf->advCmd[0].rfOpCmd.startTime ) )
+#else // USE_RCL
+    // clear the output
+    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
-      pRf->advCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-      pAdvSet->advStartTime = pRf->advCmd[0].rfOpCmd.startTime;
-    }
+      // get pointer to RF command
+      aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
 
-    if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
-    {
-      pAdvSet->txPowerIndex = curTxPowerVal;
-    }
+      pRf->advOutput.nTxAdv     = 0;
+      pRf->advOutput.nTxScanRsp = 0;
+      pRf->advOutput.nRxScanReq = 0;
+      pRf->advOutput.nRxConnReq = 0;
+      pRf->advOutput.reserved   = 0;
+      pRf->advOutput.nRxNok     = 0;
+      pRf->advOutput.nRxIgn     = 0;
+      pRf->advOutput.nRxBufFull = 0;
+      pRf->advOutput.lastRssi   = 0;
+      pRf->advOutput.timeStamp  = 0;
+
+      // check if the start time is already in the past
+      // TRUE when first param is greater than second.
+      if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
+                              pRf->advCmd[0].rfOpCmd.startTime ) )
+      {
+        pRf->advCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
+        pAdvSet->advStartTime = pRf->advCmd[0].rfOpCmd.startTime;
+      }
+
+      if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
+      {
+        pAdvSet->txPowerIndex = curTxPowerVal;
+      }
 
 #if defined(CC13X2P)
 
-    // Set the Type of the RF Command in the MSB of the tx Power index variable.
-    // This is a Legacy Cmd therfore we would set the MSB of the Tx index variable to 1.
-    // For all other cases of BLE5 the MSB of the tx index variable would be set to zero (unchanged).
-    MAP_llTxPwrSetRfCmdType(&(pAdvSet->txPowerIndex), TX_PWR_CMD_LEGACY);
+      // Set the Type of the RF Command in the MSB of the tx Power index variable.
+      // This is a Legacy Cmd therfore we would set the MSB of the Tx index variable to 1.
+      // For all other cases of BLE5 the MSB of the tx index variable would be set to zero (unchanged).
+      MAP_llTxPwrSetRfCmdType(&(pAdvSet->txPowerIndex), TX_PWR_CMD_LEGACY);
 
-    // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-    MAP_llTxPwrSwitchPA( pAdvSet->txPowerIndex, (uint32 *)&(pRf->advCmd[pAdvSet->firstPrimChan - LL_ADV_BASE_CHAN]) );
+      // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
+      MAP_llTxPwrSwitchPA( pAdvSet->txPowerIndex, (uint32 *)&(pRf->advCmd[pAdvSet->firstPrimChan - LL_ADV_BASE_CHAN]) );
 
 #else // NOT CC13X2P
 
-    // Set the Tx power according to Tx Power index
-    MAP_llSetTxPwrLegacy ( pAdvSet->txPowerIndex );
+      // Set the Tx power according to Tx Power index
+      MAP_llSetTxPwrLegacy ( pAdvSet->txPowerIndex );
 
 #endif // CC13X2P
 
-  }
+    }
 #ifdef USE_AE
-  else // !legacy
-  {
-    // get pointer to RF command
-    aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
-
-    // Clear the Output Parameters
-    pRf->comOutput.nTxAdv     = 0;
-    pRf->comOutput.nTxScanRsp = 0;
-    pRf->comOutput.nRxScanReq = 0;
-    pRf->comOutput.nRxConnReq = 0;
-    pRf->comOutput.nTxConnRsp = 0;
-    pRf->comOutput.nRxNok     = 0;
-    pRf->comOutput.nRxIgn     = 0;
-    pRf->comOutput.nRxBufFull = 0;
-    pRf->comOutput.lastRssi   = 0;
-    pRf->comOutput.timeStamp  = 0;
-
-    // check if the start time is already in the past
-    // TRUE when first param is greater than second.
-    if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
-                            pRf->extRfCmd[0].rfOpCmd.startTime ) )
+    else // !legacy
     {
-      pRf->extRfCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-      pAdvSet->advStartTime = pRf->extRfCmd[0].rfOpCmd.startTime;
-    }
+      // get pointer to RF command
+      aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
 
-    // determine if an auxPtr is needed
-    if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
-    {
-      pRf->auxRfCmd.rfOpCmd.startTime = pRf->extRfCmd[0].rfOpCmd.startTime + US_TO_RAT_TICKS(pAdvSet->otaTimeExtAdv);
-      //Check if the secondary PHY is 2M
-      if (pRf->auxRfCmd.phyMode == BLE5_2M_PHY)
+      // Clear the Output Parameters
+      pRf->comOutput.nTxAdv     = 0;
+      pRf->comOutput.nTxScanRsp = 0;
+      pRf->comOutput.nRxScanReq = 0;
+      pRf->comOutput.nRxConnReq = 0;
+      pRf->comOutput.nTxConnRsp = 0;
+      pRf->comOutput.nRxNok     = 0;
+      pRf->comOutput.nRxIgn     = 0;
+      pRf->comOutput.nRxBufFull = 0;
+      pRf->comOutput.lastRssi   = 0;
+      pRf->comOutput.timeStamp  = 0;
+
+      // check if the start time is already in the past
+      // TRUE when first param is greater than second.
+      if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
+                              pRf->extRfCmd[0].rfOpCmd.startTime ) )
       {
-        // In case the primary PHY is 1M or coded and the secondary PHY is 2M, the packet is being transmitted too early due to a PHY issue.
-        // Increase the start time to compensate that.
-        pRf->auxRfCmd.rfOpCmd.startTime += AE_1M_OR_CODED_TO_2M_TIME_COMPENSATION_IN_TICKS;
+        pRf->extRfCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
+        pAdvSet->advStartTime = pRf->extRfCmd[0].rfOpCmd.startTime;
       }
-    }
+
+      // determine if an auxPtr is needed
+      if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
+      {
+        pRf->auxRfCmd.rfOpCmd.startTime = pRf->extRfCmd[0].rfOpCmd.startTime + US_TO_RAT_TICKS(pAdvSet->otaTimeExtAdv);
+        //Check if the secondary PHY is 2M
+        if (pRf->auxRfCmd.phyMode == BLE5_2M_PHY)
+        {
+          // In case the primary PHY is 1M or coded and the secondary PHY is 2M, the packet is being transmitted too early due to a PHY issue.
+          // Increase the start time to compensate that.
+          pRf->auxRfCmd.rfOpCmd.startTime += AE_1M_OR_CODED_TO_2M_TIME_COMPENSATION_IN_TICKS;
+        }
+      }
 #ifdef USE_PERIODIC_ADV
-    // determine if sync info is present
-    if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO) )
-    {
-      llPeriodicAdvSet_t *pPeriodicAdv = MAP_llGetPeriodicAdv(aeCurHandle);
-
-      // check that the periodic is active
-      if ((pPeriodicAdv != NULL) &&
-          (pPeriodicAdv->state != PERIODIC_ADV_STATE_DISABLE) &&
-          (pPeriodicAdv->intPriority == LL_QOS_LOW_PRIORITY))
+      // determine if sync info is present
+      if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO) )
       {
-        // increase the periodic priority
-        pPeriodicAdv->intPriority = LL_QOS_HIGH_PRIORITY;
+        llPeriodicAdvSet_t *pPeriodicAdv = MAP_llGetPeriodicAdv(aeCurHandle);
+
+        // check that the periodic is active
+        if ((pPeriodicAdv != NULL) &&
+            (pPeriodicAdv->state != PERIODIC_ADV_STATE_DISABLE) &&
+            (pPeriodicAdv->intPriority == LL_QOS_LOW_PRIORITY))
+        {
+          // increase the periodic priority
+          pPeriodicAdv->intPriority = LL_QOS_HIGH_PRIORITY;
+        }
       }
-    }
 #endif // USE_PERIODIC_ADV
-  }
+    }
 #endif // USE_AE
-  // pointer to first radio operation command
-  pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
+    // pointer to first radio operation command
+    pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
 
-  // set RF events
-  pAdvSet->llTask->rfEvents = RF_EventLastCmdDone   |
-                              RF_EventInternalError;
+    // set RF events
+    pAdvSet->llTask->rfEvents = RF_EventLastCmdDone   |
+                                RF_EventInternalError;
 
-  // only use interrupts for AE advertisements
+    // only use interrupts for AE advertisements
 #ifdef USE_AE
-  if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    pAdvSet->llTask->rfEvents = RF_EventTxDone;
-  }
+    if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
+    {
+      pAdvSet->llTask->rfEvents = RF_EventTxDone;
+    }
 #endif
 
 #if defined(CC13X2P)
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    // enable TxDone interrupt in order to
-    // set the tx power per primary channel
-    pAdvSet->llTask->rfEvents |= RF_EventTxDone;
-  }
+    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
+    {
+      // enable TxDone interrupt in order to
+      // set the tx power per primary channel
+      pAdvSet->llTask->rfEvents |= RF_EventTxDone;
+    }
 #endif
 
-  // check if this is a Scannable advertisement
-  if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-  {
-    pAdvSet->llTask->rfEvents |= RF_EventRxEmpty;
-  }
-
-  // enable RxEntryDone for directed adv
-  if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-  {
-    pAdvSet->llTask->rfEvents |= RF_EventRxEntryDone;
-  }
-
-  // only if address resolution is enabled
-  if ( privInfo.addrResolution )
-  {
-    // check type of advertisement
-    // Note: No Scan/Init response when advertising non-connectable.
-    if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
-         TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
+    // check if this is a Scannable advertisement
+    if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
     {
-      // enable Rx Ignore interrupt
-      pAdvSet->llTask->rfEvents |= RF_EventRxIgnored;
+      pAdvSet->llTask->rfEvents |= RF_EventRxEmpty;
     }
-  }
 
-  // clear Tx Done interrupt counter
-  pAdvSet->txCount = 0;
+    // enable RxEntryDone for directed adv
+    if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
+    {
+      pAdvSet->llTask->rfEvents |= RF_EventRxEntryDone;
+    }
+
+    // only if address resolution is enabled
+    if ( privInfo.addrResolution )
+    {
+      // check type of advertisement
+      // Note: No Scan/Init response when advertising non-connectable.
+      if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
+           TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
+      {
+        // enable Rx Ignore interrupt
+        pAdvSet->llTask->rfEvents |= RF_EventRxIgnored;
+      }
+    }
+
+    // clear Tx Done interrupt counter
+    pAdvSet->txCount = 0;
 
 #ifdef DEBUG_GPIO_CONN
-  MAP_llSetupRatCompare( llTask );
-#else // !DEBUG_GPIO_CONN
-  // check if any start event is requried
-  if ( (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START) ||
-       (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_START) )
-  {
-    // setup RAT compare for radio command start time, needed for callbacks
     MAP_llSetupRatCompare( llTask );
-  }
+#else // !DEBUG_GPIO_CONN
+    // check if any start event is requried
+    if ( (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START) ||
+         (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_START) )
+    {
+      // setup RAT compare for radio command start time, needed for callbacks
+      MAP_llSetupRatCompare( llTask );
+    }
 #endif // DEBUG_GPIO_CONN
 
 #ifdef RTLS_CTE
-  // check that the CTE sampling is enable
-  if (llCteSamples.pAutoCopyBuffers != NULL)
-  {
-    // disable the antenna switch
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-    // disable the auto copy
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-  }
+    // check that the CTE sampling is enable
+    if (llCteSamples.pAutoCopyBuffers != NULL)
+    {
+      // disable the antenna switch
+      llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
+      // disable the auto copy
+      llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
+    }
 #endif // RTLS_CTE
 
 #endif
 
-  // save the the last schedule time for calculate number of missed packets
-  pNextAdvSet->timeScheduled = pAdvSet->advStartTime;
-  // update duration expiration time
-  if ((pAdvSet->pEnable->duration) && (pAdvSet->durationExpireTime == 0))
-  {
-    pAdvSet->durationExpireTime = pAdvSet->advStartTime + (pAdvSet->pEnable->duration * RAT_TICKS_IN_10MS);
+    // save the the last schedule time for calculate number of missed packets
+    pNextAdvSet->timeScheduled = pAdvSet->advStartTime;
+    // update duration expiration time
+    if ((pAdvSet->pEnable->duration) && (pAdvSet->durationExpireTime == 0))
+    {
+      pAdvSet->durationExpireTime = pAdvSet->advStartTime + (pAdvSet->pEnable->duration * RAT_TICKS_IN_10MS);
+    }
   }
-
   return;
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
@@ -3381,8 +3475,8 @@ void rfRatCompareCBack( RF_Handle    rfHandle,
           if ( pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START )
           {
             MAP_llExtAdvCBack( LL_CBACK_ADV_START_AFTER_ENABLE, &aeCurHandle );
-            pAdvSet->firstAdvEvt = 1;
           }
+          pAdvSet->firstAdvEvt = 1;
         }
         else // not the first advertisement
         {
@@ -3456,6 +3550,11 @@ void rfRatCompareCBack( RF_Handle    rfHandle,
       break;
 #endif // DEBUG_GPIO_CONN
 
+    case LL_STATE_SDAA_RX_WINDOW:
+      // when SDAA module is enabled channels are scaned for noise level.
+      MAP_LL_SDAA_SampleRXWindow();
+      break;
+
     default:
       break;
   }
@@ -3482,10 +3581,15 @@ void rfRatCompareCBack( RF_Handle    rfHandle,
  */
 void llSetupRatCompare( taskInfo_t *llTask )
 {
-
+  // overhead of the time duration until the rx window open
+  uint16 sdaaoverhead = 0;
+  if( llTask->taskID == LL_TASK_ID_RX_WINDOW )
+  {
+    sdaaoverhead = RAT_TICKS_IN_166US;
+  }
   RF_RatConfigCompare config = { .callback = (RF_RatCallback)rfRatCompareCBack,
                                  .channel  = RF_RatChannelAny,
-                                 .timeout  =
+                                 .timeout  = sdaaoverhead +
                                    ((rfOpCmd_t *)llTask->command)->startTime};
 
   // Disable the RAT channel in case somehow the channel still enable
@@ -3534,6 +3638,7 @@ void llClearRatCompare( void )
   }
 }
 #endif
+
 /*******************************************************************************
  * @fn          llScheduleTask
  *
@@ -3594,6 +3699,7 @@ void llScheduleTask( taskInfo_t *llTask )
   {
     ((RCL_Command *)(llTask->command))->status = RCL_CommandStatus_Idle;
   }
+
   // post the command
   status = RCL_Command_submit(rfHandle, (RCL_Command_Handle)llTask->command);
 
@@ -3602,6 +3708,14 @@ void llScheduleTask( taskInfo_t *llTask )
       (status == RCL_CommandStatus_Idle))
   {
     LL_rclRescheduleCommand((RCL_Command *)llTask->command);
+
+    /**** UPDATE DEBUG INFO MODULE ****/
+    (void)MAP_DbgInf_addErrorRec(DBGINF_ERROR_SCHED_SUBMIT_FAILS);
+  }
+  else
+  {
+    /**** UPDATE DEBUG INFO MODULE ****/
+    (void)MAP_llDbgInf_addSchedRec(llTask);
   }
   return;
 #else
@@ -3620,7 +3734,11 @@ void llScheduleTask( taskInfo_t *llTask )
 #endif // !RF_SINGLEMODE
 
   LL_ASSERT( llTask != NULL );
-
+  if(MAP_LL_Is_SDAA_Enable())
+  {
+      //Add RF_EventTxDone event for Tx usage record
+      llTask->rfEvents = llTask->rfEvents | RF_EventTxDone;
+  }
   // TEMP
   if ( llTask == NULL ) return;
 
@@ -3695,7 +3813,6 @@ void llScheduleTask( taskInfo_t *llTask )
   return;
 #endif
 }
-
 
 /*******************************************************************************
  */

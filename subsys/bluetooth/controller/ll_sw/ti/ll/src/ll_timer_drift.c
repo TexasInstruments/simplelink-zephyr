@@ -18,13 +18,13 @@
  * INCLUDES
  */
 
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
 
 #include "hal_mcu.h"
 #include "osal_pwrmgr.h"
-#include "../../ll/inc/ll.h"
+#include "ll.h"
 #include "ll_common.h"
 #include "ll_timer_drift.h"
 #include "ll_ae.h"
@@ -66,7 +66,7 @@ const uint16 SCA[] = {500, 250, 150, 100, 75, 50, 30, 20};
  *              the timer drift divisor (called a timer drift factor) based on
  *              the combined SCA of the Central (as received in the CONNECT_IND
  *              packet) and the Peripheral (based on either the default value of
- *              40ppm or the value set by HCI_EXT_SetSCA, from 0..500).
+ *              40ppm (LFXT)/500ppm (LFOSC) or the value set by HCI_EXT_SetSCA, from 0..500).
  *
  * input parameters
  *

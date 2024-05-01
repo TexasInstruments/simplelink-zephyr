@@ -115,8 +115,6 @@
 #define MAP_LL_EncLtkReqCback                                        LL_EncLtkReqCback
 #define MAP_LL_Encrypt                                               LL_Encrypt
 #define MAP_LL_EnhancedConnectionCompleteCback                       LL_EnhancedConnectionCompleteCback
-#define MAP_LL_EnhancedRxTest                                        LL_EnhancedRxTest
-#define MAP_LL_EnhancedTxTest                                        LL_EnhancedTxTest
 #define MAP_LL_GenerateDHKeyCmd                                      LL_GenerateDHKeyCmd
 #define MAP_LL_GenerateDHKeyCompleteEventCback                       LL_GenerateDHKeyCompleteEventCback
 #define MAP_LL_GetNumActiveConns                                     LL_GetNumActiveConns
@@ -147,7 +145,6 @@
 #define MAP_LL_PRIV_TeardownPrivacy                                  LL_PRIV_TeardownPrivacy
 #define MAP_LL_PRIV_UpdateExtALEntry                                 LL_PRIV_UpdateExtALEntry
 #define MAP_LL_PRIV_UpdateRL                                         LL_PRIV_UpdateRL
-#define MAP_LL_PhyUpdateCompleteEventCback                           LL_PhyUpdateCompleteEventCback
 #define MAP_LL_ProcessEvent                                          LL_ProcessEvent
 #define MAP_LL_PseudoRand                                            LL_PseudoRand
 #define MAP_LL_RX_bm_alloc                                           LL_RX_bm_alloc
@@ -165,7 +162,6 @@
 #define MAP_LL_ReadLocalVersionInfo                                  LL_ReadLocalVersionInfo
 #define MAP_LL_ReadMaxDataLen                                        LL_ReadMaxDataLen
 #define MAP_LL_ReadPeerResolvableAddress                             LL_ReadPeerResolvableAddress
-#define MAP_LL_ReadPhy                                               LL_ReadPhy
 #define MAP_LL_ReadRemoteUsedFeatures                                LL_ReadRemoteUsedFeatures
 #define MAP_LL_ReadRemoteUsedFeaturesCompleteCback                   LL_ReadRemoteUsedFeaturesCompleteCback
 #define MAP_LL_ReadRemoteVersionInfo                                 LL_ReadRemoteVersionInfo
@@ -187,9 +183,7 @@
 #define MAP_LL_SetAdvData                                            LL_SetAdvData
 #define MAP_LL_SetAdvParam                                           LL_SetAdvParam
 #define MAP_LL_SetDataLen                                            LL_SetDataLen
-#define MAP_LL_SetDefaultPhy                                         LL_SetDefaultPhy
 #define MAP_LL_SetPrivacyMode                                        LL_SetPrivacyMode
-#define MAP_LL_SetPhy                                                LL_SetPhy
 #define MAP_LL_SetRandomAddress                                      LL_SetRandomAddress
 #define MAP_LL_SetResolvablePrivateAddressTimeout                    LL_SetResolvablePrivateAddressTimeout
 #define MAP_LL_SetScanControl                                        LL_SetScanControl
@@ -206,6 +200,7 @@
 #define MAP_AL_ClearEntry                                            AL_ClearEntry
 #define MAP_AL_ClearIgnoreList                                       AL_ClearIgnoreList
 #define MAP_AL_FindEntry                                             AL_FindEntry
+#define MAP_AL_GetALPtr                                              AL_GetALPtr
 #define MAP_AL_GetNumFreeEntries                                     AL_GetNumFreeEntries
 #define MAP_AL_GetSize                                               AL_GetSize
 #define MAP_AL_Init                                                  AL_Init
@@ -261,12 +256,10 @@
 #define MAP_llGetNextDataChanAlgo2                                   llGetNextDataChanAlgo2
 #define MAP_llGetNumTasks                                            llGetNumTasks
 #define MAP_llGenPrnE                                                llGenPrnE
-#define MAP_llGetRfOverrideRegs                                      llGetRfOverrideRegs
 #define MAP_llGetSlowestPhy                                          llGetSlowestPhy
 #define MAP_llGetTask                                                llGetTask
 #define MAP_llGetTaskState                                           llGetTaskState
 #define MAP_llGetTxPower                                             llGetTxPower
-#define MAP_llGtElevenTransitionsInLsh                               llGtElevenTransitionsInLsh
 #define MAP_llGtSixConsecZerosOrOnes                                 llGtSixConsecZerosOrOnes
 #define MAP_llGtTwentyFourTransitions                                llGtTwentyFourTransitions
 #define MAP_llHaltRadio                                              llHaltRadio
@@ -274,7 +267,6 @@
 #define MAP_llInitRAT                                                llInitRAT
 #define MAP_llInit_TaskConnect                                       llInit_TaskConnect
 #define MAP_llInit_TaskEnd                                           llInit_TaskEnd
-#define MAP_llLtThreeOnesInLsb                                       llLtThreeOnesInLsb
 #define MAP_llLtTwoChangesInLastSixBits                              llLtTwoChangesInLastSixBits
 #define MAP_llMemCopyDst                                             llMemCopyDst
 #define MAP_llMemCopySrc                                             llMemCopySrc
@@ -379,7 +371,6 @@
 #define MAP_LL_PM_SetPowerMgrRequirements                            LL_PM_SetPowerMgrRequirements
 #define MAP_LL_PM_ReleasePowerMgrRequirements                        LL_PM_ReleasePowerMgrRequirements
 #define MAP_LL_PM_PowerOnRfCoreOptimize                              LL_PM_PowerOnRfCoreOptimize
-#define MAP_LL_PM_PowerOnRfCoreOptimize                              LL_PM_PowerOnRfCoreOptimize
 #define MAP_LL_PM_SendWakeUpCmd                                      LL_PM_SendWakeUpCmd
 #define MAP_LL_PM_WakeupHandler                                      LL_PM_WakeupHandler
 #define MAP_LL_PM_PowerOffRfCoreOptimize                             LL_PM_PowerOffRfCoreOptimize
@@ -460,10 +451,6 @@
 #define MAP_HCI_LE_CreateConnCancelCmd                               HCI_LE_CreateConnCancelCmd
 #define MAP_HCI_LE_CreateConnCmd                                     HCI_LE_CreateConnCmd
 #define MAP_HCI_LE_EncryptCmd                                        HCI_LE_EncryptCmd
-#define MAP_HCI_LE_EnhancedRxTestCmd                                 HCI_LE_EnhancedRxTestCmd
-#define MAP_HCI_LE_EnhancedTxTestCmd                                 HCI_LE_EnhancedTxTestCmd
-#define MAP_HCI_LE_EnhancedCteRxTestCmd                              HCI_LE_EnhancedCteRxTestCmd
-#define MAP_HCI_LE_EnhancedCteTxTestCmd                              HCI_LE_EnhancedCteTxTestCmd
 #define MAP_HCI_LE_GenerateDHKeyCmd                                  HCI_LE_GenerateDHKeyCmd
 #define MAP_HCI_LE_LtkReqNegReplyCmd                                 HCI_LE_LtkReqNegReplyCmd
 #define MAP_HCI_LE_LtkReqReplyCmd                                    HCI_LE_LtkReqReplyCmd
@@ -476,7 +463,6 @@
 #define MAP_HCI_LE_ReadLocalSupportedFeaturesCmd                     HCI_LE_ReadLocalSupportedFeaturesCmd
 #define MAP_HCI_LE_ReadMaxDataLenCmd                                 HCI_LE_ReadMaxDataLenCmd
 #define MAP_HCI_LE_ReadPeerResolvableAddressCmd                      HCI_LE_ReadPeerResolvableAddressCmd
-#define MAP_HCI_LE_ReadPhyCmd                                        HCI_LE_ReadPhyCmd
 #define MAP_HCI_LE_ReadRemoteUsedFeaturesCmd                         HCI_LE_ReadRemoteUsedFeaturesCmd
 #define MAP_HCI_LE_ReadResolvingListSizeCmd                          HCI_LE_ReadResolvingListSizeCmd
 #define MAP_HCI_LE_ReadSuggestedDefaultDataLenCmd                    HCI_LE_ReadSuggestedDefaultDataLenCmd
@@ -492,11 +478,9 @@
 #define MAP_HCI_LE_SetAdvEnableCmd                                   HCI_LE_SetAdvEnableCmd
 #define MAP_HCI_LE_SetAdvParamCmd                                    HCI_LE_SetAdvParamCmd
 #define MAP_HCI_LE_SetDataLenCmd                                     HCI_LE_SetDataLenCmd
-#define MAP_HCI_LE_SetDefaultPhyCmd                                  HCI_LE_SetDefaultPhyCmd
 #define MAP_HCI_LE_SetEventMaskCmd                                   HCI_LE_SetEventMaskCmd
 #define MAP_HCI_LE_SetHostChanClassificationCmd                      HCI_LE_SetHostChanClassificationCmd
 #define MAP_HCI_LE_SetPrivacyModeCmd                                 HCI_LE_SetPrivacyModeCmd
-#define MAP_HCI_LE_SetPhyCmd                                         HCI_LE_SetPhyCmd
 #define MAP_HCI_LE_SetRandomAddressCmd                               HCI_LE_SetRandomAddressCmd
 #define MAP_HCI_LE_SetResolvablePrivateAddressTimeoutCmd             HCI_LE_SetResolvablePrivateAddressTimeoutCmd
 #define MAP_HCI_LE_SetScanEnableCmd                                  HCI_LE_SetScanEnableCmd
@@ -591,10 +575,6 @@
 #define MAP_llEndExtScanTask                                         llEndExtScanTask
 #define MAP_llEndExtInitTask                                         llEndExtInitTask
 #define MAP_llRclPrepareAndUpdateAlEntry                             llRclPrepareAndUpdateAlEntry
-// RF Post Processing
-#define MAP_llExtAdv_PostProcess                                     llExtAdv_PostProcess
-#define MAP_llExtScan_PostProcess                                    llExtScan_PostProcess
-#define MAP_llExtInit_PostProcess                                    llExtInit_PostProcess
 // RF Event Processing
 #define MAP_llSendAdvSetTermEvent                                    llSendAdvSetTermEvent
 #define MAP_llSendAdvSetEndEvent                                     llSendAdvSetEndEvent
@@ -632,12 +612,9 @@
 #define MAP_L2CAP_CmdReject                                          L2CAP_CmdReject
 #define MAP_L2CAP_ConnParamUpdateReq                                 L2CAP_ConnParamUpdateReq
 #define MAP_L2CAP_ConnParamUpdateRsp                                 L2CAP_ConnParamUpdateRsp
-#define MAP_L2CAP_DisconnectReq                                      L2CAP_DisconnectReq
 #define MAP_L2CAP_GetMTU                                             L2CAP_GetMTU
 #define MAP_L2CAP_GetParamValue                                      L2CAP_GetParamValue
 #define MAP_L2CAP_HostNumCompletedPkts                               L2CAP_HostNumCompletedPkts
-#define MAP_L2CAP_ParseConnectReq                                    L2CAP_ParseConnectReq
-#define MAP_L2CAP_ParseFlowCtrlCredit                                L2CAP_ParseFlowCtrlCredit
 #define MAP_L2CAP_ParseParamUpdateReq                                L2CAP_ParseParamUpdateReq
 #define MAP_L2CAP_RegisterApp                                        L2CAP_RegisterApp
 #define MAP_L2CAP_SendData                                           L2CAP_SendData
@@ -650,30 +627,23 @@
 #define MAP_l2capAllocPsm                                            l2capAllocPsm
 #define MAP_l2capBuildConnectRsp                                     l2capBuildConnectRsp
 #define MAP_l2capBuildDisconnectReq                                  l2capBuildDisconnectReq
-#define MAP_l2capBuildDisconnectRsp                                  l2capBuildDisconnectRsp
 #define MAP_l2capBuildFlowCtrlCredit                                 l2capBuildFlowCtrlCredit
 #define MAP_l2capBuildInfoReq                                        l2capBuildInfoReq
 #define MAP_l2capBuildInfoRsp                                        l2capBuildInfoRsp
 #define MAP_l2capBuildParamUpdateReq                                 l2capBuildParamUpdateReq
 #define MAP_l2capBuildSignalHdr                                      l2capBuildSignalHdr
 #define MAP_l2capDisconnectAllChannels                               l2capDisconnectAllChannels
-#define MAP_l2capDisconnectChannel                                   l2capDisconnectChannel
 #define MAP_l2capEncapSendData                                       l2capEncapSendData
-#define MAP_l2capFindLocalCID                                        l2capFindLocalCID
 #define MAP_l2capFindLocalId                                         l2capFindLocalId
 #define MAP_l2capFindNextSegment                                     l2capFindNextSegment
 #define MAP_l2capFindPsm                                             l2capFindPsm
-#define MAP_l2capFindRemoteCID                                       l2capFindRemoteCID
 #define MAP_l2capFindRemoteId                                        l2capFindRemoteId
 #define MAP_l2capFlowCtrlCredit                                      l2capFlowCtrlCredit
 #define MAP_l2capFreeChannel                                         l2capFreeChannel
 #define MAP_l2capFreePendingPkt                                      l2capFreePendingPkt
 #define MAP_l2capFreeTxSDU                                           l2capFreeTxSDU
-#define MAP_l2capGetCoChannelInfo                                    l2capGetCoChannelInfo
 #define MAP_l2capHandleTimerCB                                       l2capHandleTimerCB
 #define MAP_l2capHandleRxError                                       l2capHandleRxError
-#define MAP_l2capNotifyChannelEstEvt                                 l2capNotifyChannelEstEvt
-#define MAP_l2capNotifyChannelTermEvt                                l2capNotifyChannelTermEvt
 #define MAP_l2capNotifyCreditEvt                                     l2capNotifyCreditEvt
 #define MAP_l2capNotifyData                                          l2capNotifyData
 #define MAP_l2capNotifyEvent                                         l2capNotifyEvent
@@ -681,23 +651,17 @@
 #define MAP_l2capNotifySignal                                        l2capNotifySignal
 #define MAP_l2capNumActiveChannnels                                  l2capNumActiveChannnels
 #define MAP_l2capParseCmdReject                                      l2capParseCmdReject
-#define MAP_l2capParseConnectRsp                                     l2capParseConnectRsp
-#define MAP_l2capParseDisconnectReq                                  l2capParseDisconnectReq
-#define MAP_l2capParseDisconnectRsp                                  l2capParseDisconnectRsp
 #define MAP_l2capParsePacket                                         l2capParsePacket
 #define MAP_l2capParseParamUpdateRsp                                 l2capParseParamUpdateRsp
 #define MAP_l2capParseSignalHdr                                      l2capParseSignalHdr
-#define MAP_l2capProcessConnectReq                                   l2capProcessConnectReq
 #define MAP_l2capProcessOSALMsg                                      l2capProcessOSALMsg
 #define MAP_l2capProcessReq                                          l2capProcessReq
 #define MAP_l2capProcessRsp                                          l2capProcessRsp
 #define MAP_l2capProcessRxData                                       l2capProcessRxData
 #define MAP_l2capProcessSignal                                       l2capProcessSignal
-#define MAP_l2capReassembleSegment                                   l2capReassembleSegment
 #define MAP_l2capSendCmd                                             l2capSendCmd
 #define MAP_l2capSendConnectRsp                                      l2capSendConnectRsp
 #define MAP_l2capSendFCPkt                                           l2capSendFCPkt
-#define MAP_l2capSendNextSegment                                     l2capSendNextSegment
 #define MAP_l2capSendPkt                                             l2capSendPkt
 #define MAP_l2capSendReq                                             l2capSendReq
 #define MAP_l2capSendSegment                                         l2capSendSegment
@@ -873,7 +837,6 @@
 // GAP API
 #define MAP_GAP_Authenticate                                         GAP_Authenticate
 #define MAP_GAP_Bond                                                 GAP_Bond
-#define MAP_gap_CentConnRegister                                     gap_CentConnRegister
 #define MAP_GAP_CentDevMgrInit                                       GAP_CentDevMgrInit
 #ifdef GAP_BOND_MGR
 #define MAP_GAP_DeviceInit                                           GAP_DeviceInit
@@ -888,7 +851,6 @@
 #define MAP_gap_ParamsInit                                           gap_ParamsInit
 #define MAP_GAP_PasscodeUpdate                                       GAP_PasscodeUpdate
 #define MAP_GAP_PasskeyUpdate                                        GAP_PasskeyUpdate
-#define MAP_gap_PeriConnRegister                                     gap_PeriConnRegister
 #define MAP_gap_PrivacyInit                                          gap_PrivacyInit
 #define MAP_GAP_ProcessEvent                                         GAP_ProcessEvent
 #define MAP_GAP_RegisterBondMgrCBs                                   GAP_RegisterBondMgrCBs
@@ -954,7 +916,6 @@
 #define MAP_gapFindADType                                            gapFindADType
 #define MAP_gapIsAdvertising                                         gapIsAdvertising
 #define MAP_gapIsScanning                                            gapIsScanning
-#define MAP_gapIsInitiating                                          gapIsInitiating
 #define MAP_gapSetState                                              gapSetState
 #define MAP_gapValidADType                                           gapValidADType
 
@@ -966,7 +927,6 @@
 #define MAP_gapPeriProcessSignalEvt                                  gapPeriProcessSignalEvt
 
 // GAP Advertiser Module
-#define MAP_gapAdv_init                                              gapAdv_init
 #define MAP_GapAdv_create                                            GapAdv_create
 #define MAP_GapAdv_destroy                                           GapAdv_destroy
 #define MAP_GapAdv_enable                                            GapAdv_enable
@@ -985,7 +945,6 @@
 #define MAP_GapAdv_setVirtualAdvAddr                                 GapAdv_setVirtualAdvAddr
 
 // GAP Scanner Module
-#define MAP_gapScan_init                                             gapScan_init
 #define MAP_GapScan_registerCb                                       GapScan_registerCb
 #define MAP_GapScan_setPhyParams                                     GapScan_setPhyParams
 #define MAP_GapScan_getPhyParams                                     GapScan_getPhyParams
@@ -1004,7 +963,6 @@
 #define MAP_gapScan_processAdvRptCb                                  gapScan_processAdvRptCb
 #define MAP_gapScan_processStartEndCb                                gapScan_processStartEndCb
 #define MAP_gapScan_processErrorCb                                   gapScan_processErrorCb
-#define MAP_gapScan_processSessionEndEvt                             gapScan_processSessionEndEvt
 
 // GAP Initiator Module
 #define MAP_GapInit_setPhyParam                                      GapInit_setPhyParam
@@ -1012,9 +970,6 @@
 #define MAP_gapInit_connect_internal                                 gapInit_connect_internal
 #define MAP_GapInit_connect                                          GapInit_connect
 #define MAP_GapInit_connectAl                                        GapInit_connectAl
-#define MAP_GapInit_cancelConnect                                    GapInit_cancelConnect
-#define MAP_gapInit_sendConnCancelledEvt                             gapInit_sendConnCancelledEvt
-#define MAP_gapInit_initiatingEnd                                    gapInit_initiatingEnd
 
 // GAP Central Link Mgr
 #define MAP_gapCentProcessConnEvt                                    gapCentProcessConnEvt
@@ -1028,10 +983,8 @@
 #define MAP_SM_GetEccKeys                                            SM_GetEccKeys
 #define MAP_SM_GetDHKey                                              SM_GetDHKey
 #define MAP_SM_GetScConfirmOob                                       SM_GetScConfirmOob
-#define MAP_SM_InitiatorInit                                         SM_InitiatorInit
 #define MAP_SM_StartPairing                                          SM_StartPairing
 #define MAP_SM_StartEncryption                                       SM_StartEncryption
-#define MAP_SM_ResponderInit                                         SM_ResponderInit
 #define MAP_SM_NewRandKey                                            SM_NewRandKey
 #define MAP_SM_Encrypt                                               SM_Encrypt
 #define MAP_SM_GenerateAuthenSig                                     SM_GenerateAuthenSig
@@ -1039,6 +992,7 @@
 #define MAP_SM_PasskeyUpdate                                         SM_PasskeyUpdate
 #define MAP_SM_SetECCRegenerationCount                               SM_SetECCRegenerationCount
 #define MAP_SM_Init                                                  SM_Init
+#define MAP_SM_SM_InitLTKReqProcess                                  SM_InitLTKReqProcess
 #define MAP_SM_ProcessEvent                                          SM_ProcessEvent
 #define MAP_SM_p256KeyCB                                             SM_p256KeyCB
 #define MAP_SM_dhKeyCB                                               SM_dhKeyCB
@@ -1118,15 +1072,15 @@
 #define MAP_smInitiatorAuthStageTwo                                  smInitiatorAuthStageTwo
 #define MAP_smInitiatorSendNextKeyInfo                               smInitiatorSendNextKeyInfo
 #define MAP_smpInitiatorProcessEncryptionInformation                 smpInitiatorProcessEncryptionInformation
-#define MAP_smpInitiatorProcessIdentityAddrInfo                      smpInitiatorProcessIdentityAddrInfo
-#define MAP_smpInitiatorProcessIdentityInfo                          smpInitiatorProcessIdentityInfo
+#define MAP_smpInitiatorProcessIdAddrInfo                            smpInitiatorProcessIdentityAddrInfo
+#define MAP_smpInitiatorProcessIdInfo                                smpInitiatorProcessIdentityInfo
 #define MAP_smpInitiatorProcessIncoming                              smpInitiatorProcessIncoming
 #define MAP_smpInitiatorProcessCentralID                             smpInitiatorProcessCentralID
 #define MAP_smpInitiatorProcessPairingConfirm                        smpInitiatorProcessPairingConfirm
 #define MAP_smpInitiatorProcessPairingDHKeyCheck                     smpInitiatorProcessPairingDHKeyCheck
 #define MAP_smpInitiatorProcessPairingPubKey                         smpInitiatorProcessPairingPubKey
-#define MAP_smpInitiatorProcessPairingRandom                         smpInitiatorProcessPairingRandom
-#define MAP_smpInitiatorProcessPairingRsp                            smpInitiatorProcessPairingRsp
+#define MAP_smpInitiatorProcessPairRandom                            smpInitiatorProcessPairingRandom
+#define MAP_smpInitiatorProcessPairRsp                               smpInitiatorProcessPairingRsp
 #define MAP_smpInitiatorProcessSigningInfo                           smpInitiatorProcessSigningInfo
 
 // SM Response Pairing Manager
@@ -1136,15 +1090,15 @@
 #define MAP_smTriggerProcessLTKReq                                   smTriggerProcessLTKReq
 #define MAP_smResponderSendNextKeyInfo                               smResponderSendNextKeyInfo
 #define MAP_smpResponderProcessEncryptionInformation                 smpResponderProcessEncryptionInformation
-#define MAP_smpResponderProcessIdentityAddrInfo                      smpResponderProcessIdentityAddrInfo
-#define MAP_smpResponderProcessIdentityInfo                          smpResponderProcessIdentityInfo
+#define MAP_smpResponderProcessIdAddrInfo                            smpResponderProcessIdentityAddrInfo
+#define MAP_smpResponderProcessIdInfo                                smpResponderProcessIdentityInfo
 #define MAP_smpResponderProcessIncoming                              smpResponderProcessIncoming
 #define MAP_smpResponderProcessCentralID                             smpResponderProcessCentralID
 #define MAP_smpResponderProcessPairingConfirm                        smpResponderProcessPairingConfirm
 #define MAP_smpResponderProcessPairingDHKeyCheck                     smpResponderProcessPairingDHKeyCheck
 #define MAP_smpResponderProcessPairingPublicKey                      smpResponderProcessPairingPublicKey
-#define MAP_smpResponderProcessPairingRandom                         smpResponderProcessPairingRandom
-#define MAP_smpResponderProcessPairingReq                            smpResponderProcessPairingReq
+#define MAP_smpResponderProcessPairRandom                            smpResponderProcessPairingRandom
+#define MAP_smpResponderProcessPairReq                               smpResponderProcessPairingReq
 #define MAP_smpResponderProcessSigningInfo                           smpResponderProcessSigningInfo
 #define MAP_smpResponderSendPairRspEvent                             smpResponderSendPairRspEvent
 #define MAP_smGetLtkReqDetails                                       smGetLtkReqDetails
@@ -1184,7 +1138,6 @@
 #define MAP_osal_revmemcpy                                           osal_revmemcpy
 #define MAP_osal_rand                                                osal_rand
 #define MAP_osal_start_reload_timer                                  osal_start_reload_timer
-#define MAP_osal_memdup                                              osal_memdup
 #define MAP_osal_isbufset                                            osal_isbufset
 #define MAP_osal_pwrmgr_task_state                                   osal_pwrmgr_task_state
 #define MAP_osal_msg_allocate                                        osal_msg_allocate
@@ -1265,6 +1218,7 @@ extern void MAP_llProcessPeripheralConnectionCreated(void);
 extern void MAP_llProcessScanTimeout(void);
 extern void MAP_llProcessConnectionEstablishFailed(uint8 ,uint8 );
 extern void MAP_llProcessAdvAddrResolutionTimeout(void);
+extern void MAP_LL_rclAdvRxEntryDone(void);
 extern uint8 MAP_llLastCmdDoneEventHandleConnectRequest( void * );
 extern uint8 MAP_llRxEntryDoneEventHandleConnectRequest( void *,uint8 *,uint8 ,uint8 );
 extern uint8 MAP_llRxIgnoreEventHandleConnectRequest( void *,uint8 *,uint8 ,uint8 );
@@ -1320,7 +1274,8 @@ extern void  MAP_llProcessExtScanRxFIFO( void );
 extern void  MAP_llAlignToNextEvent( void * );
 extern uint8 MAP_LL_SetSecAdvChanMap( uint8 * );
 extern uint8 MAP_LL_ChanMapUpdate( uint8 *, uint16 );
-extern uint8 MAP_llConnExists( uint8 , uint8 *, uint8 );
+extern uint8 MAP_llConnExists( uint8 *, uint8 );
+extern void  MAP_LL_rclAdvRxEntryDone( void );
 
 /*******************************************************************************
  * RTLS hooks
@@ -1514,13 +1469,61 @@ extern uint8_t MAP_checkAutoFeatureExchangeStatus(void);
  */
 extern uint8_t MAP_checkVsEventsStatus(void);
 
-
 /*******************************************************************************
  * Scan Optimization
  */
 extern uint8 MAP_llAddExtAlAndSetIgnBit(void *extAdvRpt, uint8 ignoreBit);
 extern uint8 MAP_llFlushIgnoredRxEntry(uint8 ignoreBit);
 extern void MAP_llSetRxCfg(void);
+
+/*******************************************************************************
+ * Link time configuration functions
+ */
+
+// (CENTRAL_CFG | OBSERVER_CFG) functions
+extern uint8 MAP_gapScan_init( void );
+extern uint8 MAP_SM_InitiatorInit( void );
+extern void  MAP_gap_CentConnRegister( void );
+extern void  MAP_gapScan_processSessionEndEvt( void* pSession, uint8_t status );
+
+// (PERIPHERAL_CFG | BROADCASTER_CFG) functions
+extern uint8 MAP_gapAdv_init( void );
+extern uint8 MAP_SM_ResponderInit( void );
+extern void  MAP_gap_PeriConnRegister( void );
+
+// (ADV_CONN_CFG) functions
+extern void  MAP_llExtAdv_PostProcess( void );
+
+// (SCAN_CFG) functions
+extern void  MAP_llExtScan_PostProcess( void );
+
+// (INIT_CFG) functions
+extern void  MAP_llExtInit_PostProcess( void );
+
+// (L2CAP_COC_CFG) functions
+extern uint8  MAP_l2capSendNextSegment( void );
+extern uint8  MAP_l2capReassembleSegment( uint16 connHandle, void *pPkt );
+extern uint8  MAP_L2CAP_ParseConnectReq( void *pCmd, uint8 *pData, uint16 len );
+extern uint8  MAP_l2capParseConnectRsp( void *pCmd, uint8 *pData, uint16 len );
+extern uint8  MAP_L2CAP_ParseFlowCtrlCredit( void *pCmd, uint8 *pData, uint16 len );
+extern uint8  MAP_l2capParseDisconnectReq( void *pCmd, uint8 *pData, uint16 len );
+extern uint8  MAP_l2capParseDisconnectRsp( void *pCmd, uint8 *pData, uint16 len );
+extern uint8  MAP_L2CAP_DisconnectReq( uint16 CID );
+extern uint16 MAP_l2capBuildDisconnectRsp( uint8 *pBuf, uint8 *pData );
+extern void   MAP_l2capProcessConnectReq( uint16 connHandle, uint8 id, void *pConnReq );
+extern void   MAP_l2capGetCoChannelInfo( void *pCoC, void *pInfo );
+extern void   MAP_l2capNotifyChannelEstEvt( void *pChannel, uint8 status, uint16 result );
+extern void  *MAP_l2capFindRemoteCID( uint16 connHandle, uint16 CID );
+extern void   MAP_l2capNotifyChannelTermEvt( void *pChannel, uint8 status, uint16 reason );
+extern void  *MAP_l2capFindLocalCID( uint16 CID );
+extern void   MAP_l2capDisconnectChannel( void *pChannel, uint16 reason );
+
+// (CENTRAL_CFG) functions
+extern uint8 MAP_gapIsInitiating( void );
+extern uint8 MAP_GapInit_cancelConnect( void );
+extern uint8 MAP_smpInitiatorContProcessPairingPubKey( void );
+extern void  MAP_gapInit_initiatingEnd( void );
+extern void  MAP_gapInit_sendConnCancelledEvt( void );
 /*******************************************************************************
  * SDAA module
  */
@@ -1530,8 +1533,9 @@ extern void MAP_llSetRxCfg(void);
 #define MAP_LL_Is_SDAA_Enable( void ) FALSE
 #endif //SDAA_ENABLE
 extern void MAP_LL_SDAA_Init( void );
-extern void MAP_LL_SDAA_RecordTxUsage( uint16 numOfBytes, uint8 phyType, uint8 txPower, uint8 channel );
+extern void MAP_LL_SDAA_HandleSDAALastCmdDone( void );
 extern void MAP_LL_SDAA_AddDwtRecord( uint32 dwT, uint8 task, uint8 index );
+extern void MAP_LL_SDAA_RecordTxUsage( uint16 numOfBytes, uint8 phyType, uint8 power, uint8 channel);
 extern void MAP_LL_SDAA_SampleRXWindow( void );
 extern uint16 MAP_LL_SDAA_GetRXWindowDuration( void );
 extern void MAP_LL_SDAA_SetChannelInSample( uint8 channel );
@@ -1539,5 +1543,17 @@ extern uint8 MAP_llSDAASetupRXWindowCmd(void);
 extern uint8 MAP_llHandleSDAAControlTX(void            *nextConnPtr,
                                        void            *secTask,
                                        uint8           startTaskType);
+
+/*******************************************************************************
+ * Health Toolkit
+ */
+
+uint8_t MAP_llDbgInf_addSchedRec(void * const llTask);
+uint8_t MAP_DbgInf_addSchedRec(void * const newRec);
+uint8_t MAP_DbgInf_addConnEst(uint16_t connHandle, uint8_t connRole, uint8_t encEnabled);
+uint8_t MAP_llDbgInf_addConnTerm(uint16_t connHandle, uint8_t reasonCode);
+uint8_t MAP_DbgInf_addConnTerm(void * const newRec);
+uint8_t MAP_DbgInf_addErrorRec(uint16_t newError);
+
 /*******************************************************************************/
 #endif // MAP_DIRECT_H

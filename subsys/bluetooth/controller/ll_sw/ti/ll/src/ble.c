@@ -20,6 +20,7 @@
  */
 
 #include "bcomdef.h"
+#include "hal_mcu.h"
 #ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
@@ -28,15 +29,14 @@
 #include "rf_api.h"
 #include "rf_hal.h"
 #endif
-#include "hal_mcu.h"
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_ae.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_config.h"
+#include "ble.h"
+#include "ll.h"
+#include "ll_ae.h"
+#include "ll_common.h"
+#include "ll_enc.h"
+#include "ll_config.h"
 #include "hci_event.h"
 #include "hal_gpio_wrapper.h"
 //
@@ -202,7 +202,7 @@ dataQ_t       scanDataQueue;
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 #ifdef USE_RCL
-struct
+typedef struct
 {
   List_Elem            __elem__;
   RCL_BufferState      state;       ///< Buffer state
@@ -214,8 +214,9 @@ struct
     uint8  data[ LL_PKT_HDR_LEN + MAX_BLE_CONNECT_IND_SIZE + RCL_BUFFER_RX_HEADER_ENTRY_SIZE + SUFFIX_MAX_SIZE ];
     uint32 reserved;
   };
-} advDataEntry;
+} advDataEntry_t;
 
+advDataEntry_t advDataEntry[RCL_NUM_ADV_RX];
 RCL_MultiBuffer *pAdvDataEntry = NULL;
 
 #else
@@ -267,6 +268,9 @@ rxOut_t       rxTestOut;
 // Modem Tests (TELECO)
 rfOpCmd_TxTest_t txModemTestCmd;
 rfOpCmd_RxTest_t rxModemTestCmd;
+// RX command for sdaa module
+rfOpCmd_RxTest_t sdaaRxWindowCmd;
+rfOpCmd_freqSynthCtrl_t sdaaFsRfCmd;
 #endif
 
 #ifndef USE_RCL
@@ -947,7 +951,7 @@ void *llSetupAdvDataEntryQueue( void )
   if (pAdvDataEntry == NULL)
   {
     pAdvDataEntry = (RCL_MultiBuffer *)&advDataEntry;
-    RCL_MultiBuffer_init(pAdvDataEntry, sizeof(advDataEntry));
+    RCL_MultiBuffer_init(pAdvDataEntry, sizeof(advDataEntry)*RCL_NUM_ADV_RX);
   }
   return (void *)(pAdvDataEntry);
 #else
@@ -1395,7 +1399,8 @@ void llManageControlPacketQueue( llConnState_t *connPtr, uint8 llCtrlPacket )
                (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_LENGTH_REQ)           ||
                (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_PERIPHERAL_FEATURE_REQ)    ||
                (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_VERSION_IND)          ||
-               (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CTE_REQ))
+               (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CTE_REQ)              ||
+               (connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_PHY_REQ) )
           {
             swapCtrlPacket = connPtr->ctrlPktInfo.ctrlPkts[0];
           }
@@ -1790,6 +1795,20 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
           MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_PERIPHERAL_FEATURE_REQ );
         }
         else
+          if ( llTestMode.testCase == LL_TEST_MODE_JIRA_4785 )
+          {
+            // Not our first encryption
+            if ( connPtr->ctrlPktInfo.ctrlPktCount == 0 )
+            {
+              MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_LENGTH_REQ );
+              MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_VERSION_IND);
+            }
+
+            if ( connPtr->ctrlPktInfo.ctrlPktCount == 1)
+            {
+              MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_LENGTH_REQ );
+            }
+          }
 #endif // LL_TEST_MODE
         {
           // check for a collision with encryption
@@ -4810,6 +4829,7 @@ void RFHAL_FreeNextTxDataEntry( dataEntryQ_t *pDataEntryQ )
 
   // free the TX data entry given by the internal next data entry
   MAP_osal_bm_free( (void *)pNextEntry );
+  pNextEntry = NULL;
 
   HAL_EXIT_CRITICAL_SECTION(cs);
 

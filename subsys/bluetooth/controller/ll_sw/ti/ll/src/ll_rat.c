@@ -31,7 +31,7 @@
 #include <ti/devices/DeviceFamily.h>
 #include DeviceFamily_constructPath(inc/hw_memmap.h)
 #include "hal_mcu.h"
-#include "../../ll/inc/ll_rat.h"
+#include "ll_rat.h"
 //
 #include "rom_jt.h"
 

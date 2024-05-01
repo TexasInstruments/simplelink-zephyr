@@ -20,11 +20,12 @@
  * INCLUDES
  */
 
-#include "../../ll/inc/ll_al.h"
-
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_common.h"
+#include "ll_al.h"
 #include "bcomdef.h"
+#include "ll.h"
+#include "ll_common.h"
+
+//
 #include "rom_jt.h"
 
 /*******************************************************************************
@@ -656,5 +657,24 @@ void AL_Scan_Init ( alTable_t *pAlTable )
   return;
 }
 
+/*******************************************************************************
+ * @fn          AL_GetAcceptListPtr
+ *
+ * @brief       This routine is used to get the pointer of the accept list.
+ *
+ * input parameters
+ *
+ * @param       None.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      pAlTable - Pointer to accept list table..
+ */
+alTable_t *AL_GetALPtr( void )
+{
+    return alTable;
+}
 /*******************************************************************************
  */

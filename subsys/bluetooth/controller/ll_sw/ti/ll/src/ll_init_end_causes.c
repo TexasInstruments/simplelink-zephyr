@@ -31,12 +31,12 @@
 #include "bcomdef.h"
 #include "hal_mcu.h"
 #include "hci_event.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_privacy.h"
-#include "../../ll/inc/ll_rat.h"
-#include "../../ll/inc/ll_timer_drift.h"
-#include "../../ll/inc/ll_ae.h"
+#include "ll_common.h"
+#include "ll_enc.h"
+#include "ll_privacy.h"
+#include "ll_rat.h"
+#include "ll_timer_drift.h"
+#include "ll_ae.h"
 #include "hal_gpio_wrapper.h"
 //
 #include "rom_jt.h"
@@ -86,6 +86,8 @@ extern RCL_MultiBuffer *initDataQueue;
  *              Note: A timestamp for the end of the CONNECT_IND has been
  *                    captured, from which the window offset and window size
  *                    will be based.
+ *
+ * @Design:     BLE_LOKI-1470
  *
  * input parameters
  *
@@ -179,7 +181,16 @@ void llInit_TaskConnect( void )
   // convert the Control Procedure timeout into connection event count
   MAP_llConvertCtrlProcTimeoutToEvent( connPtr );
 #ifdef USE_RCL
-  RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
+  // get the RCL buffer list
+  RCL_MultiBuffer_ListInfo listInfo;
+  RCL_Buffer_DataEntry *rxEntry = NULL;
+  RCL_MultiBuffer_ListInfo_init(&listInfo, &extInitParam.rxBuffers);
+
+  // Get ADV_IND for legacy or AUX_CONN_RSP for AE
+  while( RCL_MultiBuffer_RxEntry_next(&listInfo) != NULL )
+  {
+    rxEntry = RCL_MultiBuffer_RxEntry_get(&extInitParam.rxBuffers, NULL);
+  }
 
   // Nothing to read from the RX buffer, disconnect and returned to scheduling
   if ( rxEntry == NULL )
@@ -191,8 +202,7 @@ void llInit_TaskConnect( void )
 
     return;
   }
-
-  advPkt = (uint8 *)&rxEntry->data[2];
+  advPkt = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
   RCL_MultiBuffer_clear(initDataQueue);
 
 #else
@@ -284,16 +294,10 @@ void llInit_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
-      // AUX_CONNECT_RSP packet
-      // TODO: Find the correct offset for rxPhy indication in RCL adv packet
-      rxPhy = advPkt[LL_PKT_HDR_LEN         +
-                     AE_EXT_HDR_LEN_SIZE    +
-                     AE_EXT_HDR_FLAGS_SIZE  +
-                     (2*LL_DEVICE_ADDR_LEN) + 1];
+      rxPhy = advPkt[AE_PHY_INDEX];
     }
 #endif
-
-    llSetPhy(connPtr, rxPhy);
+    llSetPhy(connPtr, (rxPhy) & BLE5_PHY_MASK);
 
     llSetRangeDelay(connPtr);
 
@@ -560,6 +564,8 @@ void llInit_TaskConnect( void )
  * @fn          llExtInit_PostProcess
  *
  * @brief       This routine is used to post process the Extended Init command.
+ *
+ * @Design:     BLE_LOKI-1468
  *
  * input parameters
  *

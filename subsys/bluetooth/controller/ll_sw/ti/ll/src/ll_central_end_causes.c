@@ -22,7 +22,7 @@
  * INCLUDES
  */
 
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 
@@ -87,6 +87,8 @@
  *
  *              Note: The TASK_ENDOK end cause will also handle the TASK_NOSYNC,
  *                    TASK_RXERR, and TASK_MAXNACK end causes as well.
+ *
+ * @Design:     BLE_LOKI-1470
  *
  * input parameters
  *
@@ -743,7 +745,7 @@ uint8 llSetupNextCentralEvent( void )
   //       uses 0 to mean 1M. At this point, the curPhy should never be
   LL_ASSERT( connPtr->phyInfo.curPhy != LL_PHY_NONE );
 
-  RfBleDpl_setPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
+  RfBleDpl_setConnPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
   llSetRangeDelay(connPtr);
 
   // Note: Output Parameter Counters are cleared in llScheduleTask!
@@ -1050,6 +1052,9 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
             // enable encryption
             connPtr->encEnabled = TRUE;
 
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_CENTRAL_ROLE, UTRUE);
+
             // replace control procedure at head of queue to prevent interleaving
             MAP_llReplaceCtrlPkt( connPtr, LL_CTRL_START_ENC_RSP,
                                   LL_CTRL_UNDEFINED_PKT );
@@ -1066,6 +1071,9 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
             // Note: Not really necessary as no data is supposed to be sent
             //       or received.
             connPtr->encEnabled = FALSE;
+
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_CENTRAL_ROLE, UFALSE);
 
             // set flag to allow outgoing transmissions again
             connPtr->txDataEnabled = TRUE;
@@ -1294,6 +1302,9 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
           {
             // disable encryption
             connPtr->encEnabled = FALSE;
+
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_CENTRAL_ROLE, UFALSE);
 
             // replace control procedure at head of queue to prevent interleaving
             MAP_llReplaceCtrlPkt( connPtr, LL_CTRL_PAUSE_ENC_RSP,

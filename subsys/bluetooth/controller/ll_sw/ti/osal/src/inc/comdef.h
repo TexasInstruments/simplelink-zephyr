@@ -23,76 +23,6 @@ extern "C"
 {
 #endif
 
-#ifdef CONFIG_SOC_CC2340R5
-#define USE_RCL
-#define CC23X0
-#define FREERTOS
-
-/* hci_test.opt */
-#define Display_DISABLE_ALL
-#define ICALL_EVENTS
-#define ICALL_JT
-#define ICALL_LITE
-#define ICALL_MAX_NUM_ENTITIES 6
-#define ICALL_MAX_NUM_TASKS 3
-#define ICALL_STACK0_ADDR
-#define MAX_NUM_BLE_CONNS 8
-#define MAX_PDU_SIZE 255
-#define NPI_SPI_CONFIG CONFIG_SPI_0
-#define xNPI_USE_SPI
-#define NPI_USE_UART
-#define xPOWER_SAVING
-#define STACK_LIBRARY
-#define USE_ICALL
-#define OSAL_CBTIMER_NUM_TASKS 1
-#define xUSE_RCOSC
-#define ONE_BLE_LIB_SIZE_OPTIMIZATION
-//#define USE_AE
-
-/* build_components.opt*/
-
-
-#define BROADCASTER_CFG 0x01
-#define OBSERVER_CFG 0x02
-#define PERIPHERAL_CFG 0x04
-#define CENTRAL_CFG 0x08
-
-#define ADV_NCONN_CFG 0x01
-#define ADV_CONN_CFG 0x02
-#define SCAN_CFG 0x04
-#define INIT_CFG 0x08
-
-#define ADV_CFG ADV_NCONN_CFG+ADV_CONN_CFG
-#define LINK_CFG ADV_CONN_CFG+INIT_CFG
-#define FULL_CFG INIT_CFG+SCAN_CFG+ADV_NCONN_CFG+ADV_CONN_CFG
-
-#define L2CAP_COC_CFG 0x80
-#define HOST_V41_MASK 0x80
-
-#define CTRL_V41_MASK 0x7F
-
-#define SCAN_REQ_RPT_CFG 0x02
-
-#define PHY_2MBPS_CFG 0x01
-#define PHY_LR_CFG 0x02
-#define HDC_NC_ADV_CFG 0x04
-#define AE_CFG 0x08
-#define PERIODIC_ADV_CFG 0x10
-#define AOA_AOD_CFG 0x20
-#define CHAN_ALGO2_CFG 0x40
-
-#define EXTENDED_STACK_SETTINGS_DEFAULT 0x00
-#define CENTRAL_GUARD_TIME_ENABLE 0x01
-
-/* build_config_src */
-#define HCI_TL_FULL
-#define CTRL_CONFIG ADV_NCONN_CFG+ADV_CONN_CFG+SCAN_CFG+INIT_CFG
-#define BLE_VS_FEATURES SCAN_REQ_RPT_CFG
-#define BLE_V50_FEATURES PHY_2MBPS_CFG+PHY_LR_CFG+HDC_NC_ADV_CFG+CHAN_ALGO2_CFG+AE_CFG
-#define ICALL_LITE_12_PARAMS
-#define NO_OSAL_SNV
-
-#endif
 
 /*********************************************************************
  * INCLUDES
@@ -101,9 +31,7 @@ extern "C"
 /* HAL */
 #include "hal_types.h"
 #include "hal_defs.h"
-#ifdef CONFIG_SOC_CC2340R5
-#include "hal_mcu.h"
-#endif
+
 /// @cond NODOC
 
 /*********************************************************************
@@ -151,12 +79,15 @@ extern "C"
 
 /*** Generic Status Return Values ***/
 #define SUCCESS                   0x00 //!< SUCCESS
+#define USUCCESS                  0U   //!< SUCCESS
 #ifndef CC33xx
 #define FAILURE                   0x01 //!< Failure
+#define UFAILURE                  1U   //!< Failure
 #else
 #define FAILURE_CC33XX            0x01 //!< Failure CC33xx to avoid redefinition with Osprey
 #endif // CC33xx
 #define INVALIDPARAMETER          0x02 //!< Invalid Parameter
+#define UINVALIDPARAMETER         2U   //!< Invalid Parameter
 #define INVALID_TASK              0x03 //!< Invalid Task
 #define MSG_BUFFER_NOT_AVAIL      0x04 //!< No HCI Buffer is Available
 #define INVALID_MSG_POINTER       0x05 //!< Invalid Message Pointer

@@ -106,9 +106,7 @@ typedef struct
 #endif
   uint8                 maxAlElems;             // Max elements in the accept list
   uint8                 maxRlElems;             // Max elements in the resolving list
-#ifndef CONFIG_SOC_CC2340R5
   ECCParams_CurveParams *eccCurveParams;        // ECC curve parameters
-#endif
   pfnFastStateUpdate_t  fastStateUpdateCb;      // Fast state update callback
   uint32                bleStackType;           // BLE Stack Type
   uint32                extStackSettings;       // BLE misc stack settings
@@ -139,8 +137,11 @@ typedef struct
   uint16                  rclPhyFeature2MBPS;     // RCL_PHY_FEATURE_SUB_PHY_2_MBPS
   uint16                  rclPhyFeatureCoded;     // RCL_PHY_FEATURE_SUB_PHY_CODED
   uint16                  rclPhyFeatureCodedS8;   // RCL_PHY_FEATURE_CODED_TX_RATE_S8
-  uint16                  rclPhyFeatureCodedS2;   //RCL_PHY_FEATURE_CODED_TX_RATE_S2
+  uint16                  rclPhyFeatureCodedS2;   // RCL_PHY_FEATURE_CODED_TX_RATE_S2
 #endif
+  sdaaUsrCfg_t            *sdaaCfgPtr;            // sdaa module user's parameters
+  uint8                   useSrcClkLFOSC;         // Specifies whether Source Clock is LFOSC (RCOSC)
+  uint16                  cfgLFOSCExtraPPM;       // Additional PPM configured by the user, applicable when using LFOSC (default: 1500ppm)
 } llUserCfg_t;
 
 /*******************************************************************************

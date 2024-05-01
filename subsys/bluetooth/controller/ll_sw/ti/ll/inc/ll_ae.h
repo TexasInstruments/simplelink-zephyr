@@ -39,10 +39,10 @@
 #else
 #include "rf_hal.h"
 #endif
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll_al.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
+#include "ble.h"
+#include "ll_al.h"
+#include "ll_common.h"
+#include "ll_config.h"
 
 /*******************************************************************************
  * HCI AE API
@@ -127,17 +127,9 @@
 #define AE_MAX_ADV_SETS                                     254
 #define AE_MAX_ADV_SETS_TO_ENABLE_DISABLE                   63
 
-#if defined( CC26XX ) || defined( CC13XX ) || defined( CC23X0 )
-  #if defined( CC26X2 ) || defined( CC13X2 ) || defined( CC13X2P ) || defined( CC23X0 )
-    #define AE_MAX_ADV_DATA_LEN                             1650
-    #define AE_MAX_SCAN_RSP_DATA_LEN                        1650
-    #define AE_MAX_NUM_ADV_SETS                             20
-  #else // CC26XX_R2 || CC1350LP_7XD ...
-    #define AE_MAX_ADV_DATA_LEN                             300
-    #define AE_MAX_SCAN_RSP_DATA_LEN                        300
-    #define AE_MAX_NUM_ADV_SETS                             6
-  #endif // CC26X2 || CC13X2
-#endif // CC26XX || CC13XX
+#define AE_MAX_ADV_DATA_LEN                                 1650
+#define AE_MAX_SCAN_RSP_DATA_LEN                            1650
+#define AE_MAX_NUM_ADV_SETS                                 20
 
 #define AE_MAX_ADV_PAYLOAD_LEN                              255
 #define AE_DEFAULT_ADV_DATA_LEN                             AE_MAX_ADV_DATA_LEN
@@ -207,7 +199,7 @@
 #define EXTHDR_FLAG_SYNCINFO_SIZE                           18
 #define EXTHDR_FLAG_TXPWR_SIZE                              1
 #define EXTHDR_FLAG_RFU2_SIZE                               1
-#define EXTHDR_FLAG_ACAD_SIZE                               9  //for periodic channel map update indication
+#define EXTHDR_FLAG_ACAD_SIZE                               9 //for periodic channel map update indication
 //
 #define EXTHDR_FLAG_ADVA                                    BV(EXTHDR_FLAG_ADVA_BIT)
 #define EXTHDR_FLAG_TARGETA                                 BV(EXTHDR_FLAG_TARGETA_BIT)
@@ -228,15 +220,28 @@
 #define EXTHDR_ACAD_CHANMAP_UPDATE_SIZE                    0x08
 #define EXTHDR_ACAD_CHANMAP_UPDATE_TYPE                    0x28
 //
+#ifdef USE_RCL
+#define EXTHDR_TOTAL_BUF_SIZE                               (EXTHDR_FLAGS_SIZE         +  \
+                                                             EXTHDR_FLAG_ADVA_SIZE     +  \
+                                                             EXTHDR_FLAG_TARGETA_SIZE  +  \
+                                                             EXTHDR_FLAG_CTEINFO_SIZE  +  \
+                                                             EXTHDR_FLAG_ADI_SIZE      +  \
+                                                             EXTHDR_FLAG_AUXPTR_SIZE   +  \
+                                                             EXTHDR_FLAG_SYNCINFO_SIZE +  \
+                                                             EXTHDR_FLAG_TXPWR_SIZE)
+#else
 #define EXTHDR_TOTAL_BUF_SIZE                               (EXTHDR_FLAG_ADI_SIZE      +  \
                                                              EXTHDR_FLAG_AUXPTR_SIZE   +  \
                                                              EXTHDR_FLAG_SYNCINFO_SIZE +  \
                                                              EXTHDR_FLAG_TXPWR_SIZE)
 
+#endif // USE_RCL
 #define PERIODIC_ADV_HDR_TOTAL_BUF_SIZE                     (EXTHDR_FLAG_CTEINFO_SIZE  +  \
                                                              EXTHDR_FLAG_AUXPTR_SIZE   +  \
                                                              EXTHDR_FLAG_TXPWR_SIZE)   +  \
                                                              EXTHDR_FLAG_ACAD_SIZE
+
+#define AE_EXT_HDR_ADV_TYPE_FIELD_SIZE                      1 // 6 bits extended header size and 2 bits for the adv type
 
 // Auxilary Offset Units
 #define AE_AUX_OFFSET_UNITS_30_US                           0
@@ -245,14 +250,17 @@
 #define AE_AUX_OFFSET_30_US_UNIT_VALUE                      30
 #define AE_AUX_OFFSET_300_US_UNIT_VALUE                     300
 #define AE_AUX_OFFSET_UNITS_VALUE_DIFF                      (AE_AUX_OFFSET_300_US_UNIT_VALUE - AE_AUX_OFFSET_30_US_UNIT_VALUE)
+#define AE_AUX_OFFSET_LSB                                   1
+#define AE_AUX_OFFSET_MSB                                   2
 #define AE_AUX_OFFSET_UNITS_OFFSET                          7
+#define AE_AUX_OFFSET_OFFSET                                8
 #define AE_AUX_OFFSET_UNIT_CUTOFF_TIME                      0x0003BFC4 // 245,700 us
 #define AE_AUX_OFFSET_SIZE                                  13         // in bits
 #define AE_AUX_OFFSET_MASK                                  0x1FFF
 #define AE_AUX_OFFSET_AUTO_INSERT                           0
 
 // Auxiliary Channel Index
-#define AE_CHAN_INDEX_MASK                                  0x3F
+#define AE_CHAN_INDEX_MASK                                  0x3FU
 #define AE_IGNORE_BIT_MASK                                  0x40
 #define AE_IGNORE_BIT_OFFSET                                6
 
@@ -276,6 +284,18 @@
 */
 #define AE_EXT_HDR_LEN_SIZE                                 1
 #define AE_EXT_HDR_FLAGS_SIZE                               1
+#ifdef USE_RCL
+#define AE_PHY_INDEX            LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
+                                AE_EXT_HDR_FLAGS_SIZE + 2 * LL_DEVICE_ADDR_LEN
+#else
+#define AE_PHY_INDEX            LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
+                                AE_EXT_HDR_FLAGS_SIZE + 2 * LL_DEVICE_ADDR_LEN + 1
+#endif // USE_RCL
+
+#define AE_AUX_ADVA_INDEX       LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
+                                AE_EXT_HDR_FLAGS_SIZE
+
+#define AE_AUX_TARGETA_INDEX    AE_AUX_ADVA_INDEX + B_ADDR_LEN
 
 /*
 ** Advertising and Scan Response Data
@@ -401,9 +421,12 @@
 #define LEGACY_ADV_MAX_TIME_CONSUME                        3500
 #define AE_CONSUME_OVERHEAD                                1500
 #define AE_NUM_BYTES_OVERHAED_27_BYTES                       27
+#ifdef USE_RCL
+#define AE_SWITCH_TIME                                     420
+#endif
 
 // adv sorted list node start time error code
-#define AE_INVALID_START_TIME                                 0
+#define AE_INVALID_START_TIME                               0
 
 #if defined(CC26X2) || defined(CC13X2) || defined(CC13X2P) || defined(CC13X4) || defined(CC23X0) || defined(CC26X4)
   // TEMP: Define substitute for StartSynthToRatOffset, a radio parameter(?).
@@ -428,9 +451,9 @@
 #define AE_SCAN_PERIOD_TIMEOUT                              1
 
 // scan start state
-#define AE_SCAN_START_STATE_FIRST                           0
-#define AE_SCAN_START_STATE_SECOND                          1
-#define AE_SCAN_START_STATE_NEXT                            2
+#define AE_SCAN_START_STATE_FIRST                           0  // New period
+#define AE_SCAN_START_STATE_SECOND                          1  // Invoke interval callback
+#define AE_SCAN_START_STATE_NEXT                            2  // End of a period
 
 // Action on scan state list
 #define EXT_SCAN_STATE_LIST_ADD                             0
@@ -1171,6 +1194,7 @@ PACKED_TYPEDEF_STRUCT
 */
 #ifdef USE_RCL
 
+// Legacy advertising packet struct
 typedef struct
 {
   List_Elem          __elem__;
@@ -1189,8 +1213,62 @@ typedef struct
     uint8            advData[ LL_MAX_ADV_DATA_LEN ];
     uint8            scanRspData[ LL_MAX_SCAN_DATA_LEN  ];
   };
-}aeLegacyPacket;
+} aeLegacyPacket;
+#ifdef USE_AE
 
+// Common Extended Packet Entry Format
+typedef struct
+{
+  uint8         extHdrInfo;            // W:  advMode(7..6), lenth(5..0)
+  uint8         extHdrFlags;           // W:  ext hdr flags per spec
+  uint8         extHdrConfig;          // W:  ext hdr configuration
+  uint8         advDataLen;            // W:  size of Adv data
+  uint8        *pExtHeader;            // W:  ptr to buffer with ext hdr
+  uint8        *pAdvData;              // W:  ptr to adv data
+} comExtPktFormat_t;
+
+// Extended advertising packet struct
+typedef struct
+{
+  List_Elem          __elem__;
+  RCL_BufferState    state;                                   ///< Buffer state
+  uint16             length   __attribute__ ((aligned (4)));  ///< Number of bytes in buffer after the length field
+  uint8              numPad;                                  ///< Number of pad bytes before start of the packet
+  uint8              pad0;                                    ///< First pad byte, or first byte of the packet if numPad == 0
+  uint8              pad1;
+  uint8              pad2;
+  uint8              header;                                  ///< contain the packet type (EXT_IND/AUX_ADV...), chSel, TX/RX address type if needed
+  uint8              payloadLen;                              ///< Packet payload length, include the header length and data length
+  uint8              extHdrLen:6;                             ///< Extended header length
+  uint8              advType:2;                               ///< NC_NS/Connectable...
+  uint8              data[ LL_MAX_EXT_DATA_LEN ];             ///< The maximum is 254 and it depends on the header len
+} aePacket;
+
+/*
+ * Extended advertising command struct
+ * This structure holds 3 TX buffers. These buffer are used for building
+ * the extended advertising packets the RCL will transmit.
+ * There will be a rotation between the three buffers depending on the
+ * chain length
+ */
+typedef struct
+{
+  RCL_CmdBle5Advertiser    extRfCmd;
+  RCL_CtxAdvertiser        advParam;
+  RCL_StatsAdvScanInit     advOutput;
+  aePacket                 txBuffer;
+  aePacket                 txBuffer2;
+  aePacket                 txBuffer3;
+  comExtPktFormat_t        comPkt;
+  uint16                   auxPhyFeature;
+  uint8                    extHdr[EXTHDR_TOTAL_BUF_SIZE];
+  uint8                    buffNo:2;  /// < Marks the next txBuffer that should be used
+  uint8                    rfu:6;
+} aeRf_t;
+
+#endif // USE_AE
+
+// Legacy advertising command struct
 typedef struct
 {
   RCL_CmdBle5Advertiser advCmd;
@@ -1203,7 +1281,11 @@ typedef struct
 typedef union
 {
   aeLegacyRf_t aeRfLegacyCmd;
+#ifdef USE_AE
+  aeRf_t       aeRfCmd;
+#endif
 } aeRfCmdSize_t;
+
 
 #else
 
@@ -1811,9 +1893,11 @@ extern sortedAdv_t  *llGetAdvSortedEntry( advSet_t * );
 extern void          llUpdateSortedAdvList( void );
 extern void          llSetAETimeConsume( sortedAdv_t *aeNode );
 extern sortedAdv_t  *llDetachNode( sortedAdv_t *aeNode );
-extern uint32        llAddAdvSortedEntry( advSet_t *pAdvSet, sortedAdv_t** newNode );
+extern llStatus_t    llAddAdvSortedEntry( advSet_t *pAdvSet, sortedAdv_t** newNode, uint32 *pAdvStartTime );
+extern void          llRemoveAdvSortedEntry( advSet_t *pAdvSet );
 extern void          llAllocRfMem( advSet_t * );
 extern llStatus_t    llSetupExtAdv( advSet_t * );
+extern llStatus_t    llBuildExtAdvPacket(advSet_t *pAdvSet, uint8 pktType, uint8 payloadLen, uint8 *pData, uint8 dataLen);
 #if !defined(DeviceFamily_CC13X4) && !defined(DeviceFamily_CC26X4)
 extern llStatus_t    llSetupPeriodicAdv( advSet_t * );
 #endif

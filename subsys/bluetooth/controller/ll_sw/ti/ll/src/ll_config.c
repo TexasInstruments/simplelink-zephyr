@@ -18,20 +18,18 @@
  * INCLUDES
  */
 
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
 #include "hal_mcu.h"
 #ifndef USE_RCL
 #include <ti/drivers/rf/RF.h>
 #include "rf_hal.h"
 #endif
-#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/ECDH.h>
-#endif
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll_al.h"
+#include "ll_config.h"
+#include "ll.h"
+#include "ll_common.h"
+#include "ble.h"
+#include "ll_al.h"
 
 /*******************************************************************************
  * MACROS
@@ -125,9 +123,8 @@ const rfOp_t rfOpLoc                = RF_OP_PTR_LOCATION;
 const uint8 cryptoMode              = CRYPTO_DRV_MODE_POLLING;
 
 // ECDH key gen Mode
-#ifndef CONFIG_SOC_CC2340R5
 const uint8 ecdhMode                = ECDH_RETURN_BEHAVIOR_BLOCKING;
-#endif
+
 // Advertising Extension parameter:
 // Offset to be added to the start time of the count command used
 // in the primary channel.
@@ -173,9 +170,7 @@ llUserCfg_t llUserConfig            =
 #endif
   .maxAlElems         = MAX_NUM_AL_ENTRIES,      // Max number of elements in the accept list
   .maxRlElems         = MAX_NUM_RL_ENTRIES,      // Max number of elements in the resolving list
-#ifndef CONFIG_SOC_CC2340R5
   .eccCurveParams     = NULL,                    // ECC curve parameters
-#endif
   .fastStateUpdateCb  = NULL,                    // Fast state update callback
   .bleStackType       = 0 ,                      // BLE Stack Type
   .extStackSettings   = EXTENDED_STACK_SETTINGS, // Stack misc settings
@@ -204,8 +199,9 @@ llUserCfg_t llUserConfig            =
   .rclPhyFeature2MBPS     = 0,
   .rclPhyFeatureCoded     = 0,
   .rclPhyFeatureCodedS8   = 0,
-  .rclPhyFeatureCodedS2   = 0
+  .rclPhyFeatureCodedS2   = 0,
 #endif
+  .sdaaCfgPtr            = NULL                  // SDAA module user's parameters
 };
 
 uint16  llUserConfig_maxPduSize         =  MAX_DATA_SIZE;    // Max Data Size - Used to replace llUserConfig.maxPduSize
@@ -242,14 +238,19 @@ uint16  llUserConfig_maxPduSize         =  MAX_DATA_SIZE;    // Max Data Size - 
     .maxPktsPerEvtPtr       = &maxPktsPerEvt,
 #endif
     .cryptoMode             = &cryptoMode,
-#ifndef CONFIG_SOC_CC2340R5
     .ecdhMode               = &ecdhMode,
-#endif
-	.connEvtCutoff          = &connEvtCutoff,
+    .connEvtCutoff          = &connEvtCutoff,
     .advExtPrimLoopOffsetUs = &advExtPrimLoopOffsetUs,
     .advExtSecLoopOffsetUs  = &advExtSecLoopOffsetUs,
     .userCfgPtr             = &llUserConfig
 };
+
+// Global flag for using dynamic filter list module
+#ifdef USE_DFL
+uint8 useDFL = TRUE;
+#else
+uint8 useDFL = FALSE;
+#endif
 
 /*******************************************************************************
  */

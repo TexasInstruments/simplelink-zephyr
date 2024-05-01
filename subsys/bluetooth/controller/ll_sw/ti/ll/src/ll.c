@@ -23,16 +23,18 @@
  */
 
 #ifdef CC33xx
-#include "system_info.h"
-#include "icall_porting.h"
 #ifdef OSPREY_COEX
-#include "coex_driver.h"
+#include "coex_driver_ble.h"
 #endif
+#include "bleOspreyUtils.h"
+#include "icall_porting.h"
+#include "ble_thermal_protection.h"
 #endif
 
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
+#include "hal_mcu.h"
 #include <ti/drivers/utils/Random.h>
-#include "../../ll/inc/ll_ecc.h"
+#include "ll_ecc.h"
 
 #ifndef USE_RCL
 #include <ti/drivers/rf/RF.h>
@@ -42,28 +44,26 @@
 #endif
 #endif
 
-#ifndef CONFIG_SOC_CC2340R5
 #include "onboard.h"
-#endif
 #include "hal_sleep.h"
-#include "hal_mcu.h"
 #include "osal_bufmgr.h"
 #include "osal_pwrmgr.h"
 #include "osal_cbtimer.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_ae.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_scheduler.h"
-#include "../../ll/inc/ll_timer_drift.h"
+#include "ll.h"
+#include "ll_ae.h"
+#include "ll_common.h"
+#include "ll_enc.h"
+#include "ll_config.h"
+#include "ll_scheduler.h"
+#include "ll_timer_drift.h"
 
-#include "../../ll/inc/ll_rat.h"
+#include "ll_rat.h"
 
-#include "../../ll/inc/ll_privacy.h"
-#include "../../ll/inc/ble.h"
+#include "ll_privacy.h"
+#include "ble.h"
 #include "hci_event.h"
 #include "hal_gpio_wrapper.h"
+#include <ti/bleapp/health_toolkit/inc/debugInfo_errno.h>
 
 //
 #include "rom_jt.h"
@@ -78,14 +78,12 @@
 #include "rf_hal.h"
 #endif // USE_RCL
 
-#ifndef CONFIG_SOC_CC2340R5
 #if defined(CC23X0) || defined(CC33xx)
 #include <ti/drivers/ECDH.h>
 #else
 #include "trng_api.h"
 #include "ecc_api.h"
 #endif // CC23X0 || CC33xx
-#endif
 
 #ifdef USE_ICALL
 #ifdef CC23X0
@@ -104,11 +102,12 @@
 
 #ifdef CC23X0
 #include DeviceFamily_constructPath(inc/hw_fcfg.h)
-#ifndef CONFIG_SOC_CC2340R5
+#ifndef USE_HSM
 #include <ti/drivers/rng/RNGLPF3RF.h>
+#else
+#include <ti/drivers/rng/RNGLPF3HSM.h>
 #endif
 #endif
-
 // Extended Scanner
 aeSetScanParamCmd_t aeScanParams;
 aeEnableScanCmd_t   aeScanEnable;
@@ -265,11 +264,11 @@ aeCreateConnCmd_t   aeCreateConn;
 #define PERIODIC_SCAN_CREATE_SYNC_OPTIONS_MAX_VAL           3
 #define PERIODIC_SCAN_CREATE_SYNC_SID_MAX_VAL               0x0F
 #define PERIODIC_SCAN_CREATE_SYNC_SKIP_MAX_VAL              0x01F3
-#define PERIODIC_SCAN_CREATE_SYNC_TIMEOUT_MIN_VAL           0x000A
-#define PERIODIC_SCAN_CREATE_SYNC_TIMEOUT_MAX_VAL           0x4000
-#define PERIODIC_SCAN_CREATE_SYNC_CTE_TYPE_MAX_VAL          0x1F  // bits 0-4
-#define PERIODIC_SCAN_CREATE_SYNC_CTE_TYPE_VALID_BITS_VAL   0x17  // bits 0-4 exclude bit 3
-#define PERIODIC_SCAN_ACCEPT_LIST_MAX_ITEMS                  0xFF  // max items according to spec
+#define PERIODIC_SCAN_CREATE_SYNC_TO_MIN_VAL                0x000A
+#define PERIODIC_SCAN_CREATE_SYNC_TO_MAX_VAL                0x4000
+#define PERIODIC_SCAN_CREATE_SYNC_CTE_MAX_VAL               0x1F  // bits 0-4
+#define PERIODIC_SCAN_CREATE_SYNC_CTE_VALID_BITS_VAL        0x17  // bits 0-4 exclude bit 3
+#define PERIODIC_SCAN_ACCEPT_LIST_MAX_ITEMS                 0xFF  // max items according to spec
 
 #ifdef CC33xx
 #define SCLK_LF_EXTERNAL_VALUE 0x40
@@ -325,9 +324,6 @@ extern uint8 scanState;
 */
 
 #ifdef CC33xx
-//BD address value from Osprey eFuse
-uint8 eFuseBdAddr[ LL_DEVICE_ADDR_LEN ];
-
 //Set the sclkSrcVal to SCLK_LF_EXTERNAL
 uint8 sclkSrcVal = SCLK_LF_EXTERNAL_VALUE;
 #endif
@@ -419,12 +415,10 @@ cteAntennaProp_t cteAntennaProp;
 
 uint8 *activeConns;
 
-#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 RNG_Handle trngHandle;
 #else
 TRNG_Handle trngHandle;
-#endif
 #endif
 
 #ifdef LL_TEST_MODE
@@ -649,11 +643,8 @@ void LL_Init( uint8 taskId )
 #endif // DEBUG_GPIO_ADV_SCAN
 
 #ifdef CC33xx
-  // fetch BDADDR from Osprey eFuse
-  systemInfo_get_ble_bd_addr(eFuseBdAddr);
-
   // set BDADDR to local value
-  LL_COPY_DEV_ADDR_LE( ownPublicAddr, eFuseBdAddr );
+  LL_COPY_DEV_ADDR_LE( ownPublicAddr, OspreyBleGetBdAddr() );
 
   // set the slow clock value
   sclkSrc = &sclkSrcVal;
@@ -830,6 +821,9 @@ void LL_Init( uint8 taskId )
     return;
   }
 
+  // Init SDAA module work only if SDAA_ENABLE
+  MAP_LL_SDAA_Init();
+
   //////////////////////////////////////////////////////////////////////////////
   // End Dynamic Allocation
   //////////////////////////////////////////////////////////////////////////////
@@ -845,7 +839,6 @@ void LL_Init( uint8 taskId )
   // init and open the PRNG driver
   Random_seedAutomatic();
 
-#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
   // RNG_init should be called only after LL_initRNGNoise is called
   RNG_init();
@@ -867,7 +860,7 @@ void LL_Init( uint8 taskId )
   // open the TRNG driver to get the handle
   trngHandle = TRNG_open(0, &params);
 #endif // !CC23X0
-#endif
+
   // Init the DRBG driver and generate it's seed number once by calling the TRNG
   LL_ENC_GenerateDRBGSeedNum();
 
@@ -913,7 +906,7 @@ void LL_Init( uint8 taskId )
 }
 
 /*******************************************************************************
- * This function returns True if Adv/Scan/Init/periodec_sync is/are active
+ * This function returns True if Adv/Scan/Init/periodic_sync is/are active
  * O.W return False.
  */
 uint8 LL_IsRLActiveTasksRunning( void )
@@ -937,7 +930,7 @@ uint8 LL_IsRLActiveTasksRunning( void )
 
 #if defined(CTRL_CONFIG) && defined(USE_PERIODIC_SCAN) && (CTRL_CONFIG & SCAN_CFG)
   activeTasks |= (llPeriodicScan.createSync != NULL);
-#endif // Periodec ADV SYNC
+#endif // Periodic ADV SYNC
 
   return activeTasks;
 }
@@ -953,6 +946,8 @@ uint8 LL_IsResolvingListInUsed( void )
 
 /*******************************************************************************
  * This is the Link Layer process event handler called by OSAL.
+ *
+ * @Design: BLE_LOKI-1451
  *
  * Public function defined in ll.h.
  */
@@ -1262,7 +1257,7 @@ llStatus_t LL_Reset( void )
   GPIO_writeDio(HAL_GPIO_2, 0);
   GPIO_writeDio(HAL_GPIO_3, 0);
 #endif // DEBUG_GPIO_ADV_SCAN
-
+  llStatus_t retVal = LL_STATUS_SUCCESS;
   // reset Tx Power to its default value
   // Note: The variable curTxPowerVal must be set here before calling llRfInit!
   curTxPowerVal = RfBleDpl_getTxPowerDefaultIdx();
@@ -1299,6 +1294,13 @@ llStatus_t LL_Reset( void )
   // initialize the accept list
   MAP_AL_Init( alTable );
   MAP_AL_Scan_Init( alTableScan );
+
+  // (Radio core using dynamic filter list)
+  if ( useDFL == TRUE )
+  {
+    // initialize the dynamic filter list
+    retVal = LL_DFL_Init( LL_DFL_GetDynamicFilterlist(), LL_DFL_GetRankTable() );
+  }
 
   // clear the accept list table
   MAP_LL_ClearAcceptList();
@@ -1458,10 +1460,11 @@ llStatus_t LL_Reset( void )
   //set random Address as not configured
   randomAddressConfigured = FALSE;
 
-  return( LL_STATUS_SUCCESS );
+  return retVal;
 }
 
 #ifdef CC23X0
+#ifndef USE_HSM
 /*******************************************************************************
  * This function is used by osal to initialize the RNG driver before the system boots
  *
@@ -1469,8 +1472,6 @@ llStatus_t LL_Reset( void )
  */
 llStatus_t LL_initRNGNoise( void )
 {
-#ifndef CONFIG_SOC_CC2340R5
-
   int_fast16_t rclStatus, result;
 
   /* User's global array for noise input based on size provided in syscfg */
@@ -1507,11 +1508,11 @@ llStatus_t LL_initRNGNoise( void )
   {
     return ( LL_STATUS_ERROR_HW_FAILURE );
   }
-#endif
+
   return ( LL_STATUS_SUCCESS );
 }
 #endif
-
+#endif
 /*******************************************************************************
  * LL API for HCI
  */
@@ -2193,9 +2194,7 @@ llStatus_t LL_ReadSupportedStates( uint8 *states )
   LL_SET_SUPPORTED_STATES( LL_ACTIVE_SCAN_CENTRAL_CONN_STATE );
 
 #else // CTRL_CONFIG==0
-#ifndef CONFIG_SOC_CC2340R5
 #error "***ERROR*** Controller Build Configuration Error!"
-#endif
 #endif // CTRL_CONIFG
 
   return( LL_STATUS_SUCCESS );
@@ -2525,7 +2524,6 @@ llStatus_t LL_ReadRssi( uint16  connId,
     rssi = ((llConnState_t *)MAP_llDataGetConnPtr( connId ))->lastRssi;
   }
 #endif // ADV_CONN_CFG | INIT_CFG
-
   // check RSSI, and if valid, correct
   *lastRssi = LL_CHECK_LAST_RSSI( rssi );
 
@@ -2650,6 +2648,9 @@ llStatus_t LL_TxData( uint16 connId,
   {
     // indicate to the Host that an overflow has occurred.
     MAP_HCI_DataBufferOverflowEvent( HCI_LINK_TYPE_ACL_BUFFER_OVERFLOW );
+
+    /**** UPDATE DEBUG INFO MODULE ****/
+    (void)MAP_DbgInf_addErrorRec(DBGINF_ERROR_LL_OUT_OF_TX_MEM);
 
     return( LL_STATUS_ERROR_OUT_OF_TX_MEM );
   }
@@ -2782,6 +2783,10 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
   {
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
+
+#ifdef CC33xx
+  bleThermal_NotifyDeviceTestModeChange(TRUE);
+#endif
 
 #if defined( TEST_MODE_DTM )
   IOCPinTypeGpioOutput( HAL_GPIO_1 );
@@ -3193,6 +3198,10 @@ llStatus_t LL_DirectTestEnd( void )
     MAP_llHaltRadio(((llState == LL_STATE_DIRECT_TEST_MODE_TX)?(uint32)&txDtmTestCmd:(uint32)&rxTestCmd));
 #endif
 
+#ifdef CC33xx
+  bleThermal_NotifyDeviceTestModeChange(FALSE);
+#endif
+
   // return parameters depend on which test we were running
   if ( llState == LL_STATE_DIRECT_TEST_MODE_TX )
   {
@@ -3249,6 +3258,12 @@ llStatus_t LL_DirectTestEnd( void )
     // init RF
     MAP_llRfInit();
 #endif
+  }
+  else
+  {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
   }
 
   // back to Idle
@@ -3577,7 +3592,11 @@ llStatus_t LL_ConnUpdate( uint16 connId,
  */
 llStatus_t LL_ReadAdvChanTxPower( int8 *txPower )
 {
-  LL_ASSERT( txPower != NULL );
+  // sanity check
+  if ( txPower == NULL )
+  {
+    return( LL_STATUS_ERROR_INVALID_PARAMS);
+  }
 
   // return Adv TX power level based on settings
   *txPower = MAP_llGetTxPower();
@@ -4426,8 +4445,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
     // check if we're already in a connection as a Peripheral with this device as a Central
     // Note: This test is done ONLY if the advertisement is a directed advertisement
     if (  TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) &&
-          MAP_llConnExists( LL_TASK_ID_CENTRAL,
-                           pAdvSet->peerAddr,
+          MAP_llConnExists(pAdvSet->peerAddr,
                            pAdvSet->peerAddrType ) )
     {
       return( HCI_ERROR_CODE_ACL_CONN_ALREADY_EXISTS );
@@ -4539,6 +4557,17 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
       // setup the radio command
       if ( (status = MAP_llSetupExtAdv( pAdvSet )) != LL_STATUS_SUCCESS )
       {
+        if( status == LL_STATUS_ERROR_UNEXPECTED_PARAMETER )
+        {
+          HAL_ENTER_CRITICAL_SECTION(cs);
+
+          // There was an error building the advertising TX packets. Remove the node from the sorted list
+          MAP_llRemoveAdvSortedEntry(pAdvSet);
+          // free task and teardown privacy if need be
+          MAP_llEndExtAdvTask( pAdvSet );
+
+          HAL_EXIT_CRITICAL_SECTION(cs);
+        }
         return( status );
       }
 
@@ -4585,8 +4614,19 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
         if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
              TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
         {
-          // enables and clears the extended accept list
-          MAP_LL_PRIV_SetupPrivacy( alTable );
+          // (Radio core using dynamic filter list)
+          if ( useDFL == TRUE )
+          {
+            if ( LL_DFL_Init( LL_DFL_GetDynamicFilterlist(), LL_DFL_GetRankTable()) != LL_STATUS_SUCCESS )
+            {
+              return (LL_STATUS_ERROR_INVALID_PARAMS);
+            }
+          }
+          else // !(Radio core using dynamic filter list)
+          {
+            // enables and clears the extended accept list
+            MAP_LL_PRIV_SetupPrivacy( alTable );
+          }
         }
       }
       // set LL state based on Adv event type
@@ -4643,34 +4683,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
     // Disabling the advertising set identified by the Advertising_Handle[i]
     // parameter does not disable any periodic advertising associated with
     // that set.
-
-    // indicate we are no longer actively advertising
-    pAdvSet->advMode = LL_ADV_MODE_OFF;
-
-    //  traverse the AE List and search for nodes which are disabled
-    sortedAdv_t *tmpNode = pNextAdvSet;
-    do
-    {
-      if ((tmpNode->AdvEntry->advMode == LL_ADV_MODE_OFF) && (tmpNode->AdvEntry->pAdvParam->handle == aeCurAdvEnableHandle))
-      {
-        // more then one node is active in the AE List.
-        // NOTE: in the case we're about to disblae the last adv set
-        //       it will be handled in llFreeTask since it need to close
-        //       the "whole" adv task.
-        if (numActiveAdvSets > 1)
-        {
-          // remove the AE set from the AE List and free it.
-          MAP_osal_mem_free(llDetachNode(tmpNode));
-          numActiveAdvSets--;
-        }
-        break;
-      }
-      else
-      {
-        tmpNode = tmpNode->next;
-      }
-    // while have not reached the end of the AE List.
-    }while(tmpNode != pNextAdvSet);
+    MAP_llRemoveAdvSortedEntry(pAdvSet);
 
     // check if this task is to be halted
     // Note: We can halt the radio if this is the only task and if this is
@@ -5253,7 +5266,11 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
         {
           extScanParam.rpaModeOwn = TRUE;
         }
+
+        // Accept peer RPA
         extScanParam.rpaModePeer = TRUE;
+        extScanParam.acceptAllRpaConnectRsp = TRUE;
+
         if ( extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST_EXT )
         {
           extScanParam.scanExtFilterPolicy = TRUE;
@@ -5533,8 +5550,7 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   if (llTestMode.testCase != LL_TEST_MODE_TP_CON_ADV_BI_02)
 #endif
   { // DO NOT REMOVE!!!! - opened a block section to enable the test mode combination
-    if ( MAP_llConnExists( LL_TASK_ID_PERIPHERAL,
-                           pCmdParams->peerAddr,
+    if ( MAP_llConnExists( pCmdParams->peerAddr,
                            pCmdParams->peerAddrType ) )
     {
       return( HCI_ERROR_CODE_ACL_CONN_ALREADY_EXISTS );
@@ -6506,15 +6522,15 @@ llStatus_t LE_PeriodicAdvCreateSync( uint8  options,
   // validate the parameters
   if ((options     > PERIODIC_SCAN_CREATE_SYNC_OPTIONS_MAX_VAL) ||
       (skip        > PERIODIC_SCAN_CREATE_SYNC_SKIP_MAX_VAL) ||
-      (syncTimeout < PERIODIC_SCAN_CREATE_SYNC_TIMEOUT_MIN_VAL) ||
-      (syncTimeout > PERIODIC_SCAN_CREATE_SYNC_TIMEOUT_MAX_VAL) ||
-      (syncCteType > PERIODIC_SCAN_CREATE_SYNC_CTE_TYPE_MAX_VAL))
+      (syncTimeout < PERIODIC_SCAN_CREATE_SYNC_TO_MIN_VAL) ||
+      (syncTimeout > PERIODIC_SCAN_CREATE_SYNC_TO_MAX_VAL) ||
+      (syncCteType > PERIODIC_SCAN_CREATE_SYNC_CTE_MAX_VAL))
   {
     return (LL_STATUS_ERROR_BAD_PARAMETER);
   }
   // validate the sync CTE type
   if ((GET_PERIODIC_CTE_TYPE_SYNC_NO_TYPE_3(syncCteType)) ||
-      (syncCteType == PERIODIC_SCAN_CREATE_SYNC_CTE_TYPE_VALID_BITS_VAL))
+      (syncCteType == PERIODIC_SCAN_CREATE_SYNC_CTE_VALID_BITS_VAL))
   {
     return (LL_STATUS_ERROR_COMMAND_DISALLOWED);
   }
@@ -7784,28 +7800,61 @@ llStatus_t LL_AddDeviceToResolvingList( uint8  peerIdAddrType,
         // check if this is being done while Adv/Scan/Init is/are active
         if ( LL_IsRLActiveTasksRunning() == TRUE )
         {
-          alTable_t *pAlTable;
-
+          // (Radio core using dynamic filter list)
+          if ( useDFL == TRUE )
+          {
+            // Check if peer address complies with the privacy, and if
+            // not, remove address from the dynamic filter list.
+            if (LL_PRIV_RemoveInvalidPeerId( &resolvingList[i],
+                                         LL_DFL_GetDynamicFilterlist(),
+                                         LL_DFL_GetRankTable()) != USUCCESS )
+                {
+                  return (LL_STATUS_ERROR_INVALID_PARAMS);
+                }
+          }
+          else // !(Radio core using dynamic filter list)
+          {
+            alTable_t *pAlTable;
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-          if ( extScanInfo->scanMode == LL_SCAN_START )
-          {
+            if ( extScanInfo->scanMode == LL_SCAN_START )
+            {
 #ifdef CC23X0
-            pAlTable = GET_AL_TABLE_POINTER(extScanParam.filterList);
+              pAlTable = GET_AL_TABLE_POINTER(extScanParam.filterList);
 #else
-            pAlTable = GET_AL_TABLE_POINTER(extScanParam.pAcceptList);
+              pAlTable = GET_AL_TABLE_POINTER(extScanParam.pAcceptList);
 #endif
-          }
-          else
+            }
+            else
 #endif // SCAN_CFG
-          {
-            pAlTable = alTable;
-          }
+            {
+              pAlTable = alTable;
+            }
 
-          // tasks are running, so check if this one entry has a valid IRK and
-          // uses Network Privacy Mode, and if so, update either the AL or the
-          // Extended AL to mark that ID address as "ignore"
-          MAP_LL_PRIV_CheckRLPeerIdEntry( &resolvingList[i],
-                                          pAlTable );
+            // tasks are running, so check if this one entry has a valid IRK and
+            // uses Network Privacy Mode, and if so, update either the AL or the
+            // Extended AL to mark that ID address as "ignore"
+            MAP_LL_PRIV_CheckRLPeerIdEntry( &resolvingList[i],
+                                            pAlTable );
+            }
+        }
+
+        // While adding the device to the resolving list, traverse all active connections
+        // and check if any of them match the RL record being added.
+        // If one of the devices matches, update the connection structure with the IDA of this device.
+        // For example, this can be later used to efficiently check if the connection already exists.
+        for ( uint8 connIndx = 0; connIndx < maxNumConns; connIndx++ )
+        {
+          llConnState_t *connPtr = MAP_llDataGetConnPtr( connIndx );
+          if ( connPtr->activeConn != UFALSE )
+          {
+             if( (connPtr->peerInfo.peerAddrType == LL_DEV_ADDR_TYPE_RANDOM) &&
+                 (MAP_LL_PRIV_ResolveRPA( connPtr->peerInfo.peerAddr, resolvingList[i].IRK ) != UFALSE) )
+             {
+               connPtr->peerInfo.peerAddrType = MASK_ID_ADDRTYPE(resolvingList[i].idAddrType);
+               (void) MAP_osal_memcpy( connPtr->peerInfo.peerAddr, resolvingList[i].idAddr , B_ADDR_LEN );
+               break;
+             }
+          }
         }
 
         return( LL_STATUS_SUCCESS );
@@ -7868,41 +7917,63 @@ llStatus_t LL_RemoveDeviceFromResolvingList( uint8  peerIdAddrType,
       // check if this is being done while Adv/Scan/Init is/are active
       if ( LL_IsRLActiveTasksRunning() == TRUE )
       {
-        uint8      alIndex;
-        alTable_t *pAlTable;
+        // (Radio core using dynamic filter list)
+        if ( useDFL == TRUE )
+        {
+          // Check if peer address complies with the privacy, and if
+          // not, remove address from the dynamic filter list.
+          if (LL_PRIV_RemoveInvalidPeerId( &resolvingList[i],
+                                         LL_DFL_GetDynamicFilterlist(),
+                                         LL_DFL_GetRankTable()) != USUCCESS )
+              {
+                return (LL_STATUS_ERROR_INVALID_PARAMS);
+              }
+        }
+        else // !(Radio core using dynamic filter list)
+        {
+          uint8      alIndex;
+          alTable_t *pAlTable;
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-        if ( extScanInfo->scanMode == LL_SCAN_START )
-        {
+          if ( extScanInfo->scanMode == LL_SCAN_START )
+          {
 #ifdef USE_RCL
-          pAlTable = GET_AL_TABLE_POINTER(extScanParam.filterList);
+            pAlTable = GET_AL_TABLE_POINTER(extScanParam.filterList);
 #else
-          pAlTable = GET_AL_TABLE_POINTER(extScanParam.pAcceptList);
+            pAlTable = GET_AL_TABLE_POINTER(extScanParam.pAcceptList);
 #endif
-        }
-        else
+          }
+          else
 #endif // SCAN_CFG
-        {
-          pAlTable = alTable;
-        }
+          {
+            pAlTable = alTable;
+          }
 
-        // tasks are running, so clear the "ignore" bit of this entry in the AL
-        if ( (alIndex = MAP_AL_FindEntry( pAlTable,
-                                          peerIdAddr,
-                                          peerIdAddrType )) != pAlTable->numAlEntries )
-        {
-          // found Peer ID in the AL, so clear "ignore" flag
-          CLR_AL_ENTRY_PRIV_IGNORE( pAlTable->pAlEntries[alIndex].alFlags );
-        }
-        // check the Extended AL
-        else if ( (alIndex = MAP_LL_PRIV_FindExtALEntry( pAlTable,
-                                                         peerIdAddr,
-                                                         peerIdAddrType )) != INVALID_EXT_ACCEPT_LIST_INDEX )
-        {
-          // clear the entire entry
-          // Note: The extended AL entry was created because the peer address
-          //       and address type were in the RL, but not in the AL.
-          MAP_AL_ClearEntry( &pAlTable->pAlEntries[alIndex] );
+          // tasks are running, so clear the "ignore" bit of this entry in the AL
+          if ( (alIndex = MAP_AL_FindEntry( pAlTable,
+                                            peerIdAddr,
+                                            peerIdAddrType )) != pAlTable->numAlEntries )
+          {
+            // found Peer ID in the AL, so clear "ignore" flag
+            CLR_AL_ENTRY_PRIV_IGNORE( pAlTable->pAlEntries[alIndex].alFlags );
+          }
+          // check the Extended AL
+          else if ( (alIndex = MAP_LL_PRIV_FindExtALEntry( pAlTable,
+                                                           peerIdAddr,
+                                                           peerIdAddrType )) != INVALID_EXT_ACCEPT_LIST_INDEX )
+          {
+            // clear the entire entry
+            // Note: The extended AL entry was created because the peer address
+            //       and address type were in the RL, but not in the AL.
+            MAP_AL_ClearEntry( &pAlTable->pAlEntries[alIndex] );
+          }
+          else
+          {
+              /* this else clause is required, even if the
+                programmer expects this will never be reached
+                Fix Misra-C Required: MISRA.IF.NO_ELSE */
+          }
+
         }
       }
 
@@ -8259,11 +8330,7 @@ llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
   MAP_LL_ENC_ReverseBytes(p256Key + (LL_SC_DHKEY_LEN + 1), LL_SC_DHKEY_LEN);
 
   // check the ECC software status; reuse status for LL status
-#ifndef CONFIG_SOC_CC2340R5
   status = (status == ECDH_STATUS_SUCCESS) ?
-#else
-  status = (status == 0) ?
-#endif
             HCI_SUCCESS       :
             HCI_ERROR_CODE_UNSPECIFIED_ERROR;
 
@@ -8323,11 +8390,7 @@ llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey )
   status = MAP_ll_GenerateDHKey(publicKeyOS, dhKey);
 
   // check the ECC software status; reuse status for LL status
-#ifndef CONFIG_SOC_CC2340R5
   status = (status == ECDH_STATUS_SUCCESS) ?
-#else
-  status = (status == 0) ?
-#endif
            HCI_SUCCESS                     :
            HCI_ERROR_CODE_UNSPECIFIED_ERROR;
 
@@ -8748,6 +8811,10 @@ llStatus_t LL_DirectCteTestTxTest( uint8 txChan,
   {
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
+
+#ifdef CC33xx
+  bleThermal_NotifyDeviceTestModeChange(TRUE);
+#endif
 
 #if defined( TEST_MODE_DTM )
   IOCPinTypeGpioOutput( HAL_GPIO_1 );
@@ -9355,10 +9422,10 @@ llStatus_t LE_WriteRfPathCompCmd( int16 txPathParam,
   pRfPathComp->rfRxPathCompParam = rxPathParam;
 
   // find the rounded Tx value
-  pRfPathComp->rfTxPathCompVal  = pRfPathComp->rfTxPathCompParam / 10;
+  pRfPathComp->rfTxPathCompVal  = (int8)(pRfPathComp->rfTxPathCompParam) / 10;
 
   // find the rounded Rx value
-  pRfPathComp->rfRxPathCompVal  = pRfPathComp->rfRxPathCompParam / 10;
+  pRfPathComp->rfRxPathCompVal  = (int8)(pRfPathComp->rfRxPathCompParam) / 10;
 
   return( LL_STATUS_SUCCESS );
 }
@@ -10750,6 +10817,10 @@ llStatus_t LL_EXT_EnhancedModemHopTestTx( uint8 payloadLen,
   {
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
+
+#ifdef CC33xx
+  bleThermal_NotifyDeviceTestModeChange(TRUE);
+#endif
 
   // set the command
   trxTestCmd.rfOpCmd.cmdNum = CMD_BLE5_TX_TEST;

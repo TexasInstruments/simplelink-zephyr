@@ -38,16 +38,16 @@
 
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/drivers/cryptoutils/ecc/ECCParams.h>
-#include "../../../../include/ti/bcomdef.h"
+#include "bcomdef.h"
 #include "hal_mcu.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
+#include "ll_common.h"
+#include "ll_config.h"
 
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_ecc.h"
+#include "ll_enc.h"
+#include "ll_ecc.h"
 #include "rom_jt.h"
 #include "hci.h"
-#include "../../ll/inc/ll_user_config.h"
+#include "ll_user_config.h"
 
 #ifdef USE_ICALL
 #ifdef CC23X0
@@ -157,6 +157,12 @@ void ll_eccInit( void )
   else if(*llConfigTable.ecdhMode == ECDH_RETURN_BEHAVIOR_BLOCKING)
   {
     eccParams.returnBehavior = ECDH_RETURN_BEHAVIOR_BLOCKING;
+  }
+  else
+  {
+        /* this else clause is required, even if the
+           programmer expects this will never be reached
+           Fix Misra-C Required: MISRA.IF.NO_ELSE */
   }
 
   // Since we are using default ECDH_Params, we just pass in NULL for that parameter.

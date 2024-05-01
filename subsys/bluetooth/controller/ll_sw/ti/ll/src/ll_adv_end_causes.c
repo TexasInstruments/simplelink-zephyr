@@ -21,17 +21,17 @@
  * INCLUDES
  */
 
-#include "../../../../include/ti/bcomdef.h"
-#include "../../ll/inc/ble.h"
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_ae.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_enc.h"
-#include "../../ll/inc/ll_privacy.h"
-#include "../../ll/inc/ll_rat.h"
-#include "../../ll/inc/ll_scheduler.h"
-#include "../../ll/inc/ll_timer_drift.h"
+#include "bcomdef.h"
+#include "ble.h"
+#include "ll.h"
+#include "ll_common.h"
+#include "ll_scheduler.h"
+#include "ll_timer_drift.h"
+#include "ll_enc.h"
+#include "ll_config.h"
+#include "ll_rat.h"
+#include "ll_privacy.h"
+#include "ll_ae.h"
 #include "hal_gpio_wrapper.h"
 
 #ifdef USE_RCL
@@ -97,6 +97,8 @@ extern RCL_MultiBuffer *pAdvDataEntry;
  *
  *              This routine is common for Directed and Undirected Advertising.
  *
+ * @Design:     BLE_LOKI-1470
+ *
  * input parameters
  *
  * @param       None.
@@ -132,7 +134,12 @@ void llAdv_TaskConnect( void )
     advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
 
     // Sanity Check
-    LL_ASSERT( pAdvSet != NULL );
+    if ( pAdvSet == NULL )
+    {
+      // determine next task (if any) and schedule it
+      MAP_llScheduler();
+      return;
+    }
 
     // disable advertising
     pAdvSet->advMode = LL_ADV_MODE_OFF;
@@ -187,7 +194,7 @@ void llAdv_TaskConnect( void )
 #ifdef USE_RCL
       /* Read parameters out of CONNECT_IND message */
       RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
-      pData = (uint8 *)&rxEntry->data[2];
+      pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
       // get the timestamp to the start of the CONNECT_IND
       connPtr->llTask->anchorPoint = ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.connectPktTime +
                                      RAT_TICKS_FOR_CONNECT_IND;
@@ -205,6 +212,13 @@ void llAdv_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
+#ifdef USE_RCL
+      /* Read parameters out of AUX_CONNECT_REQ message */
+      RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
+      pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
+      // get the timestamp to the start of the AUX_CONNECT_REQ
+      connPtr->llTask->anchorPoint = ((aeRf_t *)pAdvSet->pRfCmds)->extRfCmd.connectPktTime;
+#else
       LL_ASSERT( ((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry->status == DATASTAT_FINISHED );
       pData = (uint8 *)((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
 
@@ -214,9 +228,8 @@ void llAdv_TaskConnect( void )
       connPtr->llTask->anchorPoint = ((aeRf_t *)pAdvSet->pRfCmds)->comOutput.timeStamp;
 
       // adjust AP to end of AUX_CONNECT_REQ based on the PHY
-      // ALT: Update ll_config to give offset to PHY, based on suffix size.
-      //switch( pData[LL_PKT_HDR_LEN+LL_CONNECT_IND_PKT_LEN+llConfigTable.rxPktSuffixPtr->suffixSize-1] )
-      switch( pData[LL_PKT_HDR_LEN+LL_CONNECT_IND_PKT_LEN+SUFFIX_RSSI_SIZE+1] )
+#endif // USE_RCL
+      switch( ((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature )
       {
         case BLE5_1M_PHY:
           connPtr->llTask->anchorPoint += RAT_TICKS_FOR_AUX_CONN_REQ_1M;
@@ -418,7 +431,9 @@ void llAdv_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
+#ifndef USE_RCL
       ((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
+#endif // !USE_RCL
     }
 #endif
 #ifdef USE_RCL
@@ -485,7 +500,7 @@ void llAdv_TaskConnect( void )
       LL_ASSERT( connPtr->phyInfo.curPhy != LL_PHY_NONE );
 
       // Note: At this point, the curPhy should be properly updated
-      RfBleDpl_setPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
+      RfBleDpl_setConnPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
       // set range delay
       llSetRangeDelay(connPtr);
 
@@ -495,33 +510,41 @@ void llAdv_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
+    RCL_Command_TxPower txPower;
+#ifdef USE_RCL
+      txPower = ((aeRf_t *)pAdvSet->pRfCmds)->extRfCmd.txPower;
+      uint8 phyMode = (uint8)((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature;
+#else
+      txPower = (aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.txPower;
       uint8 phyMode = ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode;
-
-      // copy the PHY and Range Delay information for link
-      connPtr->phyInfo.phyOpts =  (phyMode & BLE5_CODED_PHY ) ?
-                                  ((phyMode >> 2) ? LL_PHY_OPT_S2 : LL_PHY_OPT_S8)
+#endif
+      // If coded, determine if it's coded S2 or S8
+      connPtr->phyInfo.phyOpts =  ((phyMode & BLE5_CODED_PHY ) != 0U) ?
+                                  (((phyMode >> 2U) != 0U) ? LL_PHY_OPT_S2 : LL_PHY_OPT_S8)
                                   : LL_PHY_OPT_NONE;
-      // save off in terms of current PHY and PHY Opts
-      llSetPhy(connPtr,  (phyMode) & BLE5_PHY_MASK);
+#ifndef USE_RCL
       // set range delay
       RfBleDpl_setRangeDelay(connPtr->connId, ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.rangeDelay );
+#endif // USE_RCL
 
-      if (!RfBleDpl_txPowerIsValid( ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.txPower))
+      // Update phy
+      if ((!RfBleDpl_txPowerIsValid( txPower ) ||
+              (llSetPhy(connPtr, (uint8)((phyMode) & BLE5_PHY_MASK)) == UFALSE)) == true)
       {
-        // tx power value is invalid, so terminate
+          // tx power or phy value is invalid, so terminate
 
-        // schedule LL Event to notify the Host a connection was formed with
-        // a bad parameter
-        (void)MAP_osal_set_event( LL_TaskID, LL_STATE_PERIPHERAL_CONN_CREATED_BAD_PARAM );
+          // schedule LL Event to notify the Host a connection was formed with
+          // a bad parameter
+          (void)MAP_osal_set_event( LL_TaskID, LL_STATE_PERIPHERAL_CONN_CREATED_BAD_PARAM );
 
-        MAP_llConnTerminate( connPtr, LL_UNACCEPTABLE_CONN_INTERVAL_TERM );
+          MAP_llConnTerminate( connPtr, LL_UNACCEPTABLE_CONN_INTERVAL_TERM );
 
-        // determine next task (if any) and schedule it
-        MAP_llScheduler();
+          // determine next task (if any) and schedule it
+          MAP_llScheduler();
 
-        return;
+          return;
       }
-      llSetPower((uint32 *)&linkCmd[connPtr->connId], curTxPowerVal, ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.txPower);
+      llSetPower((uint32 *)&linkCmd[connPtr->connId], curTxPowerVal, txPower );
     }
 #endif
 #ifdef USE_RCL
@@ -625,8 +648,12 @@ void llAdv_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
-      // check if 1M or 2M
+#ifndef USE_RCL
+      // Window offset size depends on Phy type
       if ( (linkCmd[connPtr->connId].phyMode & BLE5_PHY_MASK) != BLE5_CODED_PHY )
+#else
+      if(((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature != BLE5_CODED_PHY)
+#endif // !USE_RCL
       {
         timeToNextEvt = (uint32)LL_LINK_MIN_WIN_OFFSET_AE_UNCODED;
       }
@@ -845,6 +872,8 @@ void llAdv_TaskConnect( void )
  * @brief       This routine is used to post process the Extended Advertising
  *              command.
  *
+ * @Design:     BLE_LOKI-1453
+ *
  * input parameters
  *
  * @param       None.
@@ -859,6 +888,10 @@ void llExtAdv_PostProcess( void )
 {
   uint16    delay;
   advSet_t *pAdvSet;
+
+#ifdef USE_AE
+  llStatus_t status;
+#endif
 
 #ifdef DEBUG_GPIO_CONN
   GPIO_writeDio(HAL_GPIO_1, 0);
@@ -880,6 +913,24 @@ void llExtAdv_PostProcess( void )
 #ifdef USE_RCL
     // clear the scan requests packets
     RCL_MultiBuffer_clear(pAdvDataEntry);
+#ifdef USE_AE
+    if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
+    {
+      pAdvSet->firstAdvEvt = 1;
+
+      /* Clear TX queue before preparing the next advertising.
+       * Needed for extended only because we constantly changing the
+       * data in each txBuffer
+       */
+      RCL_Buffer_TxBuffer *pDataEntry;
+
+      do
+      {
+        pDataEntry = RCL_TxBuffer_get(&(((aeRf_t*)pAdvSet->pRfCmds)->advParam.txBuffers));
+      } while( pDataEntry!=NULL);
+    }
+#endif
+
 #endif
     // check if still active
     if ( pAdvSet->advMode == LL_ADV_MODE_OFF )
@@ -1019,7 +1070,32 @@ void llExtAdv_PostProcess( void )
 #ifdef USE_AE
     else // !legacy
     {
-      MAP_llPostProcessExtendedAdv(pAdvSet);
+      status = MAP_llPostProcessExtendedAdv(pAdvSet);
+      if ( status != LL_STATUS_SUCCESS )
+      {
+        // Error occurred - the advertising should be stopped
+
+        // Disable the advertising
+        pAdvSet->advMode = LL_ADV_MODE_OFF;
+
+        // Remove the task from the tasks list
+        if (numActiveAdvSets > 0)
+        {
+          // free task and teardown privacy if need be
+          MAP_llEndExtAdvTask( pAdvSet );
+        }
+
+        // Notify the host the advertising stopped
+        MAP_llSendAdvSetEndEvent( pAdvSet );
+
+        // Notify the host with the error
+        MAP_llHardwareError(HW_FAIL_START_EXT_ADV_ERROR);
+
+        // schedule another task, if any
+        MAP_llScheduler();
+
+        return;
+      }
     }
 #endif
     // only if address resolution is enabled
@@ -1326,16 +1402,20 @@ void llAdv_TaskAbort( void )
  *
  * @return      None.
  */
-void llPostProcessExtendedAdv( advSet_t *pAdvSet )
+llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
 {
   aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
+  llStatus_t status = LL_STATUS_SUCCESS;
 
+#ifndef USE_RCL
   pRf->extRfCmd[0].rfOpCmd.status = RFSTAT_IDLE;
   // set randomly the channel number
   pAdvSet->firstPrimChan = LL_ADV_BASE_CHAN + llGetRandChannelMapIndex(pAdvSet->pAdvParam->primChanMap);
   pRf->extRfCmd[0].chan = pAdvSet->firstPrimChan;
   // set randomly the rest of the channels
   llSetRestPrimaryChannels(pAdvSet);
+#endif
+
   // set the Extended Header Info
   pRf->comPkt.extHdrInfo = pAdvSet->extHdrInfo;
 
@@ -1409,10 +1489,11 @@ void llPostProcessExtendedAdv( advSet_t *pAdvSet )
   {
     // initialize the Extended Header Buffer
     MAP_llSetupExtHdr( pAdvSet,
-                       pAdvSet->extHdrFlags & ~(EXTHDR_FLAG_ADVA),
+                       pAdvSet->extHdrFlags,
                        AE_AUX_OFFSET_AUTO_INSERT );
   }
 
+#ifndef USE_RCL
   // initialize Aux
   pRf->auxRfCmd.rfOpCmd.status  = RFSTAT_IDLE;
 
@@ -1429,10 +1510,13 @@ void llPostProcessExtendedAdv( advSet_t *pAdvSet )
   // Note: If the numFrags=0, then there is no secondary channel packet, so
   //       this counter will never be used.
   pRf->countCmd.counter = pAdvSet->numFrags;
+#endif // USE_RCL
 
   if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
   {
     // restore the aux otaTimeAuxAdv
+    // For RCL otaTimeAuxAdvScan is not used. This is preparation before adding
+    // scannable advertising
     pAdvSet->otaTimeAuxAdv = pAdvSet->otaTimeAuxAdvScan;
 
     // restore Adv Mode for Scannable
@@ -1447,9 +1531,12 @@ void llPostProcessExtendedAdv( advSet_t *pAdvSet )
     // Note: If Scannable, we just send a AUX_ADV_IND, so pAdvSet->numFrags
     //       is always at least one, but can be more if there's fragmented
     //       AUX_SCAN_RSP data.
+#ifndef USE_RCL
     pRf->countCmd.counter = 1;
+#endif // USE_RCL
   }
 
+#ifndef USE_RCL
   // determine if an auxPtr is needed
   if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR) )
   {
@@ -1458,6 +1545,157 @@ void llPostProcessExtendedAdv( advSet_t *pAdvSet )
                                                     START_SYNTH_TO_RAT_OFFSET);
     pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
   }
+#endif // USE_RCL
+
+#ifdef USE_RCL
+  // Build EXT_ADV_IND packet and add it to the command TX queue
+  pAdvSet->extHdrSize = MAP_llGetExtHdrLen(pAdvSet->extHdrFlags);
+  uint8_t payloadLen = 1 + pAdvSet->extHdrSize;
+  pRf->buffNo = 0;
+
+  status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_ADV_EXT_IND, payloadLen, NULL, 0);
+
+  // If AUX pointer included, build the AUX pointer Packet
+  if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
+  {
+    // determine if there is any data, and if so, how many fragments
+    MAP_llSetupExtData( pAdvSet );
+
+    uint8 pktSize = 0;
+
+    // AUX_ADV_IND pkt in scannable mode
+    if( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
+    {
+      // AUX_ADV_IND pkt is not allowed to send advData in scannable mode
+      pRf->comPkt.advDataLen = 0U;
+      pRf->comPkt.pAdvData = NULL;
+
+      // No Aux ptr or syncinfo in scannable AUX_ADV_IN pkt
+      CLR_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR);
+      CLR_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO);
+    }
+    else if(TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) != 0)
+    {
+      // AUX_ADV_IND pkt in connectable mode
+      pRf->comPkt.advDataLen = (uint8)pAdvSet->dataLen;
+      if(pAdvSet->dataLen > 0U)
+      {
+        pRf->comPkt.pAdvData = pAdvSet->pData;
+      }
+      else
+      {
+        pRf->comPkt.pAdvData = NULL;
+      }
+      pktSize += (uint8)pAdvSet->dataLen;
+      // No aux ptr is allowed in connectable mode
+      CLR_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR);
+    }
+    else  // NC/NS
+    {
+      pRf->comPkt.advDataLen = (pAdvSet->dataLen) ? pAdvSet->fragLen : 0U;
+      pRf->comPkt.pAdvData   = (pAdvSet->dataLen) ? pAdvSet->pData : NULL;
+      pktSize += pAdvSet->fragLen;
+    }
+
+
+    // Setup EXT_ADV_IND extended header flags
+    pRf->comPkt.extHdrFlags = pAdvSet->auxHdrFlags;
+
+    // set AL, if used
+    if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
+    {
+      MAP_osal_memcpy((uint8 *)pRf->advParam.peerA, pAdvSet->peerAddr, B_ADDR_LEN);
+    }
+
+    // determine size of Extended Header buffer
+    pAdvSet->auxExtHdrSize = MAP_llGetExtHdrLen( pAdvSet->auxHdrFlags );
+
+    // Build AUX_ADV_IND packet and add it to the command TX queue
+    MAP_llSetupExtHdr(pAdvSet, pAdvSet->auxHdrFlags, 0 );
+
+    pktSize += pAdvSet->auxExtHdrSize+ 1U;
+    payloadLen = pktSize;
+
+    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_ADV_IND, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+  }
+
+  /*
+  ** Setup AUX_SCAN_RSP packet when scannable mode is in use
+  */
+
+  // When using Scannable mode, RCL expect that all the first 3 PDUs will
+  // be inserted on command start include AUX_SCAN_RSP
+  if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps))
+  {
+      uint8 scanRspExtHdrSize;
+      if(pAdvSet->numFrags > 1)
+      {
+        SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_AUXPTR);
+      }
+      // Tx power is optional. add Tx Power if asked by App
+      if(TST_AE_PROPS_TX_PWR(pAdvSet->pAdvParam->eventProps) == UTRUE)
+      {
+        SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TXPWR);
+      }
+      // Sent TARGETA in aux_scan_rsp packet is not allowed
+      // in scannable directed / undirected
+      CLR_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TARGETA);
+
+      // Adding scan response data
+      pRf->comPkt.advDataLen = (pAdvSet->dataLen) ? pAdvSet->fragLen : 0U;
+      pRf->comPkt.pAdvData   = (pAdvSet->dataLen) ? pAdvSet->pData : NULL;
+
+      // Build the Extended header, RCL deal with Aux pointer values
+      MAP_llSetupExtHdr( pAdvSet,
+                         pRf->comPkt.extHdrFlags ,
+                         AE_AUX_OFFSET_AUTO_INSERT );
+
+      // Get ExtHdrLen and calculate the payload
+      scanRspExtHdrSize = MAP_llGetExtHdrLen( pRf->comPkt.extHdrFlags );
+      payloadLen = 1U + scanRspExtHdrSize + pRf->comPkt.advDataLen;
+
+      // AUX_SCAN_RSP pkt in need to be sent as NC/NS mode
+      SET_ADV_MODE( pAdvSet->extHdrInfo,
+                    AE_ADV_MODE_NONCONN_NONSCAN );
+      status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_SCAN_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+      // Change adv mode back to scannable
+      SET_ADV_MODE( pAdvSet->extHdrInfo,
+                    AE_ADV_MODE_SCANNABLE );
+  }
+
+  // Build AUX_CONNECT_RSP pkt
+  if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) != 0 )
+  {
+    uint8 connRspExtHdrSize;
+
+    // No data allowed
+    pRf->comPkt.advDataLen = 0;
+    pRf->comPkt.pAdvData   = NULL;
+
+    // Only TargetA and AdvA flags are mandatory and any other
+    // flag is forbidden
+    pRf->comPkt.extHdrFlags = 0;
+    SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TARGETA);
+    SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_ADVA);
+    MAP_llSetupExtHdr( pAdvSet,
+                       pRf->comPkt.extHdrFlags ,
+                       0 );
+
+    // Get ExtHdrLen and calculate the payload
+    connRspExtHdrSize = MAP_llGetExtHdrLen( pRf->comPkt.extHdrFlags );
+    payloadLen = 1U + connRspExtHdrSize + pRf->comPkt.advDataLen;
+
+    // AUX_CONN_RSP pkt is needed to be sent as NC/NS mode
+    SET_ADV_MODE( pAdvSet->extHdrInfo,
+                  AE_ADV_MODE_NONCONN_NONSCAN );
+    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_CONNECT_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+    // Change adv_mode back to connectable
+    SET_ADV_MODE( pAdvSet->extHdrInfo,
+                  AE_ADV_MODE_CONNECTABLE );
+  }
+#endif // USE_RCL
+
+  return status;
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 #endif // USE_AE

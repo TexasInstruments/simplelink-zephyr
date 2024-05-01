@@ -42,7 +42,7 @@ extern "C"
  */
 
 #include "bcomdef.h"
-#include "../../ll/inc/ll_common.h"
+#include "ll_common.h"
 
 /*******************************************************************************
  * MACROS

@@ -104,6 +104,8 @@ uint32 forcedMissedEvent = FORCE_MISSED_EVENT_COUNT;
  *              determined based on the connection interval, relative to the
  *              anchor point.
  *
+ * @Design:     BLE_LOKI-1470
+ *
  * input parameters
  *
  * @param       None.
@@ -938,7 +940,7 @@ uint8 llSetupNextPeripheralEvent( void )
 #if !defined(DISABLE_RCOSC_SW_FIX)
   // check if the RCOSC is being used as the source clock
 #ifdef CC23X0
-  if (1)
+  if (llUserConfig.useSrcClkLFOSC)
 #else
   if ( ((*sclkSrc & SCLK_LF_MASK) >> 6) == SCLK_LF_RCOSC_LF )
 #endif
@@ -962,10 +964,10 @@ uint8 llSetupNextPeripheralEvent( void )
 
       // Note: Correction applied on the first miss only!
       // Note: Central SCA included in correction.
-      connPtr->timerDrift = ( (timeToNextEvt * ((applyExtraSCA==1)               ?
-                                                (RCOSC_LF_SCA + connPtr->mstSCA) :
-                                                (connPtr->scaFactor)))           /
-                              RAT_TICKS_IN_100US ) + 1;
+      connPtr->timerDrift = ( (timeToNextEvt * ((applyExtraSCA == 1)                              ?
+                                                (llUserConfig.cfgLFOSCExtraPPM + connPtr->mstSCA) :
+                                                (connPtr->scaFactor)))                            /
+                                                 RAT_TICKS_IN_100US ) + 1;
     }
   }
   else // RCOSC is not being used as SCLK
@@ -1290,7 +1292,7 @@ uint8 llSetupNextPeripheralEvent( void )
   //       LL_PHY_NONE (and we'll use an assert to check that).
   LL_ASSERT( connPtr->phyInfo.curPhy != LL_PHY_NONE );
 
-  RfBleDpl_setPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
+  RfBleDpl_setConnPhy(connPtr->connId, connPtr->phyInfo.curPhy, connPtr->phyInfo.phyOpts);
   llSetRangeDelay(connPtr);
 
   // pointer to first radio operation command
@@ -1335,10 +1337,17 @@ uint8 llSetupNextPeripheralEvent( void )
  */
 uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
 {
+  uint8 status = USUCCESS;
+
   LL_ASSERT( connPtr != NULL );
 
+  if (connPtr == NULL)
+  {
+      status =  UFAILURE;
+  }
+
   // check if there are any control packets ready for processing
-  while ( connPtr->ctrlPktInfo.ctrlPktCount > 0 )
+  while (( status == USUCCESS ) && ( connPtr->ctrlPktInfo.ctrlPktCount > 0 ))
   {
     // processing based on control packet type at the head of the queue
     switch( connPtr->ctrlPktInfo.ctrlPkts[0] )
@@ -1555,6 +1564,9 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             //       procedure has begun, so there is no risk of a race
             //       condition here.
             connPtr->encEnabled = TRUE;
+
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_PERIPHERAL_ROLE, UTRUE);
 
             // clear packet counters
             connPtr->encInfo.txPktCount = 0;
@@ -1893,6 +1905,9 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             //       or received.
             connPtr->encEnabled = FALSE;
 
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_PERIPHERAL_ROLE, UFALSE);
+
             // the control packet is now active; drop through
             connPtr->ctrlPktInfo.ctrlPktActive = TRUE;
           }
@@ -1931,6 +1946,10 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             // disable encryption
             // Note: Never really enabled so this isn't necessary.
             connPtr->encEnabled = FALSE;
+
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_PERIPHERAL_ROLE, UFALSE);
+
 
             // set flag to allow outgoing data transmissions
             connPtr->txDataEnabled = TRUE;
@@ -2459,8 +2478,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             // Sanity Check:
             // The rejected opcode should be LL_CTRL_CONNECTION_PARAM_REQ.
             // TBD: Check connPtr->rejectIndExt.errorCode as well?
-
-            LL_ASSERT( connPtr->rejectIndExt.rejectOpcode == LL_CTRL_CONNECTION_PARAM_RSP );
+            LL_ASSERT( connPtr->rejectIndExt.rejectOpcode == LL_CTRL_CONNECTION_PARAM_REQ );
 
             // clear reject indication extended received flag
             connPtr->connParamReqFlags.rejectIndExtRcved = FALSE;
@@ -2553,6 +2571,9 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             // disable encryption
             // Note: Never really enabled so this isn't necessary.
             connPtr->encEnabled = FALSE;
+
+            /**** UPDATE DEBUG INFO MODULE ****/
+            (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_PERIPHERAL_ROLE, UFALSE);
 
             // set flag to allow outgoing data transmissions
             connPtr->txDataEnabled = TRUE;

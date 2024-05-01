@@ -20,9 +20,10 @@
  * INCLUDES
  */
 
-#include "../../ll/inc/ll.h"
-#include "../../ll/inc/ll_common.h"
 #include "bcomdef.h"
+#include "ll.h"
+#include "ll_common.h"
+//
 #include "rom_jt.h"
 
 /*******************************************************************************

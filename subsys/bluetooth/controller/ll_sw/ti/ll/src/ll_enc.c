@@ -38,9 +38,9 @@
 #include <ti/drivers/utils/Random.h>
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#include "../../ll/inc/ll_common.h"
-#include "../../ll/inc/ll_config.h"
-#include "../../ll/inc/ll_enc.h"
+#include "ll_common.h"
+#include "ll_config.h"
+#include "ll_enc.h"
 #include "rom_jt.h"
 
 #ifdef USE_ICALL
@@ -534,7 +534,14 @@ void LL_ENC_GenerateDRBGSeedNum()
 
   // Generate initial seed buffer by the TRNG for the DRBG
   LL_ENC_GenerateTRNGRandNum(seedBuffer, AESCTRDRBG_SEED_LENGTH_AES_128);
-
+#ifdef DeviceFamily_CC27XX
+  seedBuffer[0] ^= ownPublicAddr[0];
+  seedBuffer[1] ^= ownPublicAddr[1];
+  seedBuffer[2] ^= ownPublicAddr[2];
+  seedBuffer[3] ^= ownPublicAddr[3];
+  seedBuffer[4] ^= ownPublicAddr[4];
+  seedBuffer[5] ^= ownPublicAddr[5];
+#endif
   // Open DRBG with the above seed buffer
   AESCTRDRBG_init();
 
@@ -751,6 +758,10 @@ void LL_ENC_AES128_Encrypt( uint8 *key,
                             uint8 *plaintext,
                             uint8 *ciphertext )
 {
+  halIntState_t cs;
+
+  HAL_ENTER_CRITICAL_SECTION(cs);
+
   MAP_LL_ENC_LoadKey(key);
 
   operationECB.key               = &cryptoKey;
@@ -762,6 +773,9 @@ void LL_ENC_AES128_Encrypt( uint8 *key,
   {
     LL_ASSERT(FALSE);
   }
+
+  HAL_EXIT_CRITICAL_SECTION(cs);
+
   return;
 }
 
@@ -795,6 +809,10 @@ void LL_ENC_AES128_Decrypt(uint8 *key,
                            uint8 *ciphertext,
                            uint8 *plaintext)
 {
+  halIntState_t cs;
+
+  HAL_ENTER_CRITICAL_SECTION(cs);
+
   MAP_LL_ENC_LoadKey(key);
 
   operationECB.key               = &cryptoKey;
@@ -808,6 +826,8 @@ void LL_ENC_AES128_Decrypt(uint8 *key,
   {
     LL_ASSERT(FALSE);
   }
+
+  HAL_EXIT_CRITICAL_SECTION(cs);
 
   return;
 }
