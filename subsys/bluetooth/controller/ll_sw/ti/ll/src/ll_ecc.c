@@ -18,6 +18,7 @@
  * INCLUDES
  */
 
+#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/ECDH.h>
 #ifdef CC23X0
 #include <ti/drivers/ecdh/ECDHLPF3SW.h>
@@ -38,6 +39,7 @@
 
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/drivers/cryptoutils/ecc/ECCParams.h>
+#endif
 #include "bcomdef.h"
 #include "hal_mcu.h"
 #include "ll_common.h"
@@ -86,6 +88,7 @@ const uint8_t localDebugPublicKeyMaterial[LL_SC_P256_KEY_LEN] =
 
 uint8_t localPrivKeyMaterial[LL_SC_RAND_NUM_LEN]; // random private key
 
+#ifndef CONFIG_SOC_CC2340R5
 CryptoKey localPrivateKey;
 CryptoKey localPublicKey;
 CryptoKey remotePublicKey;
@@ -93,14 +96,17 @@ CryptoKey sharedSecret;
 CryptoKey symmetricKey;
 
 ECDH_Handle ecdhHandle;
+#endif
 int_fast16_t operationResult;
 
+#ifndef CONFIG_SOC_CC2340R5
 // ECDH parameter
 ECDH_Params eccParams;
 
 // public key parameter
 ECDH_OperationGeneratePublicKey operationGeneratePublicKey;
 ECDH_OperationComputeSharedSecret operationComputeSharedSecret;
+#endif
 uint8_t localPubKeyMaterial[ LL_SC_P256_KEY_LEN ]; // Place holder for public key
 
 /*******************************************************************************
@@ -137,6 +143,8 @@ uint8_t localPubKeyMaterial[ LL_SC_P256_KEY_LEN ]; // Place holder for public ke
  */
 void ll_eccInit( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   // Initialize ECC Driver
   ECDH_init();
 
@@ -161,7 +169,7 @@ void ll_eccInit( void )
   ecdhHandle = ECDH_open(0, &eccParams);
 
   HAL_ASSERT( ecdhHandle != NULL );
-
+#endif
   return;
 }
 
@@ -185,12 +193,14 @@ void ll_eccInit( void )
  */
 int8_t ll_ReadLocalP256PublicKey( uint8 *publicKey )
 {
+
   // generate random number
   // Note: Assumed here that this is a standard FIPS compliant PRAND value.
 #ifndef DEBUG_SC
   MAP_LL_ENC_GenerateTrueRandNum( localPrivKeyMaterial, LL_SC_RAND_NUM_LEN );
 #endif // DEBUG_SC
 
+#ifndef CONFIG_SOC_CC2340R5
   // Initialize myPrivateKey and myPublicKey
   CryptoKeyPlaintext_initKey(&localPrivateKey, (uint8_t *)localPrivKeyMaterial, LL_SC_RAND_NUM_LEN);
   CryptoKeyPlaintext_initBlankKey(&localPublicKey, (uint8_t *)publicKey, LL_SC_P256_KEY_LEN_OCTET_STRING_FORMAT);
@@ -211,7 +221,7 @@ int8_t ll_ReadLocalP256PublicKey( uint8 *publicKey )
   // ECDH_generatePublicKey() is assuming localPrivKeyMaterial is in big-endian format.
   // The stack is using little-endian, therefore, reversing localPrivKeyMaterial to little-endian.
   MAP_LL_ENC_ReverseBytes(localPrivKeyMaterial, LL_SC_RAND_NUM_LEN);
-
+#endif
   // check the ECC software status; reuse status for LL status
   return operationResult;
 }
@@ -240,6 +250,8 @@ int8_t ll_ReadLocalP256PublicKey( uint8 *publicKey )
  */
 int8_t ll_GenerateDHKey( uint8 *publicKey, uint8_t *dhKey )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   //uint8 dhKey[ (2*LL_SC_DHKEY_LEN) ]; // shared secret
 
   // Initialize their public CryptoKey and the shared secret CryptoKey
@@ -268,7 +280,7 @@ int8_t ll_GenerateDHKey( uint8 *publicKey, uint8_t *dhKey )
 
   // Reversing localPrivKeyMaterial back to little-endian.
   MAP_LL_ENC_ReverseBytes(localPrivKeyMaterial, LL_SC_RAND_NUM_LEN);
-
+#endif
   // check the ECC software status; reuse status for LL status
   return operationResult;
 }

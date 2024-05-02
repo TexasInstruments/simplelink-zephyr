@@ -53,22 +53,22 @@
 // Privacy policy flags - set, clear, and test.
 // Clear all flags
 #define CLEAR_ALL_TESTS( privPolicyFlags )                                     \
-  (privPolicyFlags) = 0
+  ((privPolicyFlags) = 0)
 
 
 // Address resolution enable flag - set, clear and test
 #define CLEAR_ADDRESS_RESOLUTION_TEST( privPolicyFlags )                       \
-  (privPolicyFlags) &= ~BV(0)
+  ((privPolicyFlags) &= ~BV(0))
 #define SET_ADDRESS_RESOLUTION_TEST( privPolicyFlags )                         \
-  (privPolicyFlags) |= BV(0)
+  ((privPolicyFlags) |= BV(0))
 #define IS_ADDRESS_RESOLUTION_TEST_REQUIRED( privPolicyFlags )                 \
-  ((privPolicyFlags) & BV(0)) != 0
+  (((privPolicyFlags) & BV(0)) != 0)
 
 // RPA resolvable flag - set, clear and test
 #define CLEAR_RESOLVABLE_RPA_TEST( privPolicyFlags )                          \
-  (privPolicyFlags) &= ~BV(1)
+  ((privPolicyFlags) &= ~BV(1))
 #define SET_RESOLVABLE_RPA_TEST( privPolicyFlags )                             \
-  (privPolicyFlags) |= BV(1)
+  ((privPolicyFlags) |= BV(1))
 #define IS_RESOLVABLE_RPA_TEST_TEST_REQUIRED( privPolicyFlags )                \
   (((privPolicyFlags) & BV(1)) != 0)
 
@@ -82,9 +82,9 @@
 
 // Device privacy mode or valid IRK flag - set, clear and test
 #define CLEAR_DPM_OR_INVALID_IRK_TEST( privPolicyFlags )                       \
-  (privPolicyFlags) &= ~BV(3)
+  ((privPolicyFlags) &= ~BV(3))
 #define SET_DPM_OR_INVALID_IRK_TEST( privPolicyFlags )                         \
-  (privPolicyFlags) |= BV(3)
+  ((privPolicyFlags) |= BV(3))
 #define IS_DPM_OR_INVALID_IRK_TEST_REQUIRED( privPolicyFlags )                 \
   (((privPolicyFlags) & BV(3)) != 0)
 

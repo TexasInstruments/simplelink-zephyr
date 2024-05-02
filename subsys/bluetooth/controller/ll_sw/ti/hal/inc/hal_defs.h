@@ -1,17 +1,14 @@
+/*
+ * Copyright (c) 2024 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 /******************************************************************************
 
  @file  hal_defs.h
 
  @brief This file contains useful macros and data types
 
- Group: WCS, LPC, BTS
- $Target Device: DEVICES $
-
- ******************************************************************************
- $License: BSD3 2005 $
- ******************************************************************************
- $Release Name: PACKAGE NAME $
- $Release Date: PACKAGE RELEASE DATE $
  *****************************************************************************/
 
 #ifndef HAL_DEFS_H

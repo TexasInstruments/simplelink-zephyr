@@ -20,14 +20,18 @@
  */
 #include "hal_types.h"
 #include "ble_user_config.h"
+#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/AESCCM.h>
 #include <ti/drivers/AESECB.h>
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
+#endif
 #include <ti/drivers/utils/Random.h>
 
+#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/aesccm/AESCCMLPF3.h>
 #include <ti/drivers/aesecb/AESECBLPF3.h>
 #include <ti/drivers/RNG.h>
+#endif //CONFIG_SOC_CC2340R5
 
 #ifdef SYSCFG
 #include "ti_ble_config.h"
@@ -182,6 +186,7 @@ cteAntProp_t  appCTEAntProp = {ANTENNA_IO_MASK,
                                antennaTbl};
 #endif // RTLS_CTE
 
+#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 ECCParams_CurveParams eccParams_NISTP256 = {
     .curveType      = ECCParams_CURVE_TYPE_SHORT_WEIERSTRASS_AN3,
@@ -232,6 +237,7 @@ coexUseCaseConfig_t coexSysConfig = {
     &coexConfigBle
 };
 #endif // USE_COEX
+#endif // CONFIG_SOC_CC2340R5
 
 #ifdef ICALL_JT
 #include <icall.h>
@@ -323,7 +329,9 @@ const stackSpecific_t bleStackConfig =
   .rfDriverParams.powerUpDuration       = RF_POWER_UP_DURATION,
   .rfDriverParams.pErrCb                = &(RF_ERR_CB),
 #endif //!CC23X0
+#ifndef CONFIG_SOC_CC2340R5
   .eccParams                            = &eccParams_NISTP256,
+#endif
   .fastStateUpdateCb                    = NULL,
   .bleStackType                         = 0,
 #ifdef CC2652RB_LAUNCHXL

@@ -18,6 +18,7 @@
 /*******************************************************************************
  * INCLUDES
  */
+#include <string.h>
 #include "osal_memory.h"
 #include "osal_timers.h"
 #include "bcomdef.h"
@@ -2201,6 +2202,8 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
     }
   }
 #endif
+#ifndef CONFIG_SOC_CC2340R5
+
   // check if only the DDI needs to be updated
   // Note: Vol 2, Part E, Section 7.8.54 says to update DDI when the operation
   //       is AE_DATA_OP_UNCHANGED, but here we are going to update the DDI
@@ -2221,7 +2224,7 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
     pAdvSet->adi &= ~EXTHDR_DID_MASK;
     pAdvSet->adi |= (rand & EXTHDR_DID_MASK);
   }
-
+#endif
   // save the pointers
   // Note: No check is made here to see if there previously was a valid poniter.
   //       It is up to the Host to completely maintain and manage data.
@@ -2397,34 +2400,7 @@ advSet_t *LL_GetAdvSet( uint8 handle,
   if ( pAdvSet )
   {
     // init pointers
-    pAdvSet->next           = NULL;
-    pAdvSet->llTask         = NULL;
-    //pAdvSet->pOwnAddr       = NULL;
-    pAdvSet->pOwnRandAddr   = NULL;
-    pAdvSet->pData          = NULL;
-    pAdvSet->pRfCmds        = NULL;
-    pAdvSet->pAdvParam      = NULL;
-    pAdvSet->pAdvData       = NULL;
-    pAdvSet->pScanRspData   = NULL;
-    pAdvSet->pEnable        = NULL;
-
-    // clear various fields
-#ifdef USE_AE
-    pAdvSet->extHdrSize          = 0;
-    pAdvSet->extHdrFlags         = 0;
-    pAdvSet->auxExtHdrSize       = 0;
-    pAdvSet->auxHdrFlags         = 0;
-    pAdvSet->auxChanCounter      = 0;
-    pAdvSet->fragLen             = 0;
-    pAdvSet->lastFragLen         = 0;
-    pAdvSet->numFrags            = 0;
-    pAdvSet->pPendingData        = NULL;
-    pAdvSet->pendingDataUpdate   = LE_AE_EXT_DATA_NO_PENDING;
-#endif
-    pAdvSet->maxAvailData   = 0;
-    pAdvSet->dataLen        = 0;
-    pAdvSet->advMode        = LL_ADV_MODE_OFF;
-
+    memset (pAdvSet, 0, sizeof(advSet_t));
     // Set Peripheral SCA
     // If we are not using LFOSC
     if (!llUserConfig.useSrcClkLFOSC)

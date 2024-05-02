@@ -332,6 +332,7 @@ extern "C"
   #define RF_ERR_CB                      pRfErrCb
 #endif
 
+/*
 //
 // Device Package and Evaluation Module (EM) Board
 //
@@ -380,6 +381,7 @@ extern "C"
 // For additional details and examples, please see the Software Developer's
 // Guide.
 //
+*/
 
 #ifndef CC23X0
 // RF Front End Mode and Bias Configuration

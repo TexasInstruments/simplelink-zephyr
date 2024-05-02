@@ -1,17 +1,14 @@
+/*
+ * Copyright (c) 2024 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 /******************************************************************************
 
  @file  _hal_types.h
 
  @brief Describe the purpose and contents of the file.
 
- Group: WCS, LPC, BTS
- $Target Device: DEVICES $
-
- ******************************************************************************
- $License: BSD3 2006 $
- ******************************************************************************
- $Release Name: PACKAGE NAME $
- $Release Date: PACKAGE RELEASE DATE $
  *****************************************************************************/
 
 #ifndef _HAL_TYPES_H

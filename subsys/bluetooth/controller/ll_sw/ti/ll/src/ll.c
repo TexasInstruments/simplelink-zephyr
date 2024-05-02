@@ -58,12 +58,14 @@
 #include <ble_setup_fpga.h>
 #endif // USE_FPGA
 
+#ifndef CONFIG_SOC_CC2340R5
 #if defined(CC23X0) || defined(CC33xx)
 #include <ti/drivers/ECDH.h>
 #else
 #include "trng_api.h"
 #include "ecc_api.h"
 #endif // CC23X0 || CC33xx
+#endif
 
 // SW Tracer
 #ifdef DEBUG_SW_TRACE
@@ -74,12 +76,15 @@
 
 #ifdef CC23X0
 #include DeviceFamily_constructPath(inc/hw_fcfg.h)
+#ifndef CONFIG_SOC_CC2340R5
 #ifndef USE_HSM
 #include <ti/drivers/rng/RNGLPF3RF.h>
 #else
 #include <ti/drivers/rng/RNGLPF3HSM.h>
 #endif
+#endif // CONFIG_SOC_CC2340R5
 #endif
+
 // Extended Scanner
 aeSetScanParamCmd_t aeScanParams;
 aeEnableScanCmd_t   aeScanEnable;
@@ -349,10 +354,12 @@ cteAntennaProp_t cteAntennaProp;
 
 uint8 *activeConns;
 
+#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 RNG_Handle trngHandle;
 #else
 TRNG_Handle trngHandle;
+#endif
 #endif
 
 #ifdef LL_TEST_MODE
@@ -739,7 +746,7 @@ void LL_Init( uint8 taskId )
   // Note: This memory is allocated but never freed.
   //////////////////////////////////////////////////////////////////////////////
 
-  if ( MAP_llDynamicAlloc() == LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED )
+  if ( LL_STATUS_SUCCESS != MAP_llDynamicAlloc() )
   {
     MAP_llDynamicFree();
 
@@ -765,10 +772,10 @@ void LL_Init( uint8 taskId )
   // TEMP: JUST INDICATE THE GPIO THAT CORRESPONDS TO THE RFCORE BEING UP
   HAL_GPIO_CLR( HAL_GPIO_4 );
 
+#ifndef CONFIG_SOC_CC2340R5
+#ifdef CC23X0
   // init and open the PRNG driver
   Random_seedAutomatic();
-
-#ifdef CC23X0
   // RNG_init should be called only after LL_initRNGNoise is called
   RNG_init();
 
@@ -792,6 +799,7 @@ void LL_Init( uint8 taskId )
 
   // Init the DRBG driver and generate it's seed number once by calling the TRNG
   LL_ENC_GenerateDRBGSeedNum();
+#endif
 
 #ifndef CC23X0
   // set the default RF Config init value for ADI (used after a device reset)
@@ -808,12 +816,13 @@ void LL_Init( uint8 taskId )
   (void)MAP_LL_ENC_GenerateTrueRandNum( cachedTRNGdata, LL_ENC_TRUE_RAND_BUF_SIZE );
 #endif // ADV_CONN_CFG | INIT_CFG
 
+#ifndef CONFIG_SOC_CC2340R5
   // create a default random static address
   MAP_LL_PRIV_GenerateRSA( ownRandomAddr );
 
   // init Crypto engine
   MAP_LL_ENC_Init();
-
+#endif
   // Initialize connection event reporting to not report
   llConnEvtNotice.cb = NULL;
   llConnEvtNotice.handle = LL_CONNHANDLE_INVALID;
@@ -1287,7 +1296,6 @@ llStatus_t LL_Reset( void )
 
   // disable Rx FIFO flow control
   rxFifoFlowCtrl   = LL_RX_FLOW_CONTROL_DISABLED;
-
   // ALT: Remove all post RF operations.
   postRfOperations = 0;
 
@@ -1378,6 +1386,8 @@ llStatus_t LL_Reset( void )
  */
 llStatus_t LL_initRNGNoise( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   int_fast16_t rclStatus, result;
 
   /* User's global array for noise input based on size provided in syscfg */
@@ -1416,6 +1426,9 @@ llStatus_t LL_initRNGNoise( void )
   }
 
   return ( LL_STATUS_SUCCESS );
+#endif
+  return ( LL_STATUS_ERROR_RNG_FAILURE );
+
 }
 #endif
 #endif
@@ -4927,7 +4940,9 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
 
         // Accept peer RPA
         extScanParam.rpaModePeer = TRUE;
+#ifndef CONFIG_SOC_CC2340R5
         extScanParam.acceptAllRpaConnectRsp = TRUE;
+#endif
 
         if ( extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST_EXT )
         {
@@ -7957,6 +7972,8 @@ llStatus_t LL_SetPrivacyMode( uint8  peerIdAddrType,
  */
 llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   int8 status;
 
   uint8_t p256Key[ LL_SC_P256_KEY_LEN_OCTET_STRING_FORMAT ] = {0};
@@ -7988,8 +8005,9 @@ llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
   // so context is switch and this function ends successfully
   ICall_terminateWorkerThread();
 #endif
-
   return( LL_STATUS_SUCCESS );
+#endif
+  return LL_STATUS_ERROR_BAD_PARAMETER;
 }
 
 
@@ -8007,6 +8025,7 @@ llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
  */
 llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey )
 {
+#ifndef CONFIG_SOC_CC2340R5
   int8 status;
   uint8 dhKey[ (2*LL_SC_DHKEY_LEN) + 1 ];
   // Create a new public key array with an octet string format size
@@ -8048,6 +8067,8 @@ llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey )
 #endif
 
   return( LL_STATUS_SUCCESS );
+#endif
+  return LL_STATUS_ERROR_BAD_PARAMETER;
 }
 
 // V5.0 - 2M and Coded PHY

@@ -1587,6 +1587,8 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
     return FALSE;
   }
 
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG))
+    /*TBD: Add proper mapping fo MAP_llAdv_TaskConnect via rom_init !!! */
   // check for receive connect request
   if (MAP_llLastCmdDoneEventHandleConnectRequest(pAdvSet) == TRUE)
   {
@@ -1598,6 +1600,7 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
     return TRUE;
   }
   else
+#endif
   {
     taskEndAction = MAP_llExtAdv_PostProcess;
 

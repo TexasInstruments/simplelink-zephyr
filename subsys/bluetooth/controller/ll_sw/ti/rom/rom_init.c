@@ -19,7 +19,9 @@
  * INCLUDES
  */
 #ifdef CC23X0
+#ifndef CONFIG_SOC_CC2340R5
 #include "hal_trng_wrapper.h"
+#endif
 #include "bcomdef.h" // include for DFL flag
 #include "map_direct.h"
 

@@ -994,6 +994,15 @@ extern void ICall_init(void);
 extern void ICall_createRemoteTasks(void);
 
 /**
+ * @brief   Create the worker thread which is a task that waits on queue
+ *          message and executes a requested function call.
+ *
+ * @param void
+ * @return     On success return zero; on error,-1 is returned
+ */
+extern int ICall_createWorkerThread(void);
+
+/**
  * @brief   Create remote tasks with parameters define at runtime.
  *
  * @par     Note

@@ -237,7 +237,7 @@ void llInit_TaskConnect( void )
     connPtr->currentMappedChan = linkCmd[connPtr->connId].channel;
     connPtr->currentChan = connPtr->nextChan;
 
-    uint8 rxPhy;
+    uint8 rxPhy = BLE5_1M_PHY;
 
     // get the second status byte for the received phy
     if ( LL_LEGACY_ADV_PDU(advPkt[0]) )

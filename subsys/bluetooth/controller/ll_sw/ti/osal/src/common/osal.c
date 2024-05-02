@@ -36,18 +36,9 @@
 /* HAL */
 #include "hal_drivers.h"
 
-#ifdef IAR_ARMCM3_LM
-  #include "FreeRTOSConfig.h"
-  #include "osal_task.h"
-#endif
-
 #ifdef USE_ICALL
   #include <icall.h>
 #endif /* USE_ICALL */
-
-#ifdef CC33xx
-  #include "icall_porting.h"
-#endif /* CC33xx */
 
 /*********************************************************************
  * MACROS

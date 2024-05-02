@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2024 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /******************************************************************************
 
  @file  hal_assert.h
@@ -18,14 +24,6 @@
                             HAL_ASSERT_SPIN   - Spinlock.
                             Otherwise:        - Just return.
 
- Group: WCS, LPC, BTS
- $Target Device: DEVICES $
-
- ******************************************************************************
- $License: BSD3 2006 $
- ******************************************************************************
- $Release Name: PACKAGE NAME $
- $Release Date: PACKAGE RELEASE DATE $
  *****************************************************************************/
 
 #ifndef HAL_ASSERT_H

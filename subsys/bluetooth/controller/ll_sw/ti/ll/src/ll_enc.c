@@ -18,6 +18,7 @@
  * INCLUDES
  */
 
+#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/AESCCM.h>
 #include <ti/drivers/AESECB.h>
 #include <ti/drivers/AESCTRDRBG.h>
@@ -35,6 +36,7 @@
 #endif // !CC33xx
 #endif // CC23X0
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
+#endif
 #include <ti/drivers/utils/Random.h>
 #include "bcomdef.h"
 #include "hal_mcu.h"
@@ -65,8 +67,9 @@
 /*******************************************************************************
  * LOCAL VARIABLES
  */
+#ifndef CONFIG_SOC_CC2340R5
 AESCTRDRBG_Handle drbgHandle;
-
+#endif
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
@@ -85,6 +88,7 @@ const uint8 testIV[]  = { 0xBE, 0xBA, 0xAF, 0xDE,    // peripheral
 
 #endif // ADV_CONN_CFG | INIT_CFG
 
+#ifndef CONFIG_SOC_CC2340R5
 // data needed for TI crypto driver for AESCCM
 AESCCM_Handle    encHandleCCM;
 AESCCM_Params    encParamsCCM;
@@ -94,9 +98,9 @@ AESCCM_Operation operationCCM;
 AESECB_Handle    encHandleECB;
 AESECB_Params    encParamsECB;
 AESECB_Operation operationECB;
-
 // Reserve space for CryptoKey and key material
 CryptoKey        cryptoKey;
+#endif
 uint8_t          enckey[ENC_KEY_LEN_MAX] ALIGNED = {0};
 
 /*******************************************************************************
@@ -144,6 +148,7 @@ void LL_AESECB_Init(void);
  */
 void LL_ENC_Init( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
   /* Initialize both AESCCM and AESECB objects as BLE stack is using both */
   LL_AESCCM_Init();
   LL_AESECB_Init();
@@ -151,6 +156,7 @@ void LL_ENC_Init( void )
   // Initialize cryptoKey data structure
   CryptoKeyPlaintext_initKey(&cryptoKey, enckey, ENC_KEY_LEN);
   cryptoKey.u.plaintext.keyMaterial = enckey;
+#endif
   return;
 }
 
@@ -186,6 +192,8 @@ void LL_ENC_Init( void )
  */
 void LL_AESCCM_Init( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   /* Initialize AESCCM object */
   AESCCM_init();
 
@@ -209,7 +217,7 @@ void LL_AESCCM_Init( void )
   HAL_ASSERT( encHandleCCM != NULL );
 
   AESCCM_Operation_init(&operationCCM);
-
+#endif
   return;
 }
 
@@ -242,6 +250,8 @@ void LL_AESCCM_Init( void )
  */
 void LL_AESECB_Init( void )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   /* Initialize both AESCCM objects as BLE stack is using both */
   AESECB_init();
 
@@ -263,6 +273,7 @@ void LL_AESECB_Init( void )
   HAL_ASSERT( encHandleECB != NULL );
 
   AESECB_Operation_init(&operationECB);
+#endif
   return;
 }
 
@@ -376,6 +387,22 @@ uint8 LL_ENC_GenerateTrueRandNum( uint8 *buf,
 uint8 LL_ENC_GenerateTRNGRandNum( uint8 *buf,
                                   uint8  len )
 {
+  if (len == 1)
+  {
+    *buf = (uint8)rand();
+  }
+  else if (len == 2)
+  {
+    *buf = (uint16)rand();
+  }
+  else
+  {
+    *buf = (uint32)rand();
+  }
+
+
+  return LL_STATUS_SUCCESS;
+#ifndef CONFIG_SOC_CC2340R5
   CryptoKey entropy;
   uint8 status;
 
@@ -398,8 +425,7 @@ uint8 LL_ENC_GenerateTRNGRandNum( uint8 *buf,
   }
 #endif // CC23X0
 
-
-  return LL_STATUS_SUCCESS;
+#endif
 }
 
 /*******************************************************************************
@@ -423,6 +449,24 @@ uint8 LL_ENC_GenerateTRNGRandNum( uint8 *buf,
 uint8 LL_ENC_GenerateDRBGRandNum( uint8 *buf,
                                   uint8  len )
 {
+    if (len == 1)
+    {
+      *buf = (uint8)rand();
+    }
+    else if (len == 2)
+    {
+      *buf = (uint16)rand();
+    }
+    else
+    {
+      *buf = (uint32)rand();
+    }
+
+
+    return LL_STATUS_SUCCESS;
+
+#ifndef CONFIG_SOC_CC2340R5
+
   CryptoKey entropyKey;
   int_fast16_t result;
   halIntState_t  cs;
@@ -491,6 +535,7 @@ uint8 LL_ENC_GenerateDRBGRandNum( uint8 *buf,
   MAP_osal_memcpy(buf, enckey, len);
 
   return LL_STATUS_SUCCESS;
+#endif // CONFIG_SOC_CC2340R5
 }
 
 /*******************************************************************************
@@ -514,6 +559,7 @@ uint8 LL_ENC_GenerateDRBGRandNum( uint8 *buf,
  */
 void LL_ENC_GenerateDRBGSeedNum()
 {
+#ifndef CONFIG_SOC_CC2340R5
   AESCTRDRBG_Params drbgParams;
   uint8_t seedBuffer[AESCTRDRBG_SEED_LENGTH_AES_128];
 
@@ -549,6 +595,7 @@ void LL_ENC_GenerateDRBGSeedNum()
     // Handle error
     LL_ASSERT(FALSE);
   }
+#endif
 }
 
 #if defined(CTRL_CONFIG) && ((CTRL_CONFIG & ADV_CONN_CFG) || (CTRL_CONFIG & INIT_CFG))
@@ -707,6 +754,7 @@ void LL_ENC_GenerateNonce( uint32 pktCnt,
  */
 void LL_ENC_LoadKey( uint8 *key )
 {
+#ifndef CONFIG_SOC_CC2340R5
   halIntState_t cs;
 
   HAL_ENTER_CRITICAL_SECTION(cs);
@@ -715,7 +763,7 @@ void LL_ENC_LoadKey( uint8 *key )
   MAP_osal_memcpy(cryptoKey.u.plaintext.keyMaterial, key, ENC_KEY_LEN);
 
   HAL_EXIT_CRITICAL_SECTION(cs);
-
+#endif
   return;
 }
 
@@ -754,6 +802,7 @@ void LL_ENC_AES128_Encrypt( uint8 *key,
 
   HAL_ENTER_CRITICAL_SECTION(cs);
 
+#ifndef CONFIG_SOC_CC2340R5
   MAP_LL_ENC_LoadKey(key);
 
   operationECB.key               = &cryptoKey;
@@ -765,7 +814,7 @@ void LL_ENC_AES128_Encrypt( uint8 *key,
   {
     LL_ASSERT(FALSE);
   }
-
+#endif
   HAL_EXIT_CRITICAL_SECTION(cs);
 
   return;
@@ -801,6 +850,8 @@ void LL_ENC_AES128_Decrypt(uint8 *key,
                            uint8 *ciphertext,
                            uint8 *plaintext)
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   halIntState_t cs;
 
   HAL_ENTER_CRITICAL_SECTION(cs);
@@ -820,7 +871,7 @@ void LL_ENC_AES128_Decrypt(uint8 *key,
   }
 
   HAL_EXIT_CRITICAL_SECTION(cs);
-
+#endif
   return;
 }
 
@@ -858,6 +909,8 @@ int16 LL_ENC_EncryptMsg( uint8 *nonce,
                          uint8  pktLen,
                          uint8 *pBuf )
 {
+#ifndef CONFIG_SOC_CC2340R5
+
   // ensure the packet header's NESN, SN, and MD bits are masked out
   pktHdr &= LL_DATA_PDU_HDR_LLID_MASK | BV(LL_DATA_PDU_HDR_CP_BIT);
 
@@ -878,6 +931,8 @@ int16 LL_ENC_EncryptMsg( uint8 *nonce,
   // by Decrypt after it has pended on transSem but before it has posted causing
   // a deadlock as the SWI will never yield to the task running EncryptMsg.
   return (AESCCM_oneStepEncrypt(encHandleCCM, &operationCCM));
+#endif
+  return -1;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -923,7 +978,9 @@ int16 LL_ENC_DecryptMsg( uint8 *nonce,
                          uint8 *pBuf,
                          uint8 *mic )
 {
-  int16 decryptionResult;
+
+  int16 decryptionResult = 0;
+#ifndef CONFIG_SOC_CC2340R5
 
   // ensure the packet header's NESN, SN, and MD bits are masked out
   pktHdr &= LL_DATA_PDU_HDR_LLID_MASK | BV(LL_DATA_PDU_HDR_CP_BIT);
@@ -948,6 +1005,7 @@ int16 LL_ENC_DecryptMsg( uint8 *nonce,
     // Fill up the decrypted message with 0's
     MAP_osal_memset(pBuf, 0, pktLen);
   }
+#endif
   return decryptionResult;
 }
 #endif // ADV_CONN_CFG | INIT_CFG

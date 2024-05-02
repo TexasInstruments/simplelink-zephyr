@@ -90,7 +90,9 @@ typedef struct
 #endif
   uint8                 maxAlElems;             // Max elements in the accept list
   uint8                 maxRlElems;             // Max elements in the resolving list
+#ifndef CONFIG_SOC_CC2340R5
   ECCParams_CurveParams *eccCurveParams;        // ECC curve parameters
+#endif
   pfnFastStateUpdate_t  fastStateUpdateCb;      // Fast state update callback
   uint32                bleStackType;           // BLE Stack Type
   uint32                extStackSettings;       // BLE misc stack settings

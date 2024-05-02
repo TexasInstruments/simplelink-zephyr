@@ -205,8 +205,10 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
     llUserConfig.pErrCb             = stackConfig->rfDriverParams.pErrCb;
 #endif //!CC23X0
 
+#ifndef CONFIG_SOC_CC2340R5
     // ECC Driver Parameter
     llUserConfig.eccCurveParams     = stackConfig->eccParams;
+#endif
 
 #ifndef CC23X0
 #ifndef CC33xx
