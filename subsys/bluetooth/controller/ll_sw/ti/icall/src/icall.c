@@ -287,8 +287,8 @@ ICall_CSState ICall_enterCSImpl(void)
   return cs;
 #else
   ICall_CSStateUnion cu;
-  cu.each.swikey = (uint_least16_t) Swi_disable();
   cu.each.hwikey = (uint_least16_t) Hwi_disable();
+  cu.each.swikey = (uint_least16_t) Swi_disable();
   return cu.state;
 #endif // CC33xx
 }
@@ -303,8 +303,8 @@ void ICall_leaveCSImpl(ICall_CSState key)
   osi_RestorePreemption((const uint32)key);
 #else
   ICall_CSStateUnion *cu = (ICall_CSStateUnion *) &key;
-  Hwi_restore((UInt) cu->each.hwikey);
   Swi_restore((UInt) cu->each.swikey);
+  Hwi_restore((UInt) cu->each.hwikey);
 #endif // CC33xx
 }
 

@@ -17,7 +17,6 @@
  $Release Name: PACKAGE NAME $
  $Release Date: PACKAGE RELEASE DATE $
  *****************************************************************************/
-
 /*******************************************************************************
  * INCLUDES
  */
@@ -35,15 +34,6 @@
 #include "hal_mcu.h"
 #include <ti/drivers/utils/Random.h>
 #include "ll_ecc.h"
-
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#ifndef CC33xx
-#include <inc/hw_prcm.h>
-#endif
-#endif
-
 #include "onboard.h"
 #include "hal_sleep.h"
 #include "osal_bufmgr.h"
@@ -63,20 +53,18 @@
 #include "ble.h"
 #include "hci_event.h"
 #include "hal_gpio_wrapper.h"
-#include <ti/bleapp/health_toolkit/inc/debugInfo_errno.h>
+#ifdef BLE_HEALTH
+#include <health_toolkit/inc/debugInfo_errno.h>
+#endif //BLE_HEALTH
 
 //
 #include "rom_jt.h"
 
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
 #ifdef USE_FPGA
 #include <ble_setup_fpga.h>
 #endif // USE_FPGA
-#else
-#include "rf_hal.h"
-#endif // USE_RCL
 
 #if defined(CC23X0) || defined(CC33xx)
 #include <ti/drivers/ECDH.h>
@@ -84,14 +72,6 @@
 #include "trng_api.h"
 #include "ecc_api.h"
 #endif // CC23X0 || CC33xx
-
-#ifdef USE_ICALL
-#ifdef CC23X0
-#include <icall_cc23x0_defs.h>
-#else
-#include <icall_cc26xx_defs.h>
-#endif
-#endif // USE_ICALL
 
 // SW Tracer
 #ifdef DEBUG_SW_TRACE
@@ -177,7 +157,7 @@ aeCreateConnCmd_t   aeCreateConn;
 
 // Major Version (8 bits) . Minor Version (4 bits) . SubMinor Version (4 bits)
 #if defined( CC23X0 )
-  #define LL_SUBVERSION_NUM   0x0322  // Controller BLE5 3.2.2
+  #define LL_SUBVERSION_NUM   0x0332  // Controller BLE5 3.3.2
 #else
   #define LL_SUBVERSION_NUM   0x0228  // Controller BLE5 2.2.8
 #endif
@@ -282,21 +262,10 @@ aeCreateConnCmd_t   aeCreateConn;
 extern uint32 totalConnSize;
 #endif // LL_CONN_SIZE
 
-#ifdef USE_RCL
 extern void         LL_rclTestCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern int_fast16_t RCL_AdcNoise_get_samples_blocking(uint32_t *buffer, uint32_t numWords);
-#else
-// callback for radio driver events
-extern void rfCallback( RF_Handle, RF_CmdHandle, RF_EventMask );
-extern void rfPUpCallback( RF_Handle, RF_CmdHandle, RF_EventMask );
-extern void rfErrorCallback( RF_Handle, RF_CmdHandle, RF_EventMask );
-#endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-// pointer to next AE set to be scheduled
-extern sortedAdv_t *pNextAdvSet;
-// number of enabled adv sets
-extern uint8 numActiveAdvSets;
 extern uint8 maxSupportedAdvSets;
 extern uint16 maxExtAdvDataLen;
 #endif
@@ -337,40 +306,12 @@ uint8 ownPublicAddr[ LL_DEVICE_ADDR_LEN ] ALIGNED; // index 0..5 is LSO..MSB
 // Saved Own Device Public Address
 uint8 ownSavedPublicAddr[ LL_DEVICE_ADDR_LEN ] ALIGNED;  // index 0..5 is LSO..MSB
 
-#ifndef USE_RCL
-// DTM FW Parameter Override
-// TEMP: Change to generic fwParCmd when FW Parameters are moved to direct RAM writes.
-rfOpCmd_runImmedCmd_t     fwParDtmCmd;
-rfOpImmedCmd_RW_FwParam_t fwImmedCmd;
-#endif
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
-#ifdef USE_RCL
+
 RCL_Handle  rfHandle;
 RCL_Client  rfClient;
-#else
-// RF open parameter to specify PRCM Mode and pointers to CPE/MCE/RFE patches
-RF_Mode      *rfMode;
-
-// RF open object to be populated by RF driver
-RF_Object    rfObject;
-
-// event mask for radio driver calls
-RF_EventMask rfEvent;
-
-// command handle for radio driver calls
-RF_CmdHandle rfCmdHandle;
-
-// handle to radio driver for BLE client
-RF_Handle    rfHandle = NULL;
-
-rfOpImmedCmd_RW_FwParam_t fwParCmd;
-rfOpCmd_runImmedCmd_t     runFwParCmd;
-
-// RF Setup
-rfOpCmd_Ble5RadioSetup_t rfSetup;
-#endif
 
 // randomAddressConfigured is set to True when HCI_LE_SetRandomAddressCmd() function called
 // and changed ownRandomAddr values to random values.
@@ -556,11 +497,6 @@ uint8          maxNumConns;
 //       user during execution.
 
 uint32         extStackSettings;
-
-#if defined(BLE_VS_FEATURES) && (BLE_VS_FEATURES & SCAN_REQ_RPT_CFG) &&        \
-    defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-uint8 scanReqRpt;
-#endif // SCAN_REQ_RPT_CFG & (ADV_NCONN_CFG | ADV_CONN_CFG)
 
 // Radio Task End Cause Jump Table
 void (*taskEndAction)( void );
@@ -1179,39 +1115,9 @@ uint16 LL_ProcessEvent( uint8  taskId,
   *****************************************************************************/
   if ( events & LL_EVT_INIT_DONE )
   {
-#ifdef USE_RCL
     RCL_init();
     /* Open client and provide settings */
     rfHandle = RCL_open(&rfClient, llUserConfig.lrfConfigPtr);
-#else
-    RF_Params rfParams;
-
-    // should be NULL!
-    LL_ASSERT( SysBootMsg == NULL );
-
-    // set to invalid so not used anymore
-    SysBootMsg = INVALID_SYSBOOTMSG;
-
-    // initialize the Radio Setup command structure
-    MAP_llRfSetup( LL_EXT_RF_SETUP_1M_PHY );
-
-    // default init driver parameters
-    RF_Params_init( &rfParams );
-
-    // use parameters from llUserConfig
-    rfParams.nInactivityTimeout      = llUserConfig.inactivityTimeout;
-    rfParams.nPowerUpDuration        = llUserConfig.powerUpDuration;
-    rfParams.pPowerCb                = POWER_UP_CALLBACK;
-    rfParams.pErrCb                  = RF_ERROR_CALLBACK;
-    rfParams.nPowerUpDurationMargin  = llUserConfig.startupMarginUsecs;
-    rfParams.nID                     = RF_STACK_ID_BLE;
-
-    // open the driver
-    rfHandle = RF_open( &rfObject,
-                        rfMode,
-                        (RF_RadioSetup *)&rfSetup,
-                        &rfParams );
-#endif //USE_RCL
 
 #ifdef CC33xx
 #ifdef BLE_POWER_MGMT_DISABLE
@@ -1262,41 +1168,12 @@ llStatus_t LL_Reset( void )
   // Note: The variable curTxPowerVal must be set here before calling llRfInit!
   curTxPowerVal = RfBleDpl_getTxPowerDefaultIdx();
 
-#ifndef USE_RCL
-  (void)RF_flushCmd( rfHandle,
-                     RF_CMDHANDLE_FLUSH_ALL,
-                     FALSE ); // TRUE = STOP, FALSE = ABORT
-
-  // WARNING: Use of CS prevents NPI from working (Task ID not init to 0x80)
-  //HAL_ENTER_CRITICAL_SECTION(cs);
-
-  // disable the RAT channel that might be going
-  MAP_llClearRatCompare();
-
-
-  // reset Tx/Rx path compensation value
-  pRfPathComp->rfTxPathCompParam = 0;
-  pRfPathComp->rfRxPathCompParam = 0;
-  pRfPathComp->rfTxPathCompVal   = 0;
-  pRfPathComp->rfRxPathCompVal   = 0;
-
-  // initialize the Radio Setup command structure
-  MAP_llRfSetup( LL_EXT_RF_SETUP_1M_PHY );
-
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-#endif // CC13X2P
-
-  // init RF
-  MAP_llRfInit();
-#endif // USE_RCL
   // initialize the accept list
   MAP_AL_Init( alTable );
   MAP_AL_Scan_Init( alTableScan );
 
   // (Radio core using dynamic filter list)
-  if ( useDFL == TRUE )
+  if ( llUserConfig.useDFL == TRUE )
   {
     // initialize the dynamic filter list
     retVal = LL_DFL_Init( LL_DFL_GetDynamicFilterlist(), LL_DFL_GetRankTable() );
@@ -1375,12 +1252,6 @@ llStatus_t LL_Reset( void )
 
   // disable Rx FIFO flow control
   rxFifoFlowCtrl   = LL_RX_FLOW_CONTROL_DISABLED;
-
-#if defined(BLE_VS_FEATURES) && (BLE_VS_FEATURES & SCAN_REQ_RPT_CFG) &&        \
-    defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  // disable Scan Request Reports
-  scanReqRpt = LL_EXT_DISABLE_SCAN_REQUEST_REPORT;
-#endif // SCAN_REQ_RPT_CFG & (ADV_NCONN_CFG | ADV_CONN_CFG)
 
   // ALT: Remove all post RF operations.
   postRfOperations = 0;
@@ -1529,12 +1400,8 @@ void *LL_TX_bm_alloc( uint16 size )
   // Note: This is the lowest call for buffer management allocation.
 
   pBuf = MAP_osal_bm_alloc( size                +
-#ifdef USE_RCL
                             sizeof(RCL_Buffer_TxBuffer) +
                             RCL_BUFFER_MAX_HEADER_PAD_BYTES +
-#else
-                            sizeof(dataEntry_t) +
-#endif
                             LL_PKT_HDR_LEN      +
                             LL_PKT_MIC_LEN );
 
@@ -1544,11 +1411,7 @@ void *LL_TX_bm_alloc( uint16 size )
     // Note: The adjustment is subtracted from the buffer pointer, so passing
     //       a negative adjustment here advances the buffer pointer by that
     //       number of bytes.
-#ifdef USE_RCL
     return( MAP_osal_bm_adjust_header( pBuf, -((uint16)sizeof(RCL_Buffer_TxBuffer) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) ) );
-#else
-    return( MAP_osal_bm_adjust_header( pBuf, -((uint16)sizeof(dataEntry_t)+LL_PKT_LLID_LEN) ) );
-#endif
   }
 
   return( (void *)NULL );
@@ -2497,12 +2360,8 @@ llStatus_t LL_ReadRssi( uint16  connId,
   // check if a receiver modem test is running
   if ( llState == LL_STATE_MODEM_TEST_RX )
   {
-#ifndef USE_RCL
-    rssi = (uint8)RF_getRssi( rfHandle );
-#else
     // get last RSSI snapshot
     rssi = RCL_readRssi();
-#endif
   }
   else if ( llState == LL_STATE_DIRECT_TEST_MODE_RX )
   {
@@ -2747,21 +2606,6 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
                                 uint8 txPhy )
 {
   uint32 payloadTime;
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif
 
   // verify input parameters are valid
   // Note: The txPhy was already verified by LL_EnhancedTxTest.
@@ -2792,7 +2636,6 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
   IOCPinTypeGpioOutput( HAL_GPIO_1 );
 #endif // TEST_MODE_DTM
 
-#ifdef USE_RCL
   // command initialization
   txDtmTestCmd = RCL_CmdBle5DtmTx_DefaultRuntime();
   // set channel
@@ -2806,82 +2649,6 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
 
   // init number of of packets to transmit to be unlimited
   txDtmTestCmd.numPackets = dtmInfo->txPktCnt;
-#else
-  // set the command
-  trxTestCmd.rfOpCmd.cmdNum = CMD_BLE5_TX_TEST;
-
-  // common initialization
-  trxTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-
-  // check if our Tx count is continuous or not
-  trxTestCmd.rfOpCmd.pNextRfOp = (dtmInfo->txPktCnt == LL_EXT_DTM_TX_CONTINUOUS) ?
-                                 (rfOpCmd_t *)&trxTestCmd                        :
-                                 NULL;
-
-  // set the Start Time
-  trxTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( trxTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( trxTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( trxTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( trxTestCmd.rfOpCmd.condition,
-                      ((dtmInfo->txPktCnt == LL_EXT_DTM_TX_CONTINUOUS) ?
-                       CONDTYPE_RUN_TRUE_STOP_FALSE                    :
-                       CONDTYPE_NEVER_RUN_NEXT_CMD) );
-
-  // set channel and disable whitening
-  // Note: The input is the RF Channel not the BLE Channel. Non-BLE channels
-  //       can be specified with a 2300 offset. Since the BLE base frequency
-  //       is 2402, we begin at 102 (i.e. 2402-2300=102).
-  trxTestCmd.chan = (txChan * 2) + 102;
-  CLR_WHITENING( trxTestCmd.whitening );
-
-  // set command parameters and output pointers
-  trxTestCmd.pParams = (uint8 *)&txTestParam;
-  trxTestCmd.pOutput = (uint8 *)&txTestOut;
-
-  // init number of of packets to transmit to be unlimited
-  txTestParam.numPkts = dtmInfo->txPktCnt;
-
-  // init packet length
-  txTestParam.payloadLen = payloadLen;
-
-  // init packet type
-  txTestParam.pktType = payloadType;
-
-  // set range delay
-  // Note: Not applicable for DTM.
-  trxTestCmd.rangeDelay = 0;
-
-#if defined(CC13X2P)
-  // initialize the Radio Setup command structure
-  // Note: The command's phyMode will override the PHY used in RF Setup.
-  MAP_llRfSetup( LL_EXT_RF_SETUP_1M_PHY );
-
-  // init RF
-  MAP_llRfInit();
-
-#endif // CC13X2P
-
-  llSetPower((uint32 *)&trxTestCmd, maxTxPwrForDTM, RfBleDpl_getTxPower(maxTxPwrForDTM));
-
-  // disable packet encoding override
-  CLR_TX_TEST_CFG_OVERRIDE( txTestParam.config );
-
-  // clear unused byte value
-  // Note: Only used when packet encoding override is enabled.
-  txTestParam.byteVal = 0;
-
-  // set end time and trigger
-  txTestParam.endTime = 0;
-  SET_RFOP_TRIG_TYPE( txTestParam.endTrig, TRIGTYPE_NEVER );
-
-  // clear the counters
-  txTestOut.nTx = 0;
-#endif // USE_RCL
 
   // determine the time in us for the payload length to be transmitted
   uint8 blePhy;
@@ -2900,15 +2667,10 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
   payloadTime =  ((payloadTime + 249) / 625) + (((payloadTime + 249) % 625) ? 1 : 0);
   payloadTime *= (625 * RAT_TICKS_IN_1US);
 
-#ifdef USE_RCL
   txDtmTestCmd.common.phyFeatures = blePhy | blePhyOpts;
 
   // Divide by 4 just to avoid ifdefing the payloadTime
   txDtmTestCmd.periodUs = payloadTime/RAT_TICKS_IN_1US;
-#else
-  trxTestCmd.phyMode = blePhy | blePhyOpts;
-  txTestParam.period = payloadTime;
-#endif
 
   // Note: The Tester may also use T(L) upon change of a dirty transmitter
   //       parameter setting and during verification of the EUT's PER report:
@@ -2929,40 +2691,13 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
   // Note: This must precede call to llRfInit!
   llState = LL_STATE_DIRECT_TEST_MODE_TX;
 
-#ifdef USE_RCL
   // Set callback function and events
   txDtmTestCmd.common.runtime.callback = LL_rclTestCallback;
   txDtmTestCmd.common.runtime.lrfCallbackMask.value = 0;
   txDtmTestCmd.common.runtime.rclCallbackMask.value =  RCL_EventLastCmdDone.value;
   // post the command
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
-#else
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&trxTestCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-  #if defined( TEST_MODE_DTM )
-                            (RF_EventLastCmdDone | RF_EventInternalError | RF_EventTxEntryDone) );
-  #else // !TEST_MODE_DTM
-                            (RF_EventLastCmdDone | RF_EventInternalError) );
-  #endif // TEST_MODE_DTM
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_TX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&trxTestCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-  #if defined( TEST_MODE_DTM )
-                                RF_EventLastCmdDone | RF_EventInternalError | RF_EventTxEntryDone );
-  #else // !TEST_MODE_DTM
-                                RF_EventLastCmdDone | RF_EventInternalError );
-  #endif // TEST_MODE_DTM
-#endif // RF_SINGLEMODE
-#endif //USE_RCL
+
   return( LL_STATUS_SUCCESS );
 }
 
@@ -2978,21 +2713,6 @@ llStatus_t LL_DirectTestTxTest( uint8 txChan,
 llStatus_t LL_DirectTestRxTest( uint8 rxChan,
                                 uint8 rxPhy )
 {
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif
   // verify input parameters are valid
   if ( rxChan >= LL_TOTAL_NUM_RF_CHAN )
   {
@@ -3005,7 +2725,6 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-#ifdef USE_RCL
   // command initialization
   rxTestCmd = RCL_CmdBle5GenericRx_DefaultRuntime();
   // set channel
@@ -3030,74 +2749,6 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
   rxTestOut.lastRssi   = LL_RF_RSSI_UNDEFINED;
   rxTestOut.lastTimestamp  = 0;
 
-#else
-  // set the command
-  trxTestCmd.rfOpCmd.cmdNum = CMD_BLE5_RX_TEST;
-
-  // common initialization
-  trxTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  trxTestCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&trxTestCmd;
-
-  // set the Start Time
-  trxTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( trxTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( trxTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( trxTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( trxTestCmd.rfOpCmd.condition, CONDTYPE_RUN_TRUE_STOP_FALSE );
-
-  // set channel and disable whitening
-  // Note: The input is the RF Channel not the BLE Channel. Non-BLE channels
-  //       can be specified with a 2300 offset. Since the BLE base frequency
-  //       is 2402, we begin at 102 (i.e. 2402-2300=102).
-  trxTestCmd.chan = (rxChan * 2) + 102;
-  CLR_WHITENING( trxTestCmd.whitening );
-
-  // set command parameters and output pointers
-  trxTestCmd.pParams = (uint8 *)&rxTestParam;
-  trxTestCmd.pOutput = (uint8 *)&rxTestOut;
-
-  // discard the data
-  rxTestParam.pRXQ = NULL;
-
-  // init Rx configuration
-  rxTestParam.rxCfg = ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-                        RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-                        RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-                        RXQ_CFG_INCLUDE_PKT_LEN_BYTE );
-
-  // init repeat mode to restart radio after receiving packet
-  rxTestParam.repeatMode = RX_TEST_REPEAT_AFTER_RX_PKT;
-
-  // init synch word
-  rxTestParam.accessAddress = LL_DIRECT_TEST_SYNCH_WORD;
-
-  // init CRC
-  rxTestParam.crcInit[0] = 0x55;
-  rxTestParam.crcInit[1] = 0x55;
-  rxTestParam.crcInit[2] = 0x55;
-
-  // set end time and trigger
-  rxTestParam.endTime = 0;
-  SET_RFOP_TRIG_TYPE( rxTestParam.endTrig, TRIGTYPE_NEVER );
-
-  // set range delay
-  // Note: Not applicable for DTM.
-  trxTestCmd.rangeDelay = 0;
-
-  // Tx power not used for this command
-  trxTestCmd.txPower = 0;
-
-  // clear the counters
-  rxTestOut.nRxOk      = 0;
-  rxTestOut.nRxNok     = 0;
-  rxTestOut.nRxBufFull = 0;
-  rxTestOut.lastRssi   = LL_RF_RSSI_UNDEFINED;
-  rxTestOut.timeStamp  = 0;
-#endif
   // save parameters
   dtmInfo->rfChan      = rxChan;
   dtmInfo->packetLen   = 0;
@@ -3114,7 +2765,6 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
   uint8 blePhyOpts;
   llDirectTestConvertLlPhyToBlePhy(rxPhy, &blePhy, &blePhyOpts);
 
-#ifdef USE_RCL
   rxTestCmd.common.phyFeatures = blePhy;
 
   // Set callback function and events
@@ -3123,53 +2773,7 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
   rxTestCmd.common.runtime.rclCallbackMask.value =  RCL_EventLastCmdDone.value;
   // post the command
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
-#else
-  trxTestCmd.phyMode = blePhy;
 
-  // setup chain command to update the FW parameters before starting DTM Rx
-  // Note: First, the llRfInit was used to keep the CM0 on long enough to
-  //       issue the RF_runImmediateCmd, and then the DTM Rx command before
-  //       CM0 is shutdown, and the contents of CM0 RAM are lost (the
-  //       RF_runImmediateCmd is not supported when the CM0 is off, as it
-  //       should be, and will return an error instead; also, there's no
-  //       RF driver support for just keeping the CM0 powered on). However,
-  //       when nInactivityTimeout is set to zero, the CM0 is already off,
-  //       and we get an error. So the only way to ensure the FW parameter
-  //       change occurs is by chaining the immediate command in front of
-  //       the looping Rx command.
-  fwImmedCmd.cmdNum  = CMD_WRITE_FW_PARAM;
-  fwImmedCmd.address = LL_RF_ADV_LEN_WRITE_REG;  // halfword write advLenMask and maxAdvLen
-  fwImmedCmd.value   = LL_RF_ADV_LEN_MAX_VAL;
-
-  // setup radio command to run an immediate command
-  fwParDtmCmd.rfOpCmd.cmdNum    = CMD_RUN_IMMEDIATE_COMMAND;
-  fwParDtmCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  fwParDtmCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&trxTestCmd;
-  fwParDtmCmd.rfOpCmd.startTime = 0;
-  fwParDtmCmd.rfOpCmd.startTrig = TRIGTYPE_NOW;
-  fwParDtmCmd.rfOpCmd.condition = CONDTYPE_ALWAYS_RUN_NEXT_CMD;
-  fwParDtmCmd.reserved          = 0;
-  fwParDtmCmd.cmdVal            = (uint32)&fwImmedCmd;
-  fwParDtmCmd.cmdStatVal        = 0;
-
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&fwParDtmCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            (RF_EventLastCmdDone | RF_EventInternalError) );
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_RX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&fwParDtmCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                RF_EventLastCmdDone | RF_EventInternalError );
-#endif // RF_SINGLEMODE
-#endif //USE_RCL
   return( LL_STATUS_SUCCESS );
 }
 
@@ -3184,6 +2788,7 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
  */
 llStatus_t LL_DirectTestEnd( void )
 {
+  uint32 cmd;
   // first check if we are already in a Direct TX or RX test
   if ( (llState != LL_STATE_DIRECT_TEST_MODE_TX) &&
        (llState != LL_STATE_DIRECT_TEST_MODE_RX) )
@@ -3192,11 +2797,9 @@ llStatus_t LL_DirectTestEnd( void )
   }
 
   // issue STOP command
-#ifndef USE_RCL
-    MAP_llHaltRadio( CMD_ABORT );
-#else
-    MAP_llHaltRadio(((llState == LL_STATE_DIRECT_TEST_MODE_TX)?(uint32)&txDtmTestCmd:(uint32)&rxTestCmd));
-#endif
+  cmd = (((llState == LL_STATE_DIRECT_TEST_MODE_TX)?(uint32)&txDtmTestCmd:(uint32)&rxTestCmd));
+
+  (uint8)(RCL_Command_stop((RCL_Command_Handle)cmd, RCL_StopType_Graceful));
 
 #ifdef CC33xx
   bleThermal_NotifyDeviceTestModeChange(FALSE);
@@ -3205,25 +2808,13 @@ llStatus_t LL_DirectTestEnd( void )
   // return parameters depend on which test we were running
   if ( llState == LL_STATE_DIRECT_TEST_MODE_TX )
   {
-#ifndef USE_RCL
-    // get number of packets transmitted
-    dtmInfo->numPackets = txTestOut.nTx;
-
-    // restore Tx power setting
-    MAP_llSetTxPower( curTxPowerVal );
-#endif
-
     // generate a callback for the packet report
     // Note: For TX, the number of received packets is always zero.
     MAP_LL_DirectTestEndDoneCback( 0, LL_DIRECT_TEST_MODE_TX );
   }
   else if ( llState == LL_STATE_DIRECT_TEST_MODE_RX )
   {
-#ifdef USE_RCL
     dtmInfo->numPackets  = rxTestOut.nRxOk + rxTestOut.nRxNok + rxTestOut.nRxFifoFull;
-#else
-    dtmInfo->numPackets  = rxTestOut.nRxOk + rxTestOut.nRxNok + rxTestOut.nRxBufFull;
-#endif
     dtmInfo->lastRssi    = LL_CHECK_LAST_RSSI( rxTestOut.lastRssi );
     dtmInfo->numRxCrcNOK = rxTestOut.nRxNok;
 
@@ -3241,23 +2832,6 @@ llStatus_t LL_DirectTestEnd( void )
 
     // generate a callback for the packet report
     MAP_LL_DirectTestEndDoneCback( rxTestOut.nRxOk, LL_DIRECT_TEST_MODE_RX );
-
-#ifndef USE_RCL
-    // do a radio setup to restore the radio's default FW registers since
-    // currently, the RF_runImmediateCmd isn't supported when the CM0 is
-    // powered down, as it should have been, and the radio appears to sometimes
-    // be off after llHaltRadio at this point, so this is done as a workaround
-    // to restore the registers. Nothing system critical at this point.
-    MAP_llRfSetup( LL_EXT_RF_SETUP_1M_PHY );
-
-#if defined(CC13X2P)
-    // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-    MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-#endif // CC13X2P
-
-    // init RF
-    MAP_llRfInit();
-#endif
   }
   else
   {
@@ -4615,7 +4189,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
              TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
         {
           // (Radio core using dynamic filter list)
-          if ( useDFL == TRUE )
+          if ( llUserConfig.useDFL == TRUE )
           {
             if ( LL_DFL_Init( LL_DFL_GetDynamicFilterlist(), LL_DFL_GetRankTable()) != LL_STATUS_SUCCESS )
             {
@@ -4644,7 +4218,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
 
       if ((advSortedEntry != NULL) && (pAdvSet->pRfCmds != NULL))
       {
-#ifndef USE_RCL
+#ifndef USE_PREEMTION
         /*
          * Disable Task preemption for LOKI
          * Preemption allows a task to preempt scheduled command in case there is
@@ -4654,11 +4228,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
          */
         uint32 endTime = (pAdvSet->advEvtType != LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT)?
                          (pAdvSet->advStartTime + US_TO_RAT_TICKS(advSortedEntry->timeConsume)):
-#ifdef USE_RCL
-                         (pAdvSet->advStartTime + ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.timing.relHardStopTime);
-#else
-                         (pAdvSet->advStartTime + ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.endTime);
-#endif
+                         (pAdvSet->advStartTime + ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.timing.relHardStopTime);
         // check RF command preemption
         llCheckRfCmdPreemption(endTime,pAdvSet->priority);
 #endif
@@ -4691,23 +4261,11 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
     if ( (aeCurAdvEnableHandle == aeCurHandle) &&
          (MAP_llGetCurrentTask() == pAdvSet->llTask) )
     {
-#ifndef USE_RCL
-      // disable RAT channel
-      MAP_llClearRatCompare();
-
-      // halt the radio
-      // Aborting will stop RF activites right away, while stopping
-      // will let the RF command finish gently.
-      // An abort command is used here since the Adv Set RF param
-      // structure could be used while the command is still running.
-      MAP_llHaltRadio( CMD_ABORT );
-#else
       // stop the command
       uint8 status = MAP_llHaltRadio( pAdvSet->llTask->command );
 
       if ((status == (uint8)RCL_CommandStatus_DescheduledApi) ||
           (status == (uint8)RCL_CommandStatus_Scheduled))
-#endif
       {
         taskEndAction = MAP_llExtAdv_PostProcess;
 
@@ -5216,13 +4774,7 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
 
     // pointer to first radio operation command
     extScanInfo->llTask->command = (uint32)&extScanCmd;
-#ifndef USE_RCL
-    // set RF events
-    extScanInfo->llTask->rfEvents = RF_EventLastCmdDone   |
-                                    RF_EventInternalError |
-                                    RF_EventRxEntryDone;
 
-#endif
     // callback function for scheduler
     extScanInfo->llTask->setup = MAP_llExtScanSchedSetup;
 
@@ -5261,7 +4813,6 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
       if ( privInfo.addrResolution )
       {
         // enables and clears the extended accept list
-#ifdef USE_RCL
         if ( !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK ) )
         {
           extScanParam.rpaModeOwn = TRUE;
@@ -5276,11 +4827,6 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
           extScanParam.scanExtFilterPolicy = TRUE;
         }
         MAP_LL_PRIV_SetupPrivacy(GET_AL_TABLE_POINTER(extScanParam.filterList) );
-#else
-        MAP_LL_PRIV_SetupPrivacy( GET_AL_TABLE_POINTER(extScanParam.pAcceptList) );
-        // enable Rx Ignore interrupt
-        extScanInfo->llTask->rfEvents |= RF_EventRxIgnored;
-#endif
        }
 #ifdef USE_AE //scanner
       // reset scanner report state machine
@@ -5297,7 +4843,7 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
     }
     else
     {
-#ifndef USE_RCL
+#ifndef USE_PREEMTION
       /*
        * Disable Task preemption for LOKI
        * Preemption allows a task to preempt scheduled command in case there is
@@ -5346,19 +4892,11 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
     //       the scan task.
     if (MAP_llGetCurrentTask() == extScanInfo->llTask)
     {
-      // disable RAT channel
-#ifndef USE_RCL
-      MAP_llClearRatCompare();
-
-      // halt the radio
-      MAP_llHaltRadio( CMD_ABORT );
-#else
       // stop the command
       status = MAP_llHaltRadio( (uint32)&extScanCmd );
 
       if ((status == (uint8)RCL_CommandStatus_DescheduledApi) ||
           (status == (uint8)RCL_CommandStatus_Scheduled))
-#endif
       {
         taskEndAction = MAP_llExtScan_PostProcess;
 
@@ -5728,11 +5266,7 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   connPtr->curParam.winSize = LL_WINDOW_SIZE;
 
   // set the window offset (units of 1.25ms)
-#ifdef USE_RCL
   connPtr->curParam.winOffset = (MAP_LL_ENC_GeneratePseudoRandNum() % connPtr->curParam.connInterval);
-#else
-  connPtr->curParam.winOffset = LL_WINDOW_OFFSET;
-#endif
   // set the channel map hop length (5..16)
   // Note: 0..255 % 12 = 0..11 + 5 = 5..16.
   connPtr->hopLength = (uint8)( (MAP_LL_ENC_GeneratePseudoRandNum() % 12) + 5);
@@ -5745,12 +5279,6 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   // pointer to first radio operation command
   extInitInfo->llTask->command = (uint32)&extInitCmd;
 
-  // set RF events
-#ifndef USE_RCL
-  extInitInfo->llTask->rfEvents = RF_EventLastCmdDone   |
-                                  RF_EventInternalError |
-                                  RF_EventRxEntryDone;
-#endif
   // callback function for scheduler
   extInitInfo->llTask->setup = MAP_llExtInitSchedSetup;
 
@@ -5765,23 +5293,6 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   // setup Init command, parameters and outptut registers
   MAP_llSetupExtInit( connPtr->connId );
 
-  // The fix is for test case LL/CON/INI/BV-23-C - Connection Establishment using
-  // acceptlist and resolving list with address resolution disabled
-  // This section should be in llSetupExtInit but we want to avoid from patch.
-  // in case the address resolution is disable and the filter policy is use accept list,
-  // check if own address is a public identity address and IRK is valid
-  if (( privInfo.addrResolution == FALSE) &&
-      ( extInitInfo->pCreateConn->initFilterPolicy == LL_INIT_AL_POLICY_USE_ACCEPT_LIST ) &&
-      ( extInitInfo->ownAddrType == LL_DEV_ADDR_TYPE_PUBLIC_ID) &&
-      ( !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK )))
-    {
-#ifndef USE_RCL
-        // make sure own address type sent OTA is random type
-        // Note: Value of LL_DEV_ADDR_TYPE_RANDOM_ID ends up just being RANDOM.
-        SETVAR_INIT_CFG_DEV_ADDR_TYPE( extInitParam.initCfg, LL_DEV_ADDR_TYPE_RANDOM_ID );
-#endif
-    }
-
   // check if this is the only task
   // Note: If there are one or more central connections already running, then
   //       the Init task will be scheduled when the next connection ends.
@@ -5792,11 +5303,7 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
     {
       // enables and clears the extended accept list
       MAP_LL_PRIV_SetupPrivacy( alTable );
-#ifndef USE_RCL
-      // enable Rx Ignore interrupt
-      extInitInfo->llTask->rfEvents |= RF_EventRxIgnored;
-#endif
-      }
+    }
 
     // determine the correct connection start time
     MAP_llSetupConn( extInitInfo->connId );
@@ -5812,7 +5319,7 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   }
   else
   {
-#ifndef USE_RCL
+#ifndef USE_PREEMTION
     /*
      * Disable Task preemption for LOKI
      * Preemption allows a task to preempt scheduled command in case there is
@@ -5865,16 +5372,11 @@ llStatus_t LL_CreateConnCancel( void )
   if ( (MAP_llGetNumTasks() == 1) ||
        (MAP_llGetCurrentTask() == extInitInfo->llTask) )
   {
-#ifndef USE_RCL
-    // halt the radio
-    MAP_llHaltRadio( CMD_ABORT );
-#else
     // stop the command
     uint8 status = MAP_llHaltRadio( (uint32)&extInitCmd );
 
     if ((status == (uint8)RCL_CommandStatus_DescheduledApi) ||
         (status == (uint8)RCL_CommandStatus_Scheduled))
-#endif
     {
       taskEndAction = MAP_llExtInit_PostProcess;
 
@@ -7801,7 +7303,7 @@ llStatus_t LL_AddDeviceToResolvingList( uint8  peerIdAddrType,
         if ( LL_IsRLActiveTasksRunning() == TRUE )
         {
           // (Radio core using dynamic filter list)
-          if ( useDFL == TRUE )
+          if ( llUserConfig.useDFL == TRUE )
           {
             // Check if peer address complies with the privacy, and if
             // not, remove address from the dynamic filter list.
@@ -7918,7 +7420,7 @@ llStatus_t LL_RemoveDeviceFromResolvingList( uint8  peerIdAddrType,
       if ( LL_IsRLActiveTasksRunning() == TRUE )
       {
         // (Radio core using dynamic filter list)
-        if ( useDFL == TRUE )
+        if ( llUserConfig.useDFL == TRUE )
         {
           // Check if peer address complies with the privacy, and if
           // not, remove address from the dynamic filter list.
@@ -7937,11 +7439,7 @@ llStatus_t LL_RemoveDeviceFromResolvingList( uint8  peerIdAddrType,
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
           if ( extScanInfo->scanMode == LL_SCAN_START )
           {
-#ifdef USE_RCL
             pAlTable = GET_AL_TABLE_POINTER(extScanParam.filterList);
-#else
-            pAlTable = GET_AL_TABLE_POINTER(extScanParam.pAcceptList);
-#endif
           }
           else
 #endif // SCAN_CFG
@@ -9865,30 +9363,9 @@ llStatus_t LL_EXT_SetTxPower( uint8  txPowerIdx,
     // bad parameter
     return( LL_STATUS_ERROR_BAD_PARAMETER );
   }
-#ifndef USE_RCL
-  // check the parameters are valid
-  if (txPowerIdx >= RfBleDpl_getNumTxPwrVals())
-  {
-    // bad parameter
-    return( LL_STATUS_ERROR_BAD_PARAMETER );
-  }
-
-#if defined(CC13X2P)
-#else // !CC13X2P
-  // check if the RF Core is sleeping
-  MAP_llSetTxPower( txPowerIdx );
-#endif // CC13X2P
-  // and save the value
-  curTxPowerVal = txPowerIdx;
-
-  // indicate to HCI the command has completed
-  *cmdComplete = TRUE;
-  return( LL_STATUS_SUCCESS );
-#else
   // indicate to HCI the command has completed
   *cmdComplete = TRUE;
   return( LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED );
-#endif
 }
 
 
@@ -9908,7 +9385,6 @@ llStatus_t LL_EXT_SetTxPowerDbm( int8   txPowerDbm,
     // bad parameter
     return( LL_STATUS_ERROR_BAD_PARAMETER );
   }
-#ifdef USE_RCL
   RFBLEDPL_TX_POWER_HW_TYPE txPower = RfBleDpl_getTxPowerByTxPowerDbm(txPowerDbm, fraction);
 
   if (!RfBleDpl_txPowerIsValid(txPower))
@@ -9923,54 +9399,7 @@ llStatus_t LL_EXT_SetTxPowerDbm( int8   txPowerDbm,
   // indicate to HCI the command has completed
   *cmdComplete = TRUE;
   return( LL_STATUS_SUCCESS );
-#else
-  // indicate to HCI the command has completed
-  *cmdComplete = TRUE;
-  return( LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED );
-#endif
 }
-
-#ifndef USE_RCL
-#if defined(CTRL_CONFIG) && ((CTRL_CONFIG & ADV_CONN_CFG) || (CTRL_CONFIG & INIT_CFG))
-/*******************************************************************************
- * This function is used to enable or disable allowing only one packet per
- * event.
- *
- * Public function defined in ll.h.
- */
-llStatus_t LL_EXT_OnePacketPerEvent( uint8 control )
-{
-  uint8 prevValue = onePktPerEvt;
-
-  // set global based on parameter
-  switch( control )
-  {
-    case LL_EXT_ENABLE_ONE_PKT_PER_EVT:
-      onePktPerEvt = TRUE;
-      break;
-
-    case LL_EXT_DISABLE_ONE_PKT_PER_EVT:
-      onePktPerEvt = FALSE;
-      break;
-
-    default:
-      // bad parameter
-      return( LL_STATUS_ERROR_BAD_PARAMETER );
-  }
-
-  // check if the previous value of the flag has changed
-  if ( prevValue == onePktPerEvt )
-  {
-    // it has, so return a warning so the HCI can optionally decided whether
-    // to return an event for this command
-    return( LL_STATUS_WARNING_FLAG_UNCHANGED );
-  }
-
-  return( LL_STATUS_SUCCESS );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-#endif
-
 
 /*******************************************************************************
  * This function is used to enable or disable dividing down the system clock
@@ -10143,22 +9572,6 @@ llStatus_t LL_EXT_SetPeripheralLatencyOverride( uint8 control )
 llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
                                uint8 rfChan )
 {
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif // !USE_RCL
-
   // verify input parameters are valid
   if ( (rfChan >= LL_TOTAL_NUM_RF_CHAN)  ||
        ((cwMode != LL_EXT_TX_MODULATED_CARRIER) &&
@@ -10173,7 +9586,6 @@ llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-#ifdef USE_RCL
   RCL_init();
 
   /* Open client and provide settings */
@@ -10197,95 +9609,6 @@ llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
   llState = LL_STATE_MODEM_TEST_TX;
 
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txTestCmd);
-
-#else
-  // initialize the Radio Setup command structure
-  MAP_llRfSetup( LL_EXT_RF_SETUP_1M_PHY );
-
-  #if defined(CC13X2P)
-    // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-    MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-  #endif // CC13X2P
-
-  // init RF
-  MAP_llRfInit();
-
-  // start the frequency synthesizer
-  MAP_llRfStartFS( FS_START_IN_TX_MODE, LL_FIRST_RF_CHAN_FREQ+(rfChan*2) );
-
-  // start the Tx test
-
-  // set the command
-  txModemTestCmd.rfOpCmd.cmdNum = CMD_TX_TEST;
-
-  // common initialization
-  txModemTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  txModemTestCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&txModemTestCmd;
-
-  // set the Start Time
-  txModemTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( txModemTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( txModemTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( txModemTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( txModemTestCmd.rfOpCmd.condition,
-                      CONDTYPE_RUN_TRUE_STOP_FALSE );
-
-  // modulated or unmodulated?
-  if ( cwMode == LL_EXT_TX_UNMODULATED_CARRIER )
-  {
-    // configure signal, no whitening, and turn off FS when done
-    SET_TX_TEST_CONFIG( txModemTestCmd.config,
-                        TX_SEND_CONTINUOUS_WAVE,
-                        TRX_TURN_FS_OFF_WHEN_DONE,
-                        TX_NO_WHITENING );
-
-    // ALT: Use CMD_WRITE_FWPAR, address 0x34 (mdmTxIntFreq), with address type
-    //      of 2, value of 0x00000000. Restore with value of 0x00010000.
-  }
-  else // LL_EXT_TX_MODULATED_CARRIER
-  {
-    // configure signal, whitening, and turn off FS when done
-    SET_TX_TEST_CONFIG( txModemTestCmd.config,
-                        TX_SEND_MODULATED_SIGNAL,
-                        TRX_TURN_FS_OFF_WHEN_DONE,
-                        TX_WHITEN_PRBS_15 );
-  }
-
-  // set the synch word
-  txModemTestCmd.syncWord = LL_DIRECT_TEST_SYNCH_WORD;
-
-  // value to send to the modem before whitening
-  txModemTestCmd.txWord = 0;
-
-  // set end time and trigger
-  txModemTestCmd.endTime = 0;
-  SET_RFOP_TRIG_TYPE( txModemTestCmd.endTrig, TRIGTYPE_NEVER );
-
-  // set state/role
-  llState = LL_STATE_MODEM_TEST_TX;
-
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&txModemTestCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            0 );
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_TX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&txModemTestCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                0 );
-#endif // RF_SINGLEMODE
-#endif // !USE_RCL
 
   return( LL_STATUS_SUCCESS );
 }
@@ -10433,22 +9756,6 @@ llStatus_t LL_EXT_ModemHopTestTx( void )
  */
 llStatus_t LL_EXT_ModemTestRx( uint8 rfChan )
 {
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif // !USE_RCL
-
   // verify input parameters are valid
   if ( rfChan >= LL_TOTAL_NUM_RF_CHAN )
   {
@@ -10460,7 +9767,7 @@ llStatus_t LL_EXT_ModemTestRx( uint8 rfChan )
   {
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
-#ifdef USE_RCL
+
   RCL_init();
 
   /* Open client and provide settings */
@@ -10497,64 +9804,7 @@ llStatus_t LL_EXT_ModemTestRx( uint8 rfChan )
   llState = LL_STATE_MODEM_TEST_RX;
 
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
-#else //USE_RCL
-  // start the frequency synthesizer
-  MAP_llRfStartFS( FS_START_IN_RX_MODE, LL_FIRST_RF_CHAN_FREQ+(rfChan*2) );
 
-  // start the Rx test
-
-  // set the command
-  rxModemTestCmd.rfOpCmd.cmdNum = CMD_RX_TEST;
-
-  // common initialization
-  rxModemTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  rxModemTestCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&rxModemTestCmd;
-
-  // set the Start Time
-  rxModemTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( rxModemTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( rxModemTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( rxModemTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( rxModemTestCmd.rfOpCmd.condition, CONDTYPE_RUN_TRUE_STOP_FALSE );
-
-  // disable the modem FIFO and turn off FS when done
-  SET_RX_TEST_CONFIG( rxModemTestCmd.config,
-                      RX_DISABLE_MODEM_FIFO,
-                      TRX_TURN_FS_OFF_WHEN_DONE,
-                      RX_RUN_SYNC_SEARCH_NORMAL );
-
-  // set the synch word
-  rxModemTestCmd.syncWord = LL_DIRECT_TEST_SYNCH_WORD;
-
-  // set end time and trigger
-  rxModemTestCmd.endTime = 0;
-  SET_RFOP_TRIG_TYPE( rxModemTestCmd.endTrig, TRIGTYPE_NEVER );
-
-  // set state/role
-  llState = LL_STATE_MODEM_TEST_RX;
-
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&rxModemTestCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            0 );
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_RX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&rxModemTestCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                0 );
-#endif // RF_SINGLEMODE
-#endif // USE_RCL
   return( LL_STATUS_SUCCESS );
 }
 
@@ -10576,22 +9826,6 @@ llStatus_t LL_EXT_EnhancedModemTestTx( uint8 cwMode,
                                        uint8 rfPhy,
                                        uint8 rfChan )
 {
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif //USE_RCL
-
   // verify input parameters are valid
   if ( (rfChan >= LL_TOTAL_NUM_RF_CHAN)                ||
        ((cwMode != LL_EXT_TX_MODULATED_CARRIER) &&
@@ -10625,7 +9859,6 @@ llStatus_t LL_EXT_EnhancedModemTestTx( uint8 cwMode,
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-#ifdef USE_RCL
   RCL_init();
 
   /* Open client and provide settings */
@@ -10651,96 +9884,6 @@ llStatus_t LL_EXT_EnhancedModemTestTx( uint8 cwMode,
   llState = LL_STATE_MODEM_TEST_TX;
 
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txTestCmd);
-
-#else
-
-  // initialize the Radio Setup command structure
-  MAP_llRfSetup( rfPhy );
-
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-#endif // CC13X2P
-
-  // init RF
-  MAP_llRfInit();
-
-  // start the frequency synthesizer
-  MAP_llRfStartFS( FS_START_IN_TX_MODE, LL_FIRST_RF_CHAN_FREQ+(rfChan*2) );
-
-  // start the Tx test
-
-  // set the command
-  txModemTestCmd.rfOpCmd.cmdNum = CMD_TX_TEST;
-
-  // common initialization
-  txModemTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  txModemTestCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&txModemTestCmd;
-
-  // set the Start Time
-  txModemTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( txModemTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( txModemTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( txModemTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( txModemTestCmd.rfOpCmd.condition,
-                      CONDTYPE_RUN_TRUE_STOP_FALSE );
-
-  // modulated or unmodulated?
-  if ( cwMode == LL_EXT_TX_UNMODULATED_CARRIER )
-  {
-    // configure signal, no whitening, and turn off FS when done
-    SET_TX_TEST_CONFIG( txModemTestCmd.config,
-                        TX_SEND_CONTINUOUS_WAVE,
-                        TRX_TURN_FS_OFF_WHEN_DONE,
-                        TX_NO_WHITENING );
-
-    // ALT: Use CMD_WRITE_FWPAR, address 0x34 (mdmTxIntFreq), with address type
-    //      of 2, value of 0x00000000. Restore with value of 0x00010000.
-  }
-  else // LL_EXT_TX_MODULATED_CARRIER
-  {
-    // configure signal, whitening, and turn off FS when done
-    SET_TX_TEST_CONFIG( txModemTestCmd.config,
-                        TX_SEND_MODULATED_SIGNAL,
-                        TRX_TURN_FS_OFF_WHEN_DONE,
-                        TX_WHITEN_PRBS_15 );
-  }
-
-  // set the synch word
-  txModemTestCmd.syncWord = LL_DIRECT_TEST_SYNCH_WORD;
-
-  // value to send to the modem before whitening
-  txModemTestCmd.txWord = 0;
-
-  // set end time and trigger
-  txModemTestCmd.endTime = 0;
-  SET_RFOP_TRIG_TYPE( txModemTestCmd.endTrig, TRIGTYPE_NEVER );
-
-  // set state/role
-  llState = LL_STATE_MODEM_TEST_TX;
-
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&txModemTestCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            0 );
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_TX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&txModemTestCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                0 );
-#endif // RF_SINGLEMODE
-#endif //USE_RCL
 
   return( LL_STATUS_SUCCESS );
 }
@@ -10952,22 +10095,6 @@ llStatus_t LL_EXT_EnhancedModemHopTestTx( uint8 payloadLen,
 llStatus_t LL_EXT_EnhancedModemTestRx( uint8 rfPhy,
                                        uint8 rfChan )
 {
-#ifndef USE_RCL
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-#endif // !USE_RCL
-
   // verify input parameters are valid
   if ( rfChan >= LL_TOTAL_NUM_RF_CHAN )
   {
@@ -11004,7 +10131,6 @@ llStatus_t LL_EXT_EnhancedModemTestRx( uint8 rfPhy,
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-#ifdef USE_RCL
   RCL_init();
 
   /* Open client and provide settings */
@@ -11043,75 +10169,6 @@ llStatus_t LL_EXT_EnhancedModemTestRx( uint8 rfPhy,
 
   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
 
-#else // USE_RCL
-  // initialize the Radio Setup command structure
-  MAP_llRfSetup( rfPhy );
-
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-#endif // CC13X2P
-
-  // init RF
-  MAP_llRfInit();
-
-  // start the frequency synthesizer
-  MAP_llRfStartFS( FS_START_IN_RX_MODE, LL_FIRST_RF_CHAN_FREQ+(rfChan*2) );
-
-  // start the Rx test
-
-  // set the command
-  rxModemTestCmd.rfOpCmd.cmdNum = CMD_RX_TEST;
-
-  // common initialization
-  rxModemTestCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  rxModemTestCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&rxModemTestCmd;
-
-  // set the Start Time
-  rxModemTestCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( rxModemTestCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( rxModemTestCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( rxModemTestCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( rxModemTestCmd.rfOpCmd.condition, CONDTYPE_RUN_TRUE_STOP_FALSE );
-
-  // disable the modem FIFO and turn off FS when done
-  SET_RX_TEST_CONFIG( rxModemTestCmd.config,
-                      RX_DISABLE_MODEM_FIFO,
-                      TRX_TURN_FS_OFF_WHEN_DONE,
-                      RX_RUN_SYNC_SEARCH_NORMAL );
-
-  // set the synch word
-  rxModemTestCmd.syncWord = LL_DIRECT_TEST_SYNCH_WORD;
-
-  // set end time and trigger
-  rxModemTestCmd.endTime = 0;
-  SET_RFOP_TRIG_TYPE( rxModemTestCmd.endTrig, TRIGTYPE_NEVER );
-
-  // set state/role
-  llState = LL_STATE_MODEM_TEST_RX;
-
-#ifdef RF_SINGLEMODE
-  // issue radio command asynchrously
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)&rxModemTestCmd,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            0 );
-#else // !RF_SINGLEMODE
-  // Set the Coex params
-  MAP_llCoexSetParams(CMD_BLE5_RX_TEST,&cmdParams);
-  // issue radio command asynchrously
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)&rxModemTestCmd,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                0 );
-#endif // RF_SINGLEMODE
-#endif // USE_RCL
   return( LL_STATUS_SUCCESS );
 }
 
@@ -11132,7 +10189,6 @@ llStatus_t LL_EXT_EndModemTest( void )
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-#ifdef USE_RCL
   RCL_Command *cmd;
   if (llState == LL_STATE_MODEM_TEST_TX)
     cmd = (RCL_Command *)&txTestCmd;
@@ -11142,11 +10198,7 @@ llStatus_t LL_EXT_EndModemTest( void )
     return LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE;
 
   MAP_llHaltRadio( (uint32)cmd );
-#else
-  // abort the radio
-  // Note: The STOP based on Flush in LL_Reset causes a hang in llRfInit.
-  MAP_llHaltRadio( CMD_ABORT );
-#endif
+
   // reset link layer
   (void)MAP_LL_Reset();
 
@@ -11338,21 +10390,7 @@ llStatus_t LL_EXT_SaveFreqTune( void )
  */
 llStatus_t LL_EXT_SetMaxDtmTxPower( uint8 txPowerIdx )
 {
-#ifndef USE_RCL
-  // check the parameters are valid
-  if ( txPowerIdx >= RfBleDpl_getNumTxPwrVals())
-  {
-    // bad parameter
-    return( LL_STATUS_ERROR_BAD_PARAMETER );
-  }
-
-  // save the max TX Power to use for DTM
-  maxTxPwrForDTM = txPowerIdx;
-
-  return( LL_STATUS_SUCCESS );
-#else
   return( LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED );
-#endif
 }
 
 /*******************************************************************************
@@ -11362,7 +10400,6 @@ llStatus_t LL_EXT_SetMaxDtmTxPower( uint8 txPowerIdx )
  */
 llStatus_t LL_EXT_SetMaxDtmTxPowerDbm( int8 txPowerDbm, uint8 fraction )
 {
-#ifdef USE_RCL
   RFBLEDPL_TX_POWER_HW_TYPE txPower = RfBleDpl_getTxPowerByTxPowerDbm(txPowerDbm, fraction);
 
   if (!RfBleDpl_txPowerIsValid(txPower))
@@ -11375,9 +10412,6 @@ llStatus_t LL_EXT_SetMaxDtmTxPowerDbm( int8 txPowerDbm, uint8 fraction )
   maxTxPwrForDTM = txPower;
 
   return( LL_STATUS_SUCCESS );
-#else
-  return( LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED );
-#endif
 }
 
 /*******************************************************************************
@@ -11445,16 +10479,13 @@ llStatus_t LL_EXT_DisconnectImmed( uint16 connId )
     connPtr->termInfo.reason = LL_STATUS_ERROR_HOST_TERM;
 
     // Halt the radio.
-    // Aborting will stop RF activites right away, while stopping
+    // Aborting will stop RF activities right away, while stopping
     // will let the RF command finish gently.
-#ifndef USE_RCL
-    MAP_llHaltRadio( CMD_ABORT );
-#else
     // stop the command
     status = MAP_llHaltRadio( llTask->command );
     if ((status == (uint8)RCL_CommandStatus_DescheduledApi) ||
         (status == (uint8)RCL_CommandStatus_Scheduled))
-#endif
+
     {
       // Call the Peripheral/Central task end in order to terminate the connection.
       if (llTask->taskID == LL_TASK_ID_PERIPHERAL)
@@ -11820,11 +10851,7 @@ llStatus_t LL_EXT_GetActiveConnInfo( uint8 connId, uint8 *pData  )
 
       //copy over crcinit
       osal_memcpy((uint8 *)&activeConnInfo->crcInit,
-#ifdef USE_RCL
                   &connPtr->crcInit,
-#else
-                  ((linkParam_t *)(((ble5OpCmd_t *)(connPtr->llTask->command))->pParams))->crcInit,
-#endif
                   BLE_CRC_LEN);
     }
     else

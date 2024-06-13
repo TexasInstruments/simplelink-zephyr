@@ -49,14 +49,6 @@
 #include "hci.h"
 #include "ll_user_config.h"
 
-#ifdef USE_ICALL
-#ifdef CC23X0
-#include <icall_cc23x0_defs.h>
-#else
-#include <icall_cc26xx_defs.h>
-#endif // CC23X0
-#endif // USE_ICALL
-
 /*******************************************************************************
  * MACROS
  */

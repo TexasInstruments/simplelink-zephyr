@@ -20,14 +20,8 @@
 #ifdef ICALL_JT
 
 #include "hal_types.h"
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#endif
 #include "icall_user_config.h"
 #include "icall.h"
-#ifdef CC33xx
-#include "icall_porting.h"
-#endif // CC33xx
 
 #include <ti/drivers/AESCCM.h>
 #include <ti/drivers/AESECB.h>
@@ -38,22 +32,13 @@
 #include <ti/drivers/ecdh/ECDHLPF3SW.h>
 #include <ti/drivers/cryptoutils/sharedresources/CryptoResourceLPF3.h>
 #include <ti/drivers/RNG.h>
-#else
-#include <ti/drivers/aesccm/AESCCMCC26XX.h>
-#include <ti/drivers/aesecb/AESECBCC26XX.h>
-#if !defined(DeviceFamily_CC26X1)
-#include <ti/drivers/ecdh/ECDHCC26X2.h>
-#else
-#include <ti/drivers/ecdh/ECDHCC26X1.h>
-#endif // CC26X1
-#include <ti/drivers/cryptoutils/sharedresources/CryptoResourceCC26XX.h>
-#include <ti/drivers/TRNG.h>
 #endif // CC23X0
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#if !defined(FREERTOS) && !defined(CC33xx)
-#include <ti/sysbios/knl/Swi.h>
-#endif // !FREERTOS && !CC33xx
+
+#ifdef SYSCFG
 #include <ti_drivers_config.h>
+#endif
+
 #include <ti/drivers/ECDH.h>
 #include <ti/drivers/utils/Random.h>
 

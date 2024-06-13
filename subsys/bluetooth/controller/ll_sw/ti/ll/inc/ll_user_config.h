@@ -61,10 +61,7 @@ extern "C"
  * INCLUDES
  */
 #include "ble_user_config.h"
-
-#ifdef USE_RCL
 #include <ti/drivers/rcl/LRF.h>
-#endif
 
 /*******************************************************************************
  * MACROS
@@ -84,25 +81,12 @@ typedef struct
   uint8                 numTxEntries;          // Max number of BLE connection Tx buffers
   uint8                 maxPduSize;            // Max PDU data size
   uint8                 rfFeModeBias;          // RF Front End Mode and Bias
-#ifndef USE_RCL
-  regOverride_t         *rfRegPtr;             // RF Common Override Registers
-  regOverride_t         *rfReg1MPtr;           // RF 1M Override Register Table
-  regOverride_t         *rfReg2MPtr;            // RF 2M Override Register Table
-  regOverride_t         *rfRegCodedPtr;         // RF Coded Override Register Table
-  txPwrTbl_t            *txPwrTblPtr;           // Tx Power Table
-#endif // !(USE_RCL)
 #ifndef CC23X0
   rfDrvTblPtr_t         *rfDrvTblPtr;           // Table of Rf Driver API
   eccDrvTblPtr_t        *eccDrvTblPtr;          // Table of ECC Driver API
   cryptoDrvTblPtr_t     *cryptoDrvTblPtr;       // Table of Crypto Driver API
   trngDrvTblPtr_t       *trngDrvTblPtr;         // Table of TRNG Driver API
   rtosApiTblPtr_t       *rtosApiTblPtr;         // Table of RTOS API
-#endif
-#ifndef USE_RCL
-  uint32                startupMarginUsecs;     // Startup Margin in us
-  uint32                inactivityTimeout;      // Inactivity timeout in us
-  uint32                powerUpDuration;        // Powerup time in us
-  RF_Callback           *pErrCb;                // RF Driver Error Callback
 #endif
   uint8                 maxAlElems;             // Max elements in the accept list
   uint8                 maxRlElems;             // Max elements in the resolving list
@@ -126,7 +110,6 @@ typedef struct
   uint8                 maxNumCteBufs;         // num of CTE samples buffers (each ~2.5KB) used for RF auto copy
 #endif
   uint8                 advReportIncChannel;   // include channel index in advertising report
-#ifdef USE_RCL
   const LRF_TxPowerTable  *lrfTxPowerTablePtr;
   const LRF_Config        *lrfConfigPtr;
   int8                    defaultTxPowerDbm;      // The default Tx Power value in dBm
@@ -138,10 +121,10 @@ typedef struct
   uint16                  rclPhyFeatureCoded;     // RCL_PHY_FEATURE_SUB_PHY_CODED
   uint16                  rclPhyFeatureCodedS8;   // RCL_PHY_FEATURE_CODED_TX_RATE_S8
   uint16                  rclPhyFeatureCodedS2;   // RCL_PHY_FEATURE_CODED_TX_RATE_S2
-#endif
   sdaaUsrCfg_t            *sdaaCfgPtr;            // sdaa module user's parameters
   uint8                   useSrcClkLFOSC;         // Specifies whether Source Clock is LFOSC (RCOSC)
   uint16                  cfgLFOSCExtraPPM;       // Additional PPM configured by the user, applicable when using LFOSC (default: 1500ppm)
+  uint8                   useDFL;                 // Use dynamic filter list
 } llUserCfg_t;
 
 /*******************************************************************************

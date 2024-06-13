@@ -19,6 +19,8 @@
  * INCLUDES
  */
 
+#include "map_direct.h"
+#include <string.h>
 #include "stdint.h"
 #include "stdbool.h"
 #include <ti/devices/DeviceFamily.h>
@@ -26,16 +28,8 @@
 #if !defined(CC23X0) && !defined(CC33xx)
 #include <driverlib/prcm.h>
 #endif //!CC23X0 && !CC33xx
-//
 #include "bcomdef.h"
-#ifdef USE_RCL
-#include "LRF.h"
-#else
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#include "hal_flash.h"
-#include "mb.h"
-#endif //USE_RCL
+#include <ti/drivers/rcl/LRF.h>
 #include "hal_mcu.h"
 #include "osal_tasks.h"
 #include "osal_bufmgr.h"
@@ -52,7 +46,9 @@
 #include "ll_timer_drift.h"
 #include "ll_privacy.h"
 #include "hal_gpio_wrapper.h"
-#include <ti/bleapp/health_toolkit/inc/debugInfo_internal.h>
+#ifdef BLE_HEALTH
+#include <health_toolkit/inc/debugInfo_internal.h>
+#endif // BLE_HEALTH
 //
 #include "rom_jt.h"
 #include "ll_ae.h"
@@ -180,8 +176,37 @@ typedef struct
 llHealthCheck_t llHealth;
 
 /*******************************************************************************
- * LOCAL VARIABLES
+ * LOCAL FUNCTIONS
  */
+
+// Main functions to process control packets setup
+static inline void  llBuildCtrlPkt(llConnState_t *connPtr, uint8_t *pData, uint8_t ctrlPkt);
+static inline void  llPostSetupCtrlPkt( llConnState_t *connPtr, uint8_t ctrlPkt);
+
+// Functions to handle specific control packet
+static inline void  llSetupUpdateParamReq( llConnState_t *connPtr, uint8_t *pData );     // C
+static inline void  llSetupUpdateChanReq( llConnState_t *connPtr, uint8_t *pData );      // C
+static inline void  llSetupTermInd( llConnState_t *connPtr, uint8_t *pData );
+static inline void  llSetupEncReq( llConnState_t *connPtr, uint8_t *pData );             // C
+static inline void  llSetupEncRsp( llConnState_t *connPtr, uint8_t *pData );             // P
+static inline void  llSetupUnknownRsp( llConnState_t *connPtr, uint8_t *pData );
+static inline void  llSetupFeatureSetReq( llConnState_t *connPtr, uint8_t *pData );      // C, P
+static inline void  llSetupLenCtrlPkt( llConnState_t *connPtr, uint8_t *pData );         // C, P
+static inline void  llSetupConnParam( llConnState_t *connPtr,uint8_t *pData  );          // C, P
+static inline void  llSetupRejectIndExt(llConnState_t *connPtr, uint8_t *pData);
+static inline void  llSetupFeatureSetRsp( llConnState_t *connPtr,uint8_t *pData );       // C, P
+static inline void  llSetupVersionIndReq( llConnState_t *connPtr, uint8_t *pData );
+static inline void  llSetupRejectInd( llConnState_t *connPtr, uint8_t *pData );
+static inline void  llSetupPhyCtrlPkt( llConnState_t *connPtr, uint8_t *pData );         // C, P
+
+// Service function to setup control packet
+static inline uint8_t llEncryptControlPkt(llConnState_t *connPtr, uint8_t ctrlPkt);
+
+// Extension to test mode to setup control packets
+#ifdef LL_TEST_MODE
+static inline void llSetupConnParamReq_testmode( llConnState_t *connPtr, uint8_t *pData  );
+static inline void llSetupConnParamRsp_testmode( llConnState_t *connPtr, uint8_t *pData  );
+#endif // LL_TEST_MODE
 
 /*******************************************************************************
  * GLOBAL VARIABLES
@@ -189,27 +214,7 @@ llHealthCheck_t llHealth;
 // Host Connection Event Notice Callback
 llConnEvtNotice_t llConnEvtNotice;
 
-#ifdef USE_RCL
 extern void LL_rclRescheduleCommand(RCL_Command *cmd);
-#else
-// handle to radio driver for BLE client
-extern RF_Handle    rfHandle;
-
-// RF open object to be populated by RF driver
-extern RF_Object    rfObject;
-
-// event mask for radio driver calls
-extern RF_EventMask rfEvent;
-
-// command handle for radio driver calls
-extern RF_CmdHandle rfCmdHandle;
-
-// callback for radio driver events
-extern void         rfCallback( RF_Handle, RF_CmdHandle, RF_EventMask );
-
-// RF Setup for BLE5
-extern rfOpCmd_Ble5RadioSetup_t rfSetup;
-#endif
 
 #ifdef RTLS_CTE
 // CTE Antenna Array
@@ -281,172 +286,44 @@ char *llCtrl_BleLogStrings[] = {
   "LL_CTRL_CTE_RSP              ",
 };
 
+//Lookup table for convert control packet to packet data len align with control packet opcode
+const uint8 ctrlPktLenTable[NUM_OF_CTRL_PKT] =
+{
+   LL_CONN_UPDATE_IND_PAYLOAD_LEN,         //index 0  - LL_CTRL_CONNECTION_UPDATE_IND
+   LL_CHAN_MAP_IND_PAYLOAD_LEN,            //index 1  - LL_CTRL_CHANNEL_MAP_IND
+   LL_TERM_IND_PAYLOAD_LEN,                //index 2  - LL_CTRL_TERMINATE_IND
+   LL_ENC_REQ_PAYLOAD_LEN,                 //index 3  - LL_CTRL_ENC_REQ
+   LL_ENC_RSP_PAYLOAD_LEN,                 //index 4  - LL_CTRL_ENC_RSP
+   LL_START_ENC_REQ_PAYLOAD_LEN,           //index 5  - LL_CTRL_START_ENC_REQ
+   LL_START_ENC_RSP_PAYLOAD_LEN,           //index 6  - LL_CTRL_START_ENC_RSP
+   LL_UNKNOWN_RSP_PAYLOAD_LEN,             //index 7  - LL_CTRL_UNKNOWN_RSP
+   LL_FEATURE_REQ_PAYLOAD_LEN,             //index 8  - LL_CTRL_FEATURE_REQ
+   LL_FEATURE_RSP_PAYLOAD_LEN,             //index 9  - LL_CTRL_FEATURE_RSP
+   LL_PAUSE_ENC_REQ_PAYLOAD_LEN,           //index 10 - LL_CTRL_PAUSE_ENC_REQ
+   LL_PAUSE_ENC_RSP_PAYLOAD_LEN,           //index 11 - LL_CTRL_PAUSE_ENC_RSP
+   LL_VERSION_IND_PAYLOAD_LEN,             //index 12 - LL_CTRL_VERSION_IND
+   LL_REJECT_IND_PAYLOAD_LEN,              //index 13 - LL_CTRL_REJECT_IND
+   LL_PERIPHERAL_FEATURE_REQ_PAYLOAD_LEN,  //index 14 - LL_CTRL_PERIPHERAL_FEATURE_REQ
+   LL_CONN_PARAM_REQ_PAYLOAD_LEN,          //index 15 - LL_CTRL_CONNECTION_PARAM_REQ
+   LL_CONN_PARAM_RSP_PAYLOAD_LEN,          //index 16 - LL_CTRL_CONNECTION_PARAM_RSP
+   LL_REJECT_EXT_IND_PAYLOAD_LEN,          //index 17 - LL_CTRL_REJECT_EXT_IND
+   LL_PING_REQ_PAYLOAD_LEN,                //index 18 - LL_CTRL_PING_REQ
+   LL_PING_RSP_PAYLOAD_LEN,                //index 19 - LL_CTRL_PING_RSP
+   LL_LENGTH_REQ_PAYLOAD_LEN,              //index 20 - LL_CTRL_LENGTH_REQ
+   LL_LENGTH_RSP_PAYLOAD_LEN,              //index 21 - LL_CTRL_LENGTH_RSP
+   LL_PHY_REQ_PAYLOAD_LEN,                 //index 22 - LL_CTRL_PHY_REQ
+   LL_PHY_RSP_PAYLOAD_LEN,                 //index 23 - LL_CTRL_PHY_RSP
+   LL_PHY_UPDATE_REQ_PAYLOAD_LEN,          //index 24 - LL_CTRL_PHY_UPDATE_REQ
+   LL_MIN_USED_CHANNELS_IND_LEN,           //index 25 - LL_CTRL_MIN_USED_CHANNELS_IND
+   LL_CTE_REQ_PAYLOAD_LEN,                 //index 26 - LL_CTRL_CTE_REQ
+   LL_CTE_RSP_PAYLOAD_LEN                  //index 27 - LL_CTRL_CTE_RSP
+};
+
 void llPostRealignConn(llConnState_t *connPtr, uint32 timeToNextEvt);
 
 /*******************************************************************************
  * Functions
  */
-#ifndef USE_RCL
-/*******************************************************************************
- * @fn          llRfSetup
- *
- * @brief       This call is used to setup the CC26xx radio setup command
- *              structure for BLE.
- *
- * input parameters
- *
- * @param       rfPhy - LL_EXT_RF_SETUP_1M_PHY,
- *                      LL_EXT_RF_SETUP_2M_PHY,
- *                      LL_EXT_RF_SETUP_CODED_S8_PHY,
- *                      LL_EXT_RF_SETUP_CODED_S2_PHY
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRfSetup( uint8 rfPhy )
-{
-  if ( (rfPhy != LL_EXT_RF_SETUP_1M_PHY)       &&
-       (rfPhy != LL_EXT_RF_SETUP_2M_PHY)       &&
-       (rfPhy != LL_EXT_RF_SETUP_CODED_S8_PHY) &&
-       (rfPhy != LL_EXT_RF_SETUP_CODED_S2_PHY) )
-  {
-    // default to 1M
-    rfPhy = LL_EXT_RF_SETUP_1M_PHY;
-  }
-
-  // setup radio setup command
-  rfSetup.rfOpCmd.cmdNum     = CMD_BLE5_RADIO_SETUP;
-  rfSetup.rfOpCmd.status     = RFSTAT_IDLE;
-  rfSetup.rfOpCmd.pNextRfOp  = NULL;
-  rfSetup.rfOpCmd.startTime  = 0;
-  rfSetup.rfOpCmd.startTrig  = TRIGTYPE_NOW;
-  rfSetup.rfOpCmd.condition  = CONDTYPE_NEVER_RUN_NEXT_CMD;
-  //
-  rfSetup.defaultPhy         = rfPhy; // For non-BLE commands only.
-  rfSetup.reserved           = 0;     // Necessary for CC13xx, otherwise, 0x803 error!
-  rfSetup.config             = rfCfgAdiVal;
-  // Note: A rfRegPtr value of NULL means there are no override registers.
-  rfSetup.pRegOverrideCommon = (regOverride_t *)llConfigTable.userCfgPtr->rfRegPtr;
-  rfSetup.pRegOverride1M     = (regOverride_t *)llConfigTable.userCfgPtr->rfReg1MPtr;
-  rfSetup.pRegOverride2M     = (regOverride_t *)llConfigTable.userCfgPtr->rfReg2MPtr;
-  rfSetup.pRegOverrideCoded  = (regOverride_t *)llConfigTable.userCfgPtr->rfRegCodedPtr;
-
-/* The define EM_CC1354P10_1_LP is needed since it is High PA device for
-   other stacks (not for BLE) and thus needed to be defined */
-#if defined(CC13X2P) || defined(EM_CC1354P10_1_LP)
-  // Note: This will be set properly in llTxPwrSwitchPA.
-  rfSetup.pRegOverrideTx20   = (regOverride_t *)llConfigTable.userCfgPtr->rfRegOverrideTx20Ptr;
-  rfSetup.pRegOverrideTxStd  = (regOverride_t *)llConfigTable.userCfgPtr->rfRegOverrideTxStdPtr;
-#endif // CC13X2P
-
-  // set Tx Power
-  rfSetup.txPower           =
-    llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[curTxPowerVal].txPwrVal;
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llRfInit
- *
- * @brief       This call is used to setup the CC26xx radio for BLE, and to
- *              issue any haredwrae or firmware register overrides required
- *              for initializaiton.
- *
- *              Note: The function llRfSetup should be called before calling
- *                    this routine!
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRfInit( void )
-{
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-
-  rfEvent = RF_runScheduleCmd( rfHandle,
-                               (RF_Op *)&rfSetup,
-                               &cmdParams,
-                               NULL,
-                               0 );
-#else // RF_SINGLEMODE
-  rfEvent = RF_runCmd( rfHandle,
-                       (RF_Op *)&rfSetup,
-                       RF_PriorityHighest,
-                       NULL,
-                       0 );
-#endif // !RF_SINGLEMODE
-
-  // TEMP: RF command appears to return zero as status, before updating status.
-  {
-    volatile uint16 status;
-
-    do
-    {
-      status = rfSetup.rfOpCmd.status;
-    } while (status == 0);
-  }
-
-  // check if errors
-  if ( rfSetup.rfOpCmd.status != BLESTAT_DONE_OK )
-  {
-    LL_ASSERT( FALSE );
-
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_RF_INIT_ERROR );
-  }
-
-  // set the RF Config init value for ADI after wake from sleep
-  rfCfgAdiVal = llConfigTable.rfCfgValPtr->wakeRfCfgVal | rfFeModeBias;
-
-  // get stack RSSI Correction based on radio setup config value ADI0 Trim
-  rssiCorrection = GET_RSSI_CORRECTION(llConfigTable.rfCfgValPtr->resetRfCfgVal);
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llResetRadio
- *
- * @brief       This call is used to reset the radio.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llResetRadio( void )
-{
-  return;
-}
-#endif //USE_RCL
 
 /*******************************************************************************
  * @fn          llHaltRadio
@@ -473,119 +350,9 @@ void llResetRadio( void )
  */
 uint8 llHaltRadio( uint32 cmd )
 {
-#ifdef USE_RCL
   return ((uint8)(RCL_Command_stop((RCL_Command_Handle)cmd, RCL_StopType_Hard)));
-#else
-  LL_ASSERT( (cmd == CMD_STOP) || (cmd == CMD_ABORT) );
-
-  (void)RF_cancelCmd( rfHandle,
-                      rfCmdHandle,
-                      ((cmd==CMD_STOP)?TRUE:FALSE) );
-  return 0;
-#endif
 }
 
-#ifndef USE_RCL
-/*******************************************************************************
- * @fn          llRfStartFS
- *
- * @brief       This call is used to start the Frequency Synthisizer on a
- *              particular frequency for either Tx or Rx.
- *
- * input parameters
- *
- * @param       txRxMode - FS_START_IN_TX_MODE | FS_START_IN_RX_MODE
- * @param       rfFreq   - Frequency in MHz.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRfStartFS( uint8 txRxMode, uint16 rfFreq )
-{
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-
-  rfOpCmd_freqSynthCtrl_t rfCmd;
-
-  // start the frequency synthesizer
-  rfCmd.rfOpCmd.cmdNum = CMD_FS;
-  rfCmd.rfOpCmd.condition = 0;
-  rfCmd.rfOpCmd.startTrig = 0;
-  // common initialization
-  rfCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  rfCmd.rfOpCmd.pNextRfOp = NULL;
-
-  // set the Start Time
-  rfCmd.rfOpCmd.startTime = 0;
-  CLR_RFOP_ALT_TRIG_CMD( rfCmd.rfOpCmd.startTrig );
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( rfCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-  CLR_RFOP_PAST_TRIG( rfCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( rfCmd.rfOpCmd.condition, CONDTYPE_NEVER_RUN_NEXT_CMD );
-
-  // set the frequency
-  rfCmd.freq      = rfFreq;
-  rfCmd.fractFreq = 0;
-
-  // configure Tx/Rx mode
-  // PG1 Note: Clears 13xx Divider, per the spec.
-  // PG2 Note: Uses default reference frequency.
-  rfCmd.synthCfg = txRxMode;
-
-  // use standard calibration (i.e. no override )
-  // PG1 Note: Perform TDC, coarse, and mid cal.
-  // PG2 Note: Perform TDC, coarse, mid cal. Coarse precal set to zero.
-  rfCmd.calCfg   = FS_USE_STD_CALIBRATION;
-
-  // mid precal
-  rfCmd.midPrecal    = 0;
-  rfCmd.ktPrecal     = 0;
-
-  // TDC precal
-  rfCmd.tdcPrecal    = 0;
-
-#ifdef RF_SINGLEMODE
-  rfEvent = RF_runCmd( rfHandle,
-                       (RF_Op *)&rfCmd,
-                       RF_PriorityHighest,
-                       NULL,
-                       0 );
-#else // !RF_SINGLEMODE
-  rfEvent = RF_runScheduleCmd( rfHandle,
-                               (RF_Op *)&rfCmd,
-                               &cmdParams,
-                               NULL,
-                               0 );
-#endif // RF_SINGLEMODE
-  // check if errors
-  if ( rfCmd.rfOpCmd.status != RFSTAT_DONE_OK )
-  {
-    LL_ASSERT( FALSE );
-
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_FS_FAIL_TO_START );
-  }
-
-  return;
-}
-#endif
 
 /*******************************************************************************
  * @fn          llProcessPostRfOps
@@ -1226,12 +993,8 @@ void llSetupConn( uint8 connId )
   //Guard time between anchor times will be used if user defined CENTRAL_GUARD_TIME_ENABLE
   if (!(extStackSettings & CENTRAL_GUARD_TIME_ENABLE))
   {
-#ifdef USE_RCL
     extInitCmd.dynamicWinOffset = 1;
     extInitCmd.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
-#else
-    extInitParam.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
-#endif
   }
   else
   {
@@ -1253,25 +1016,15 @@ void llSetupConn( uint8 connId )
     }
     if (connPtrRef)
     {
-#ifdef USE_RCL
       extInitCmd.dynamicWinOffset = 1;
       extInitCmd.connectTime = connPtrRef->llTask->anchorPoint +
                                 (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS) +
                                 (((connId - connPtrRef->connId)  * NUM_SLOTS_PER_CENTRAL) * RAT_TICKS_IN_625US);
-#else
-      extInitParam.connectTime = connPtrRef->llTask->anchorPoint +
-                                (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS) +
-                                (((connId - connPtrRef->connId)  * NUM_SLOTS_PER_CENTRAL) * RAT_TICKS_IN_625US);
-#endif
     }
     else
     {
-#ifdef USE_RCL
       extInitCmd.dynamicWinOffset = 1;
       extInitCmd.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
-#else
-      extInitParam.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
-#endif
     }
   }
 #ifdef DEBUG_SW_TRACE
@@ -1285,7 +1038,6 @@ void llSetupConn( uint8 connId )
 }
 #endif // INIT_CFG
 
-#ifdef USE_RCL
 /*******************************************************************************
  * @fn          llSetupDataEntry
  *
@@ -1322,1519 +1074,6 @@ void llSetupDataEntry( RCL_Buffer_TxBuffer *dataEntry, uint8 cmdLen, uint8 encEn
     dataEntry->data[3] = cmdLen;
   }
 }
-#endif
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-/*******************************************************************************
- * @fn          llSetupUpdateParamReq
- *
- * @brief       This function is used to setup the update parameter request.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupUpdateParamReq( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_CONN_UPDATE_IND_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_CONN_UPDATE_IND_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN                +
-             LL_CONN_UPDATE_IND_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_CONNECTION_UPDATE_IND;
-
-    // write window size
-    pData[1] = connPtr->paramUpdate.winSize;
-
-    // write window offset
-    pData[2] = LO_UINT16( connPtr->paramUpdate.winOffset );
-    pData[3] = HI_UINT16( connPtr->paramUpdate.winOffset );
-
-    // write the connection interval
-    pData[4] = LO_UINT16( connPtr->paramUpdate.connInterval );
-    pData[5] = HI_UINT16( connPtr->paramUpdate.connInterval );
-
-    // write the peripheral latency
-    pData[6] = LO_UINT16( connPtr->paramUpdate.peripheralLatency );
-    pData[7] = HI_UINT16( connPtr->paramUpdate.peripheralLatency );
-
-    // write the connection timeout
-    pData[8] = LO_UINT16( connPtr->paramUpdate.connTimeout );
-    pData[9] = HI_UINT16( connPtr->paramUpdate.connTimeout );
-
-    // convert relative instant number to an absolute event number
-    connPtr->paramUpdateEvent += connPtr->currentEvent +
-                                 (llConns.numActiveConns * LL_INSTANT_NUMBER_FACTOR);
-
-#ifdef LL_TEST_MODE
-      switch( llTestMode.testCase )
-      {
-        case LL_TEST_MODE_TP_CON_SLA_BI_04:
-          // override paramUpdateEvent to cause a Passed Instant failure
-          connPtr->paramUpdateEvent = connPtr->currentEvent-1;
-
-          break;
-
-        default:
-          break;
-      }
-#endif // LL_TEST_MODE
-
-    // write the update event count
-    pData[10] = LO_UINT16( connPtr->paramUpdateEvent );
-    pData[11] = HI_UINT16( connPtr->paramUpdateEvent );
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_CONN_UPDATE_IND_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // Note: The Update Parameter control procedure does not use the CPTO.
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-/*******************************************************************************
- * @fn          llSetupUpdateChanReq
- *
- * @brief       This function is used to setup the update channel request.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupUpdateChanReq( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_CHAN_MAP_IND_PAYLOAD_LEN );
-
-  BLE_LOG_INT_INT(0, BLE_LOG_MODULE_CTRL, "CTRL: llSetupUpdateChanReq %d, status=%d\n", 0, 0);
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_CHAN_MAP_IND_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN             +
-             LL_CHAN_MAP_IND_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_CHANNEL_MAP_IND;
-
-    // write the new channel map
-    MAP_osal_memcpy( &pData[1], connPtr->curChanMap.chanMap, LL_NUM_BYTES_FOR_CHAN_MAP );
-
-    // so convert relative instant number to an absolute event number
-    connPtr->chanMapUpdateEvent += connPtr->currentEvent;
-
-#ifdef LL_TEST_MODE
-      switch( llTestMode.testCase )
-      {
-        case LL_TEST_MODE_TP_CON_SLA_BI_04:
-          // override chanMapUpdateEvent to cause a Passed Instant failure
-          connPtr->chanMapUpdateEvent = connPtr->currentEvent-1;
-          break;
-
-        case LL_TEST_MODE_JIRA_3646:
-          // so convert relative instant number to an absolute event number
-          connPtr->chanMapUpdateEvent++;
-          break;
-
-        default:
-          break;
-      }
-#endif // LL_TEST_MODE
-
-    // write the update event count
-    pData[6] = LO_UINT16( connPtr->chanMapUpdateEvent );
-    pData[7] = HI_UINT16( connPtr->chanMapUpdateEvent );
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_CHAN_MAP_IND_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // Note: The Update Data Channel control procedure does not use the CPTO.
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-/*******************************************************************************
- * @fn          llSetupEncReq
- *
- * @brief       This function is used to setup the start encryption request.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupEncReq( llConnState_t *connPtr )
-{
-  // verify all pending transmissions on RF queue have finished
-#ifdef USE_RCL
-  if ( RCL_TxBuffer_head(((txDataQ_t *)connPtr->pTxDataEntryQ)->rfDataBuffers) == NULL )
-#else
-  if ( ((dataEntryQ_t *)connPtr->pTxDataEntryQ)->pCurEntry == NULL )
-#endif
-  {
-    // allocate a data entry and payload to send control packet
-    uint8 *pData = MAP_LL_TX_bm_alloc( LL_ENC_REQ_PAYLOAD_LEN );
-
-    // check if we have a data entry
-    if ( pData != NULL )
-    {
-#ifdef USE_RCL
-      RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                       ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-      llSetupDataEntry(dataEntry,LL_ENC_REQ_PAYLOAD_LEN,FALSE);
-      // point to the payload
-      pData = &dataEntry->data[4];
-#else
-      dataEntry_t *dataEntry;
-      uint8        pktLen;
-
-      // get a pointer to the data entry header
-      dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-      // determine length of packet
-      pktLen = LL_PKT_LLID_LEN +
-               LL_ENC_REQ_PAYLOAD_LEN;
-
-      // yes, so initialize the data entry
-      dataEntry->pNextEntry = NULL;
-      dataEntry->status     = DATASTAT_PENDING;
-      dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-      dataEntry->length     = pktLen;
-
-      // point to the payload
-      pData = (uint8 *)(dataEntry+1);
-
-      // write the header
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-      // write control type
-      pData[0] = LL_CTRL_ENC_REQ;
-
-      // write the random vector
-      MAP_osal_memcpy( &pData[1], connPtr->encInfo.RAND, LL_ENC_RAND_LEN );
-
-      // write the encryption diversifier
-      MAP_osal_memcpy( &pData[9], connPtr->encInfo.EDIV, LL_ENC_EDIV_LEN );
-
-      // write the central's session key diversifier
-      // Note: The SKDm LSO is the LSO of the SKD.
-      MAP_osal_memcpy( &pData[11], (uint8 *)&connPtr->encInfo.SKD[LL_ENC_SKD_M_OFFSET], LL_ENC_SKD_M_LEN );
-
-      // write the central's initialization vector
-      // Note: The IVm LSO is the LSO of the IV.
-      MAP_osal_memcpy( &pData[19], (uint8 *)&connPtr->encInfo.IV[LL_ENC_IV_M_OFFSET], LL_ENC_IV_M_LEN );
-
-      // queue it on connection TX list and queue for RF
-      MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                            dataEntry );
-
-      // bytes are generated LSO..MSO, but need to be maintained as
-      // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
-      MAP_LL_ENC_ReverseBytes( (uint8 *)&connPtr->encInfo.SKD[LL_ENC_SKD_M_OFFSET],
-                               LL_ENC_SKD_M_LEN );
-
-      // bytes are generated LSO..MSO, but need to be maintained as
-      // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
-      // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
-      MAP_LL_ENC_ReverseBytes( (uint8 *)&connPtr->encInfo.IV[LL_ENC_IV_M_OFFSET],
-                               LL_ENC_IV_M_LEN );
-
-      // set the control packet timeout for 40s relative to our present time
-      // Note: This is done in terms of connection events.
-      connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-      return( TRUE );
-    }
-  }
-
-  return( FALSE );
-}
-#endif // INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-/*******************************************************************************
- * @fn          llSetupEncRsp
- *
- * @brief       This function is used to setup the encryption response. This
- *              can only be done when all pending transmissions have first been
- *              completed (i.e. the TX FIFO is empty).
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupEncRsp( llConnState_t *connPtr )
-{
-  // first we need to verify that all pending transmissions have finished
-#ifdef USE_RCL
-  if ( RCL_TxBuffer_head(((txDataQ_t *)connPtr->pTxDataEntryQ)->rfDataBuffers) == NULL )
-#else
-  if ( ((dataEntryQ_t *)connPtr->pTxDataEntryQ)->pCurEntry == NULL )
-#endif
-  {
-    // allocate a data entry and payload to send control packet
-    uint8 *pData = MAP_LL_TX_bm_alloc( LL_ENC_RSP_PAYLOAD_LEN );
-
-    // check if we have a data entry
-    if ( pData != NULL )
-    {
-#ifdef USE_RCL
-      RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                       ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-      llSetupDataEntry(dataEntry,LL_ENC_RSP_PAYLOAD_LEN,FALSE);
-      // point to the payload
-      pData = &dataEntry->data[4];
-#else
-      dataEntry_t *dataEntry;
-      uint8        pktLen;
-
-      // get a pointer to the data entry header
-      dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-      // determine length of packet
-      pktLen = LL_PKT_LLID_LEN +
-               LL_ENC_RSP_PAYLOAD_LEN;
-
-      // yes, so initialize the data entry
-      dataEntry->pNextEntry = NULL;
-      dataEntry->status     = DATASTAT_PENDING;
-      dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-      dataEntry->length     = pktLen;
-
-      // point to the payload
-      pData = (uint8 *)(dataEntry+1);
-
-      // write the header
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-      // write control type
-      pData[0] = LL_CTRL_ENC_RSP;
-
-      // write the SKDs payload
-      MAP_osal_memcpy( &pData[1], &connPtr->encInfo.SKD[LL_ENC_SKD_S_OFFSET], LL_ENC_SKD_S_LEN );
-
-      // write the IVs payload
-      MAP_osal_memcpy( &pData[9], &connPtr->encInfo.IV[LL_ENC_IV_S_OFFSET], LL_ENC_IV_S_LEN );
-
-      // queue it on connection TX list and queue for RF
-      MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                            dataEntry );
-
-      // bytes are generated LSO..MSO, but need to be maintained as
-      // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
-      MAP_LL_ENC_ReverseBytes( (uint8 *)&connPtr->encInfo.SKD[LL_ENC_SKD_S_OFFSET],
-                               LL_ENC_SKD_S_LEN );
-
-      // bytes are generated LSO..MSO, but need to be maintained as
-      // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
-      // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
-      MAP_LL_ENC_ReverseBytes( (uint8 *)&connPtr->encInfo.IV[LL_ENC_IV_S_OFFSET],
-                               LL_ENC_IV_S_LEN );
-
-      // place the IV into the Nonce to be used for this connection
-      // Note: If a Pause Encryption control procedure is started, the
-      //       old Nonce value will be used until encryption is disabled.
-      // Note: The IV is sequenced LSO..MSO within the Nonce.
-      // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
-      for (uint8 i=0; i<LL_ENC_IV_LEN; i++)
-      {
-        connPtr->encInfo.nonce[ LL_ENC_NONCE_IV_OFFSET+i ] =
-          connPtr->encInfo.IV[ (LL_ENC_IV_LEN-i)-1 ];
-      }
-
-      // set the control packet timeout for 40s relative to our present time
-      // Note: This is done in terms of connection events.
-      // Note: For a Encryption Setup procedure that follows an Encryption Pause,
-      //       this is a Restart Timer operation as the timer was already started
-      //       when LL_PAUSE_ENC_RSP was enqueued for transmission. For a normal
-      //       Encryption Setup procedure, this will have no effect as the timer
-      //       was never started before.
-      // Note: Upon re-examination of the previous "Note", and given the most
-      //       recent changes to the Controller spec (D09R31), it isn't clear
-      //       why the timer should be started or re-started when a
-      //       LL_PAUSE_ENC_RSP or LL_ENC_RSP packet is sent for a re-start enc.
-      //       Or given
-      connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-      return( TRUE );
-    }
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-/*******************************************************************************
- * @fn          llSetupStartEncReq
- *
- * @brief       This function is used to handle placing the Start Encryption
- *              Request into the TX FIFO.
- *
- *              Note: The TX FIFO should already be empty.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupStartEncReq( llConnState_t *connPtr )
-{
-  // Note: No need to check if there's enough room in the TX FIFO since it was
-  //       forced to empty prior to beginning encryption control procedure.
-
-#ifdef LL_TEST_MODE
-  if ( (llTestMode.testCase != LL_TEST_MODE_TP_SEC_MAS_BI_07) &&
-       (llTestMode.testCase != LL_TEST_MODE_TP_SEC_MAS_BI_09) )
-  {
-    // Note: Really should be checking only for Data packets. It might be
-    //       possible the LL_CTRL_ENC_RSP packet is still queued, yielding
-    //       a false positive. Use LL_DATA_PDU(pktHdr)
-    //LL_ASSERT( connPtr->pTxDataEntryQ->pCurEntry == NULL );
-  }
-#else // !LL_TEST_MODE
-  // Note: Really should be checking only for Data packets. It might be
-  //       possible the LL_CTRL_ENC_RSP packet is still queued, yielding
-  //       a false positive. Use LL_DATA_PDU(pktHdr)
-  //LL_ASSERT( connPtr->pTxDataEntryQ->pCurEntry == NULL );
-#endif // LL_TEST_MODE
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_START_ENC_REQ_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_START_ENC_REQ_PAYLOAD_LEN,FALSE);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN +
-             LL_START_ENC_REQ_PAYLOAD_LEN;
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_START_ENC_REQ;
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // set the control packet timeout for 40s relative to our present time
-    // Note: This is done in terms of connection events.
-    // Note: For a Encryption Setup procedure that follows an Encryption Pause,
-    //       this is a Restart Timer operation. For a normal Encryption Setup
-    //       procedure, this is a Start Timer operation. Effectively, there is
-    //       no difference between the two.
-    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupStartEncRsp
- *
- * @brief       This function is used to handle the placement of the Encryption
- *              Response packet in the TX FIFO.
- *
- *              Note: The TX FIFO should already be empty.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupStartEncRsp( llConnState_t *connPtr )
-{
-  // Note: For the Central only, the Tx FIFO should still be empty.
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_START_ENC_RSP_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_START_ENC_RSP_PAYLOAD_LEN,TRUE);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN              +
-             LL_START_ENC_RSP_PAYLOAD_LEN +
-             LL_PKT_MIC_LEN;
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write header; NESN=SN=MD=0
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_START_ENC_RSP;
-
-    // encrypt PDU with authentication check
-    MAP_LL_ENC_Encrypt( connPtr,
-                        LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                        LL_START_ENC_RSP_PAYLOAD_LEN,
-                        pData );
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // control procedure timeout value only needed for Central after Start Enc Response
-    if ( llState == LL_STATE_CONN_CENTRAL )
-    {
-      // set the control packet timeout for 40s relative to our present time
-      // Note: This is done in terms of connection events.
-      // Note: Core Spec V4.0 now indicates that each LL control PDU that is queued
-      //       for transmission resets the procedure response timeout timer.
-      connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-    }
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-/*******************************************************************************
- * @fn          llSetupPauseEncReq
- *
- * @brief       This function is used to handle the placement of the Encryption
- *              Pause Request packet in the TX FIFO.
- *
- *              Note: The TX FIFO should already be empty.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupPauseEncReq( llConnState_t *connPtr )
-{
-  // first we need to verify that all pending transmissions have finished and
-#ifdef USE_RCL
-  if ( RCL_TxBuffer_head(((txDataQ_t *)connPtr->pTxDataEntryQ)->rfDataBuffers) == NULL )
-#else
-  if ( ((dataEntryQ_t *)connPtr->pTxDataEntryQ)->pCurEntry == NULL )
-#endif
-  {
-    // allocate a data entry and payload to send control packet
-    uint8 *pData = MAP_LL_TX_bm_alloc( LL_PAUSE_ENC_REQ_PAYLOAD_LEN );
-
-    // check if we have a data entry
-    if ( pData != NULL )
-    {
-#ifdef USE_RCL
-      RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                       ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-      llSetupDataEntry(dataEntry,LL_PAUSE_ENC_REQ_PAYLOAD_LEN,TRUE);
-      // point to the payload
-      pData = &dataEntry->data[4];
-#else
-      dataEntry_t *dataEntry;
-      uint8        pktLen;
-
-      // get a pointer to the data entry header
-      dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-      // determine length of packet
-      pktLen = LL_PKT_LLID_LEN              +
-               LL_PAUSE_ENC_REQ_PAYLOAD_LEN +
-               LL_PKT_MIC_LEN;
-
-      // yes, so initialize the data entry
-      dataEntry->pNextEntry = NULL;
-      dataEntry->status     = DATASTAT_PENDING;
-      dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-      dataEntry->length     = pktLen;
-
-      // point to the payload
-      pData = (uint8 *)(dataEntry+1);
-
-      // write the header
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-      // write control type
-      pData[0] = LL_CTRL_PAUSE_ENC_REQ;
-
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_PAUSE_ENC_REQ_PAYLOAD_LEN,
-                          pData );
-
-      // queue it on connection TX list and queue for RF
-      MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                            dataEntry );
-
-      // set the control packet timeout for 40s relative to our present time
-      // Note: This is done in terms of connection events.
-      // Note: Core Spec V4.0 now indicates that each LL control PDU that is queued
-      //       for transmission resets the procedure response timeout timer.
-      connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-      return( TRUE );
-    }
-  }
-
-  return( FALSE );
-}
-#endif // INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupPauseEncRsp
- *
- * @brief       This function is used to handle the placement of the Pause
- *              Encryption packet in the TX FIFO. This can only be done when
- *              all pending transmissions have first been completed (i.e.
- *              the TX FIFO is empty).
- *
- *              Note: The TX FIFO should already be empty.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully done:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupPauseEncRsp( llConnState_t *connPtr )
-{
-
-#ifdef LL_TEST_MODE
-#ifndef CC23X0
-      if ( llTestMode.testCase != LL_TEST_MODE_TP_SEC_MAS_BV05 )
-      {
-        // fatal error - no data is supposed to be in TX FIFO when enc is started
-        dataEntryQ_t *pTxData = (dataEntryQ_t *)(connPtr->pTxDataEntryQ);
-        LL_ASSERT(  (dataEntry_t *)(pTxData->pCurEntry) == NULL );
-      }
-#endif
-#endif // LL_TEST_MODE
-
-  // first we need to verify that all pending transmissions have finished
-  // Note: On the Central, the Tx Queue should already be empty.
-#ifdef USE_RCL
-  if ( RCL_TxBuffer_head(((txDataQ_t *)connPtr->pTxDataEntryQ)->rfDataBuffers) == NULL )
-#else
-  if ( ((dataEntryQ_t *)connPtr->pTxDataEntryQ)->pCurEntry == NULL )
-#endif
-  {
-    // allocate a data entry and payload to send control packet
-    uint8 *pData = MAP_LL_TX_bm_alloc( LL_PAUSE_ENC_RSP_PAYLOAD_LEN );
-
-    // check if we have a data entry
-    if ( pData != NULL )
-    {
-#ifdef USE_RCL
-      // Indicates if the Pause Encryption Response should be encrypted
-      uint8 encEnabled = FALSE;
-
-      RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                       ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-
-      // Only the Peripheral encrypts the Pause Encryption Response
-      if ( llState == LL_STATE_CONN_PERIPHERAL )
-      {
-          encEnabled = TRUE;
-      }
-
-      llSetupDataEntry(dataEntry,LL_PAUSE_ENC_RSP_PAYLOAD_LEN,encEnabled);
-      // point to the payload
-      pData = &dataEntry->data[4];
-#else
-      dataEntry_t *dataEntry;
-      uint8        pktLen;
-
-      // get a pointer to the data entry header
-      dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-      // determine length of packet
-      pktLen = LL_PKT_LLID_LEN +
-               LL_PAUSE_ENC_RSP_PAYLOAD_LEN;
-
-      // only the Peripheral encrypts the Pause Encryption Response
-      if ( llState == LL_STATE_CONN_PERIPHERAL )
-      {
-        // determine length of packet
-        pktLen += LL_PKT_MIC_LEN;
-      }
-
-      // yes, so initialize the data entry
-      dataEntry->pNextEntry = NULL;
-      dataEntry->status     = DATASTAT_PENDING;
-      dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-      dataEntry->length     = pktLen;
-
-      // point to the payload
-      pData = (uint8 *)(dataEntry+1);
-
-      // write header; NESN=SN=MD=0
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-      // write control type
-      pData[0] = LL_CTRL_PAUSE_ENC_RSP;
-
-      // only the Peripheral encrypts the Pause Encryption Response
-      if ( llState == LL_STATE_CONN_PERIPHERAL )
-      {
-        // encrypt PDU with authentication check
-        MAP_LL_ENC_Encrypt( connPtr,
-                            LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                            LL_PAUSE_ENC_RSP_PAYLOAD_LEN,
-                            pData );
-      }
-
-      // queue it on connection TX list and queue for RF
-      MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                            dataEntry );
-
-      // set the control packet timeout for 40s relative to our present time
-      // Note: This is done in terms of connection events.
-      // Note: Core Spec V4.0 now indicates that each LL control PDU that is
-      //       queued for transmission resets the procedure response timeout
-      //       timer.
-      connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-      return( TRUE );
-    }
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-/*******************************************************************************
- * @fn          llSetupRejectInd
- *
- * @brief       This function is used to setup the Reject Indications procedure
- *              which results when encryption has been started, but the LTK
- *              request was negative. Once the rejection indication is sent
- *              and acknowledged, the connection remains unencrypted and TX
- *              is re-enabled.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupRejectInd( llConnState_t *connPtr )
-{
-  // Note: No need to check if there's enough room in the TX FIFO since it was
-  //       forced to empty prior to beginning encryption control procedure.
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_REJECT_IND_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_REJECT_IND_PAYLOAD_LEN,FALSE);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN +
-             LL_REJECT_IND_PAYLOAD_LEN;
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_REJECT_IND;
-
-    // write the reason code
-    pData[1] = connPtr->encInfo.encRejectErrCode;
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // set the control packet timeout for 40s relative to our present time
-    // Note: This is done in terms of connection events.
-    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupFeatureSetReq
- *
- * @brief       This function is used to setup the feature set request.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate if the setup was successfully completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupFeatureSetReq( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_FEATURE_REQ_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_FEATURE_REQ_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN            +
-             LL_FEATURE_REQ_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-#ifdef LL_TEST_MODE
-    switch( llTestMode.testCase )
-    {
-      case LL_TEST_MODE_TP_PAC_MAS_BI01:
-      case LL_TEST_MODE_TP_PAC_SLA_BI01:
-        // override length: send an invalid control packet length
-        pktLen = LL_INVALID_CTRL_LEN;
-        break;
-
-      default:
-        break;
-    }
-#endif // LL_TEST_MODE
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode based on connection role
-    if ( llState == LL_STATE_CONN_CENTRAL )
-    {
-      pData[0] = LL_CTRL_FEATURE_REQ;
-    }
-    else // LL_STATE_CONN_PERIPHERAL
-    {
-      pData[0] = LL_CTRL_PERIPHERAL_FEATURE_REQ;
-    }
-
-#ifdef LL_TEST_MODE
-    switch( llTestMode.testCase )
-    {
-      case LL_TEST_MODE_TP_PAC_MAS_BV01:
-      case LL_TEST_MODE_TP_PAC_SLA_BV01:
-        // override opcode: send an invalid control packet opcode
-        pData[0] = LL_CTRL_INVALID_OPCODE;
-        break;
-
-      default:
-        break;
-    }
-#endif // LL_TEST_MODE
-
-    // use this connection's feature set as payload
-    MAP_osal_memcpy( &pData[1],
-                  deviceFeatureSet.featureSet,
-                  LL_MAX_FEATURE_SET_SIZE );
-
-    // If a bit is shown as Host Controlled,
-    // the value may be set by the Host and shall default to zero.
-    // this function shout down bits by the table 4.7 in:
-    // BLUETOOTH CORE SPECIFICATION Version 5.4 | Vol 6, Part B page 2845.
-    llRemoveFeaturesForSendToPeer( &pData[1] );
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_FEATURE_REQ_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupFeatureSetRsp
- *
- * @brief       This function is used to setup the Feature Set Response packet.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupFeatureSetRsp( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_FEATURE_RSP_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_FEATURE_RSP_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN         +
-             LL_FEATURE_RSP_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_FEATURE_RSP;
-
-    // use this connection's feature set as payload
-    // Note: Normally, this device's feature set would be used, but since there
-    //       is a HCI Extension command that allows the user to change this
-    //       device's feature set, and given that the Peripheral can now request a
-    //       feature set procedure (V4.1 specification update), the used feature
-    //       set could get changed.
-    // Note: Per Vol 6, Part B, Section 5.1.4, only byte 0 of the peer's
-    //       feature set is logically AND'ed with this device's feature set's
-    //       byte 0. All remaining bytes are set based on this devices feature
-    //       set.
-    pData[1] = connPtr->featureSetInfo.featureSet[0];
-
-    MAP_osal_memcpy( &pData[2],
-                     &deviceFeatureSet.featureSet[1],
-                     LL_MAX_FEATURE_SET_SIZE-1 );
-
-    // If a bit is shown as Host Controlled,
-    // the value may be set by the Host and shall default to zero.
-    // this function shout down bits by the table 4.7 in:
-    // BLUETOOTH CORE SPECIFICATION Version 5.4 | Vol 6, Part B page 2845.
-    llRemoveFeaturesForSendToPeer( &pData[1] );
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_FEATURE_RSP_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    connPtr->peripheralLatency = 0;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupVersionIndReq
- *
- * @brief       This function is used to setup the version information
- *              indication.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupVersionIndReq( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_VERSION_IND_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_VERSION_IND_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN         +
-             LL_VERSION_IND_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_VERSION_IND;
-
-    // write the version number
-    pData[1] = verInfo.verNum;
-
-    // write the company ID
-    pData[2] = LO_UINT16( verInfo.comId );
-    pData[3] = HI_UINT16( verInfo.comId );
-
-    // write the subversion number
-    pData[4] = LO_UINT16( verInfo.subverNum );
-    pData[5] = HI_UINT16( verInfo.subverNum );
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_VERSION_IND_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // set the control packet timeout for 40s relative to our present time
-    // Note: This is done in terms of connection events.
-    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupTermInd
- *
- * @brief       This function is used to setup the Connection Termination
- *              procedure that has been requested by the Host. This function
- *              is called before the start of the next Peripheral task. The
- *              Connection Termination procedure requires that the Peripheral send
- *              a TERMINATE_IND packet and receive an ACK from the Central. In
- *              addition, a control packet timeout must be started.
- *
- *              To simplify this procedure, all packets will be removed from
- *              the TX FIFO before writing the TERMINATE_IND packet there. This
- *              simplifies how can determine the terminate packet has been sent
- *              by making the number of expected ACKs deterministic. However,
- *              since it is possible that the NR  may be retransmitting a prior
- *              packet (which we can not remove), we have to first determine
- *              when the terminate packet is sent before waiting for its ACK.
- *              This is the same as waiting for either one or two ACKs,
- *              depending on whether there is a retransmit packet or not.
- *              This can be determined by first checking if the TX FIFO is empty
- *              after removing all pending packets (the retransmit packet, if
- *              present, is unaffected), and setting the number of expected
- *              packets accordingly. When the task ends, the number of ACKS
- *              received can be checked.
- *
- *              Please note that the NR might also be retransmitting a prior
- *              auto-empty packet (please see section 6.5.1 of the NR spec
- *              for more detail), however in this case, the number of expected
- *              ACKs would still be one since the BLE_L_NTXDONE counter is only
- *              incremented when an ACK is received for a packet that is in the
- *              TX FIFO.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupTermInd( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_TERM_IND_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_TERM_IND_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN         +
-             LL_TERM_IND_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-     // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_TERMINATE_IND;
-
-    // write reason code
-    pData[1] = connPtr->termInfo.reason;
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_TERM_IND_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    // Per Core V4.0 spec change, the termination timeout is the LSTO
-    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->expirationValue;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupUnknownRsp
- *
- * @brief       This function is used to setup the Unknown Response packet.
- *
- *              Note: There is no control procedure timeout associated with
- *                    the Unknown Response control packet.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupUnknownRsp( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_UNKNOWN_RSP_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_UNKNOWN_RSP_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN            +
-             LL_UNKNOWN_RSP_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control type
-    pData[0] = LL_CTRL_UNKNOWN_RSP;
-
-    // write unknown control type as payload
-    pData[1] = connPtr->unknownCtrlType;
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_UNKNOWN_RSP_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
 
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
@@ -2863,15 +1102,15 @@ uint8 llSetupUnknownRsp( llConnState_t *connPtr )
  * @return      None.
  */
 void llEnqueueCtrlPkt( llConnState_t *connPtr,
-                       uint8         ctrlType )
+                       uint8 ctrlType )
 {
   halIntState_t intState;
 
-  // Sanity Check
+// Sanity Check
   if ( connPtr == NULL )
   {
-    LL_ASSERT( connPtr != NULL );
-    return;
+  LL_ASSERT( connPtr != NULL );
+      return;
   }
   if ( connPtr->ctrlPktInfo.ctrlPktCount >= LL_MAX_NUM_CTRL_PROC_PKTS )
   {
@@ -2915,7 +1154,6 @@ void llEnqueueCtrlPkt( llConnState_t *connPtr,
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -2983,7 +1221,6 @@ void llDequeueCtrlPkt( llConnState_t *connPtr )
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -3104,7 +1341,7 @@ void llReplaceCtrlPkt( llConnState_t *connPtr,
  * @return      first item index.
  */
 uint8 llMoveBackCtrlPkt( llConnState_t *connPtr,
-                         uint8         *ctrlQueue,
+                         uint8 *ctrlQueue,
                          uint8         numItems)
 {
   halIntState_t intState;
@@ -3259,7 +1496,6 @@ void llProcessChanMap( llConnState_t *connPtr,
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llSetNextDataChan
@@ -3325,11 +1561,7 @@ void llSetNextDataChan( llConnState_t *connPtr )
 
   // set the channel number
   // Note: The channel field is prior to ble5OpCmd_t field changes, so okay.
-#ifdef USE_RCL
   ((RCL_CmdBle5Connection *)connPtr->llTask->command)->channel = connPtr->currentMappedChan;
-#else
-  ((bleOpCmd_t *)connPtr->llTask->command)->chan = connPtr->currentMappedChan;
-#endif
 #ifdef DEBUG_SW_TRACE
   DBG_PRINT0(DBGSYS, "");
   DBG_PRINT1(DBGSYS, "Set Next Chan: %d", connPtr->currentMappedChan);
@@ -3548,7 +1780,6 @@ uint8 llGetNextDataChan( llConnState_t *connPtr,
 
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llAtLeastTwoChans
@@ -3612,7 +1843,6 @@ uint8 llAtLeastTwoChans( uint8 *chanMap )
   return( FALSE );
 }
 #endif // INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 
@@ -3928,8 +2158,6 @@ llConnState_t *llAllocConnId( void )
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llReleaseConnId
@@ -4007,7 +2235,6 @@ void llReleaseConnId( llConnState_t *connPtr )
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llReleaseAllConnId
@@ -4075,11 +2302,7 @@ uint8 llCalcConnMissCount(uint16 connId, uint32 connlastStartTime)
 {
   llConnState_t    *connPtr = MAP_llDataGetConnPtr( connId );
   // Connection's Start Time
-#ifdef USE_RCL
   uint32 connCurrentStartTime = ((RCL_Command *)connPtr->llTask->command)->timing.absStartTime;
-#else
-  uint32 connCurrentStartTime = ((ble5OpCmd_t *)connPtr->llTask->command)->rfOpCmd.startTime;
-#endif
 
   /********************************************/
   /************ Check Valid Input *************/
@@ -4138,13 +2361,8 @@ uint16 llSelectConn(uint16 connId1, uint16 connId2)
   llConnState_t *connPtr1 = MAP_llDataGetConnPtr( connId1 );
   llConnState_t *connPtr2 = MAP_llDataGetConnPtr( connId2 );
 
-#ifdef USE_RCL
   uint32 startTime1 = ((RCL_Command *)connPtr1->llTask->command)->timing.absStartTime;
   uint32 startTime2 = ((RCL_Command *)connPtr2->llTask->command)->timing.absStartTime;
-#else
-  uint32 startTime1 = ((ble5OpCmd_t *)connPtr1->llTask->command)->rfOpCmd.startTime;
-  uint32 startTime2 = ((ble5OpCmd_t *)connPtr2->llTask->command)->rfOpCmd.startTime;
-#endif
   /********************************************/
   /************ Check Valid Input *************/
   /********************************************/
@@ -4475,13 +2693,8 @@ uint16 llIsThereACollisionBetweenConn(uint16 connId1, uint16 connId2)
   llConnState_t *connPtr1 = MAP_llDataGetConnPtr( connId1 );
   llConnState_t *connPtr2 = MAP_llDataGetConnPtr( connId2 );
 
-#ifdef USE_RCL
   uint32 startTime1 = ((RCL_Command *)connPtr1->llTask->command)->timing.absStartTime;
   uint32 startTime2 = ((RCL_Command *)connPtr2->llTask->command)->timing.absStartTime;
-#else
-  uint32 startTime1 = ((ble5OpCmd_t *)connPtr1->llTask->command)->rfOpCmd.startTime;
-  uint32 startTime2 = ((ble5OpCmd_t *)connPtr2->llTask->command)->rfOpCmd.startTime;
-#endif
   /********************************************/
   /************ Check Valid Input *************/
   /********************************************/
@@ -4572,11 +2785,7 @@ uint32 llCalcConnMaxTimeLength(uint16 startConnId, uint16 bestSelectedConnIdAfte
   llConnState_t *connPtr1 = MAP_llDataGetConnPtr( startConnId );
   llConnState_t *connPtr2 = NULL;
 
-#ifdef USE_RCL
   uint32 startTime1 = ((RCL_Command *)connPtr1->llTask->command)->timing.absStartTime;
-#else
-  uint32 startTime1 = ((ble5OpCmd_t *)connPtr1->llTask->command)->rfOpCmd.startTime;
-#endif
   uint32 startTime2;
 
   /* NOTE: The maximum connection time length would be adjusted
@@ -4627,11 +2836,7 @@ uint32 llCalcConnMaxTimeLength(uint16 startConnId, uint16 bestSelectedConnIdAfte
   {
     // Get the bestSelectedConnIdAfterStart connection's info.
     connPtr2 = MAP_llDataGetConnPtr( bestSelectedConnIdAfterStart );
-#ifdef USE_RCL
     startTime2 = ((RCL_Command *)connPtr2->llTask->command)->timing.absStartTime;
-#else
-    startTime2 = ((ble5OpCmd_t *)connPtr2->llTask->command)->rfOpCmd.startTime;
-#endif
 
     // Check if the start time of the bestSelectedConnIdAfterStart connection is higher than the startConnId's interval.
     // if so - return the startConnId's interval.
@@ -4677,11 +2882,7 @@ uint32 llCalcConnMaxTimeLength(uint16 startConnId, uint16 bestSelectedConnIdAfte
     // Get connection's info.
     connPtr2 = MAP_llDataGetConnPtr( nextConnId );
 
-#ifdef USE_RCL
     startTime2 = ((RCL_Command *)connPtr2->llTask->command)->timing.absStartTime;
-#else
-    startTime2 = ((ble5OpCmd_t *)connPtr2->llTask->command)->rfOpCmd.startTime;
-#endif
 
     // Check if the start time of the next connection is higher than the startConnId's interval.
     // if so - return the startConnId's interval.
@@ -5031,11 +3232,7 @@ uint8 llGetNextConn( void )
 
       // Save start time before realigment
       // For miss count calculations.
-#ifdef USE_RCL
       connLastStartTimeBeforeRealigment = ((RCL_Command *)connPtr->llTask->command)->timing.absStartTime;
-#else
-      connLastStartTimeBeforeRealigment = ((ble5OpCmd_t *)connPtr->llTask->command)->rfOpCmd.startTime;
-#endif
 
       // Realign to the future.
       MAP_llRealignConn( connPtr, curTime );
@@ -5156,7 +3353,6 @@ uint8 llGetNextConn( void )
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llGetMinCI
@@ -5250,7 +3446,6 @@ uint16 llGetMinCI( uint16 connInterval )
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llConnExists
@@ -5321,7 +3516,6 @@ uint8 llConnExists( uint8 *peerAddr,
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llConnCleanup
@@ -5341,12 +3535,7 @@ uint8 llConnExists( uint8 *peerAddr,
  */
 void llConnCleanup( llConnState_t *connPtr )
 {
-#ifdef USE_RCL
   RCL_Buffer_TxBuffer *pEntry;
-#else
-  dataEntry_t   *pEntry;
-  dataEntry_t   *pNextTempDataEntry;
-#endif
   halIntState_t  cs;
 
   // Sanity check
@@ -5359,13 +3548,12 @@ void llConnCleanup( llConnState_t *connPtr )
     // stop the APTO timer, if running
     MAP_osal_CbTimerStop( connPtr->aptoTimerId );
 
-    // free all Tx entries, finished or not
-    // Note: The memory for the Tx Data queue is currently static in the sense
-    //       that it is malloc'ed once and never freed. However, the connection's
-    //       pointer to the queue is cleared whenever the connection is alloc'ed.
-    if ( connPtr->pTxDataEntryQ != NULL )
-    {
-#ifdef USE_RCL
+  // free all Tx entries, finished or not
+  // Note: The memory for the Tx Data queue is currently static in the sense
+  //       that it is malloc'ed once and never freed. However, the connection's
+  //       pointer to the queue is cleared whenever the connection is alloc'ed.
+  if ( connPtr->pTxDataEntryQ != NULL )
+      {
       // remove the buffer from the LL list
       while( (pEntry=RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers)) != NULL )
       {
@@ -5394,48 +3582,6 @@ void llConnCleanup( llConnState_t *connPtr )
       }
       // clear the RCL TX queue
       List_clearList(((txDataQ_t *)(connPtr->pTxDataEntryQ))->rfDataBuffers);
-#else
-      while( (pEntry=MAP_RFHAL_GetNextDataEntry(connPtr->pTxDataEntryQ)) != NULL )
-      {
-        // check the header - only count completed if it was a data packet and
-        // it was the last Tx packet transmitted (i.e. due to fragmentation)
-        if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-             (pEntry->config & DATA_ENTRY_LAST_PACKET) )
-        {
-          // bump the number of buffers freed
-          numComplPkts++;
-        }
-
-        // TX entry at head of internal connection queue is done, so free it
-        MAP_RFHAL_FreeNextTxDataEntry( connPtr->pTxDataEntryQ );
-      }
-
-      // check temp Tx queue for any remaining entries and remove
-      pEntry = MAP_RFHAL_GetTempDataEntry( connPtr->pTxDataEntryQ );
-     while ( pEntry != NULL )
-     {
-        // check the header - only count completed if it was a data packet and
-        // it was the last Tx packet transmitted (i.e. due to fragmentation)
-        if ( (*((uint8 *)(pEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-             (pEntry->config & DATA_ENTRY_LAST_PACKET) )
-        {
-          // bump the number of buffers freed
-          numComplPkts++;
-        }
-
-        // store next entry before free the current
-        pNextTempDataEntry = pEntry->pNextEntry;
-
-        // free the TX data entry
-        MAP_osal_bm_free( (void *)pEntry );
-
-        // point to next temp entry
-        pEntry = pNextTempDataEntry;
-      }
-
-      // cleanup queue pointers
-      MAP_RFHAL_InitDataQueue( connPtr->pTxDataEntryQ );
-#endif
     }
 
     // reset the number of Tx data buffers
@@ -5443,7 +3589,6 @@ void llConnCleanup( llConnState_t *connPtr )
 
     // check that the shared RX Queue could be free.
     // set the RX Queue pointer to NULL in case this is NOT the last connection,
-#ifdef USE_RCL
     linkParam[connPtr->connId].rxBuffers.head = NULL;
     linkParam[connPtr->connId].rxBuffers.tail = NULL;
     linkParam[connPtr->connId].txBuffers.head = NULL;
@@ -5463,41 +3608,6 @@ void llConnCleanup( llConnState_t *connPtr )
       }
       rxDataQ.length = 0;
     }
-#else
-    if ((llConns.numLLConns == 1) && ( connPtr->pRxDataEntryQ != NULL ))
-    {
-      dataEntry_t *pNext;
-      uint8       *pBuf;
-
-      pEntry = MAP_RFHAL_GetNextDataEntry( connPtr->pRxDataEntryQ );
-      pNext  = pEntry;
-
-      // check the entire Rx ring buffer
-      do
-      {
-        // check if there is a data buffer
-        if ( (pBuf = ((dataEntryPtr_t *)pNext)->pData) != NULL )
-        {
-          // this buffer will freed using BM
-          MAP_osal_bm_free( (void *)pBuf );
-
-          // clear pointer to data buffer
-          ((dataEntryPtr_t *)pNext)->pData = NULL;
-        }
-
-        // on to next ring buffer entry
-        pNext = pNext->pNextEntry;
-
-      } while( pNext != pEntry );
-
-      // cleanup queue pointers
-      MAP_RFHAL_InitDataQueue( connPtr->pRxDataEntryQ );
-    }
-    else
-    {
-      connPtr->pRxDataEntryQ = NULL;
-    }
-#endif
 
     // check if we completed any packets
     if ( numComplPkts > 0 )
@@ -5526,7 +3636,6 @@ void llConnCleanup( llConnState_t *connPtr )
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -5566,7 +3675,6 @@ void llConnTerminate( llConnState_t *connPtr,
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -5944,7 +4052,6 @@ void llConvertCtrlProcTimeoutToEvent( llConnState_t *connPtr )
  */
 void llProcessTxData( llConnState_t *connPtr, uint8 context )
 {
-#ifdef USE_RCL
   RCL_Buffer_TxBuffer *pDataEntry;
 
   // free all Finished entries
@@ -5976,37 +4083,7 @@ void llProcessTxData( llConnState_t *connPtr, uint8 context )
     // free the TX data buffer
     MAP_osal_bm_free( (void *)pDataEntry );
   }
-#else
-  dataEntry_t *pDataEntry;
 
-  // free all Finished entries
-  while( (pDataEntry=MAP_RFHAL_GetNextDataEntry(connPtr->pTxDataEntryQ)) != NULL )
-  {
-    // check if the data entry is not finsihed
-    if ( pDataEntry->status != DATASTAT_FINISHED )
-    {
-      // we're done since the data entries at this point forward are
-      // still pending
-      break;
-    }
-
-    // only count if this is the last data packet
-    if ( (*((uint8 *)(pDataEntry+1)) != LL_DATA_PDU_HDR_LLID_CONTROL_PKT) &&
-         (pDataEntry->config & DATA_ENTRY_LAST_PACKET) )
-    {
-      // bump the number of buffers freed
-      numComplPkts++;
-
-      // bump the number of available Tx buffers
-      // Note: Critical section not needed here as this routine is only called
-      //       either from an ISR or during post-processing.
-      numTxDataBufs++;
-    }
-
-    // TX entry at head of internal connection queue is done, so free it
-    MAP_RFHAL_FreeNextTxDataEntry( connPtr->pTxDataEntryQ );
-  }
-#endif
   // check if we completed any packets
   // The Number of Completed Packets event is sent when the number of completed
   // packets is equal to or greater than the user specified limit, which can
@@ -6028,15 +4105,15 @@ void llProcessTxData( llConnState_t *connPtr, uint8 context )
     uint16 connId = connPtr->connId;
     uint16 numCompletedPackets = numComplPkts;
 
-    // and send credits to the Host
-    MAP_HCI_NumOfCompletedPacketsEvent( 1,
-                                        &connId,
-                                        &numCompletedPackets );
+      // and send credits to the Host
+      MAP_HCI_NumOfCompletedPacketsEvent( 1,
+                                          &connId,
+                                          &numCompletedPackets );
 
-    // clear count
-    numComplPkts = 0;
-  }
-
+      // clear count
+      numComplPkts = 0;
+    }
+    
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
@@ -6078,26 +4155,18 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
                       uint8          lastPkt )
 {
   uint8        pktHdr;
-#ifdef USE_RCL
   RCL_Buffer_TxBuffer *dataEntry;
-#else
-  dataEntry_t *dataEntry;
-#endif
   uint8       *pData;
 
   // point to start of data entry
-#ifdef USE_RCL
   uint8       *pDataLen;
   dataEntry = MAP_osal_bm_adjust_header( pBuf, ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN));
 
-  // point to start of packet, including header
-  pData = dataEntry->data + RCL_BUFFER_MAX_HEADER_PAD_BYTES;
-#else
-  dataEntry = (dataEntry_t *)MAP_osal_bm_adjust_header( pBuf, (LL_PKT_LLID_LEN + sizeof(dataEntry_t)));
+  // make sure the header bytes are clear before we transmit the packet
+  MAP_osal_memset(dataEntry, 0x00, (sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN);
 
   // point to start of packet, including header
-  pData =(uint8 *)(dataEntry+1);
-#endif
+  pData = dataEntry->data + RCL_BUFFER_MAX_HEADER_PAD_BYTES;
 
   // set LLID fragmentation flag
   // Note: NESN=SN=MD=0 and is handled by RF.
@@ -6123,7 +4192,6 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
   // yes, so initialize the data entry
   // Note: Exclude header and MIC length until we're sure we can send this data
   //       entry, and that encryption is eabled.
-#ifdef USE_RCL
   // save a pointer to the header payload length location
   // this is needed in case encryption will be done in this function
   // in case of encryption, the LL_PKT_MIC_LEN will be added
@@ -6135,12 +4203,6 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
   // it will set the packet as last packet only if lastPkt set to 0x10
   SET_LAST_PKT(dataEntry->pad0, lastPkt);
   dataEntry->length = dataLen + dataEntry->numPad + LL_PKT_HDR_LEN + 1;
-#else
-  dataEntry->pNextEntry = NULL;
-  dataEntry->status     = DATASTAT_PENDING;
-  dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0 | lastPkt;
-  dataEntry->length     = dataLen;
-#endif
 
 #ifdef LL_TEST_MODE
 #ifndef CC23X0
@@ -6154,10 +4216,9 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
     // check if packet needs to be encrypted
     if ( connPtr->encEnabled )
     {
-#ifdef USE_RCL
       // add the LL_PKT_MIC_LEN to the header payload length
       *pDataLen += LL_PKT_MIC_LEN;
-#endif
+
       // adjust length for encryption
       dataEntry->length += LL_PKT_MIC_LEN;
 
@@ -6194,16 +4255,12 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
   if ( connPtr->txDataEnabled == TRUE )
   {
     // adjust length for header
-#ifndef USE_RCL
-    dataEntry->length += LL_PKT_LLID_LEN;
-#endif
     // check if packet needs to be encrypted
     if ( connPtr->encEnabled )
     {
-#ifdef USE_RCL
       // add the LL_PKT_MIC_LEN to the header payload length
       *pDataLen += LL_PKT_MIC_LEN;
-#endif
+
       // adjust length for encryption
       dataEntry->length += LL_PKT_MIC_LEN;
 
@@ -6222,523 +4279,13 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
   {
     // have to wait on this data, so save it on another internal
     // linked list until Tx data is enabled again
-#ifdef USE_RCL
     // we call directly to the List function because the RCL_TxBuffer_put will also add it to the RF fifo.
     List_put(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->tmpDataBuffers,(void *)dataEntry);
-#else
-    dataEntry_t *pEntry = MAP_RFHAL_GetTempDataEntry( connPtr->pTxDataEntryQ );
-
-    if ( pEntry == NULL )
-    {
-      ((dataQ_t *)connPtr->pTxDataEntryQ)->pTempDataEntry = dataEntry;
-    }
-    else
-    {
-      // find end of list
-      while( pEntry->pNextEntry != NULL ) pEntry = pEntry->pNextEntry;
-
-      // and add the data entry to the list
-      pEntry->pNextEntry = dataEntry;
-
-      // to keep things clean looking
-      dataEntry->pNextEntry = NULL;
-    }
-#endif
   }
 
   return( LL_STATUS_SUCCESS );
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupPingReq
- *
- * @brief       This function is used to setup the Ping request for the
- *              Authenticated Payload Timeout (APTO) control procedure.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupPingReq( llConnState_t *connPtr )
-{
-  // Sanity Check
-  // The Ping control procedure is only performed when encryption is enabled.
-  LL_ASSERT( connPtr->encEnabled );
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_PING_REQ_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_PING_REQ_PAYLOAD_LEN,TRUE);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN         +
-             LL_PING_REQ_PAYLOAD_LEN +
-             LL_PKT_MIC_LEN;
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_PING_REQ;
-
-    // encrypt TX packet in place in the TX FIFO
-    MAP_LL_ENC_Encrypt( connPtr,
-                        LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                        LL_PING_REQ_PAYLOAD_LEN,
-                        pData );
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupPingRsp
- *
- * @brief       This function is used to setup the Ping Response for the
- *              Authenticated Payload Timeout (APTO) control procedure. Note
- *              that this control packet is in response to the Ping Request,
- *              and as such, will not placed on the control packet queue since
- *              there is no CPTO associated with this response. The CPTO will
- *              only be associated with the Ping Request side that initiated
- *              the control procedure.
- *
- *              This is critical otherwise a deadlock can result whereby the
- *              Central and Peripheral both send the Ping Request at the same time.
- *              If both are waiting for each others Ping Response, then the
- *              CPTO will result.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupPingRsp( llConnState_t *connPtr )
-{
-  // Sanity Check
-  // The Ping control procedure is only performed when encryption is enabled.
-  LL_ASSERT( connPtr->encEnabled );
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_PING_RSP_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_PING_RSP_PAYLOAD_LEN,TRUE);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN         +
-             LL_PING_RSP_PAYLOAD_LEN +
-             LL_PKT_MIC_LEN;
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_PING_RSP;
-
-    // encrypt TX packet in place in the TX FIFO
-    MAP_LL_ENC_Encrypt( connPtr,
-                        LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                        LL_PING_RSP_PAYLOAD_LEN,
-                        pData );
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    // Note: No control packet timeout is required as this control packet is
-    //       directly sent to complete the Ping control procedure.
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupPhyCtrlPkt
- *
- * @brief       This function is used to setup the phy request, response, or
- *              update control packet.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- * @param       opcode  - LL_CTRL_PHY_REQ, LL_CTRL_PHY_RSP, or
- *                        LL_CTRL_PHY_UPDATE
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupPhyCtrlPkt( llConnState_t *connPtr,
-                         uint8          opcode )
-{
-  uint8 payloadLen;
-
-  // find the payload size based on the control opcode
-  switch( opcode )
-  {
-    case LL_CTRL_PHY_REQ:
-      payloadLen = LL_PHY_REQ_PAYLOAD_LEN;
-      break;
-
-    case LL_CTRL_PHY_RSP:
-      payloadLen = LL_PHY_RSP_PAYLOAD_LEN;
-      break;
-
-    case LL_CTRL_PHY_UPDATE_REQ:
-      payloadLen = LL_PHY_UPDATE_REQ_PAYLOAD_LEN;
-      break;
-
-    default:
-      return( FALSE );
-  }
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( payloadLen );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry, payloadLen, connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData -
-                                (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN +
-             payloadLen      +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = opcode;
-
-    // write rest of parameters based on control opcode
-    switch( opcode )
-    {
-      case LL_CTRL_PHY_REQ:
-      case LL_CTRL_PHY_RSP:
-        // write the tx/rx PHY
-        // Note: This device only supports symmetric connections!
-        pData[1] = connPtr->phyInfo.updatePhy;
-        pData[2] = connPtr->phyInfo.updatePhy;
-        break;
-
-      case LL_CTRL_PHY_UPDATE_REQ:
-        // write the tx/rx PHY
-        // Note: This device only supports symmetric connections!
-        pData[1] = connPtr->phyInfo.updatePhy;
-        pData[2] = connPtr->phyInfo.updatePhy;
-
-        // check whether an instant is required
-        // Note: When no phy change is to occur, the instant shall be zero.
-        if ( connPtr->phyUpdateEvent != 0 )
-        {
-          // convert relative instant number to an absolute event number
-          connPtr->phyUpdateEvent += connPtr->currentEvent;
-        }
-
-#if defined( LL_TEST_MODE )
-        if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_SLA_BI_09 )
-        {
-          // override the update event to cause a Instant in Past failure
-          connPtr->phyUpdateEvent = connPtr->currentEvent-1;
-        }
-#endif // LL_TEST_MODE
-
-        // write the update event count
-        pData[3] = LO_UINT16( connPtr->phyUpdateEvent );
-        pData[4] = HI_UINT16( connPtr->phyUpdateEvent );
-        break;
-
-      default:
-        return( FALSE );
-    }
-
-#ifdef LL_TEST_MODE
-      switch( llTestMode.testCase )
-      {
-       default:
-          break;
-      }
-#endif // LL_TEST_MODE
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          payloadLen,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupLenCtrlPkt
- *
- * @brief       This function is used to setup the length request, response
- *              control packet.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- * @param       opcode  - LL_CTRL_LENGTH_REQ, LL_CTRL_LENGTH_RSP
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupLenCtrlPkt( llConnState_t *connPtr,
-                         uint8          opcode )
-{
-  uint8 payloadLen;
-
-  // find the payload size based on the control opcode
-  // Note: Currently, the Request and Response lengths are the same!
-  payloadLen = LL_LENGTH_REQ_PAYLOAD_LEN;
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( payloadLen );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,payloadLen,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData -
-                                (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // set length of packet
-    pktLen = LL_PKT_LLID_LEN +
-             payloadLen      +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = opcode;
-
-    // write the rx/tx lengths in octets, and time in us
-    pData[1] = LO_UINT16(connPtr->lenInfo.connMaxRxOctets);
-    pData[2] = HI_UINT16(connPtr->lenInfo.connMaxRxOctets);
-    pData[3] = LO_UINT16(connPtr->lenInfo.connMaxRxTime);
-    pData[4] = HI_UINT16(connPtr->lenInfo.connMaxRxTime);
-    pData[5] = LO_UINT16(connPtr->lenInfo.connMaxTxOctets);
-    pData[6] = HI_UINT16(connPtr->lenInfo.connMaxTxOctets);
-    pData[7] = LO_UINT16(connPtr->lenInfo.connMaxTxTime);
-    pData[8] = HI_UINT16(connPtr->lenInfo.connMaxTxTime);
-
-#ifdef LL_TEST_MODE
-  if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_MAS_BI_07 )
-  {
-    // write invalid rx/tx lengths in octets, and time in us
-    // note: invalid values were configure using LL_EXT_SetMaxDataLen under LL_TEST_MODE
-    pData[1] = LO_UINT16(invalidRxOctets);
-    pData[2] = HI_UINT16(invalidRxOctets);
-    pData[3] = LO_UINT16(invalidRxTime);
-    pData[4] = HI_UINT16(invalidRxTime);
-    pData[5] = LO_UINT16(invalidTxOctets);
-    pData[6] = HI_UINT16(invalidTxOctets);
-    pData[7] = LO_UINT16(invalidTxTime);
-    pData[8] = HI_UINT16(invalidTxTime);
-  }
-#endif
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          payloadLen,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // Note: The Update Data Channel control procedure does not use the CPTO.
-
-    // check if our deivce is initiating the Length control procedure
-    if ( opcode == LL_CTRL_LENGTH_REQ )
-    {
-      // it is, so set the Max Tx Octets to the mininum
-      // Note: This control procedure could result in a reduced OTA Tx packet
-      //       size, regardless of the value of connMaxTxOctets, since the
-      //       peer's connRemoteMaxRxOctets value can cap the max allowed
-      //       data size. It is unknown at this point what the resulting max
-      //       Tx packet size will be. So it is possible that this device
-      //       could end up queuing Tx packets with lengths that exceed the
-      //       peer's Rx buffer. To prevent this from happening, this device
-      //       must begin fragmenting to ensure no packet larger then the
-      //       minimum OTA size is sent. When the control procedure completes,
-      //       connActualMaxTxOctets will be updated accordingly.
-      //
-      //       For example:
-      //       A 200ms connection is currently using an OTA Tx size of 251.
-      //       The Peripheral sends a Length Request with MD=0 to change it to 27.
-      //       The connection event ends, and the Host queues up 20 packets
-      //       of size 251. No fragmentation occurs because the current OTA
-      //       size is 251. The next connection event begins and the peer's
-      //       Rx buffer size is too small, so it NACKs our device. Deadlock.
-      connPtr->lenInfo.connActualMaxTxOctets = LL_MIN_LINK_DATA_LEN;
-    }
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -6763,8 +4310,8 @@ uint8 llSetupLenCtrlPkt( llConnState_t *connPtr,
  * @return      None.
  */
 void llSendReject( llConnState_t *connPtr,
-                   uint8          rejectOpcode,
-                   uint8          errorCode )
+                   uint8  rejectOpcode,
+                   uint8              errorCode )
 {
   // check if the Reject Indication Extended feature is supported
   // Note: While this device necessarily supports this feature (as the
@@ -6782,7 +4329,7 @@ void llSendReject( llConnState_t *connPtr,
 
     // setup/send a Reject Indication Extended
     // Note: This control packet is not queued, but merely sent.
-    if ( MAP_llSetupRejectIndExt( connPtr ) == FALSE )
+    if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_REJECT_EXT_IND) == FALSE )
     {
       // unable to malloc a packet!
       (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -6799,7 +4346,7 @@ void llSendReject( llConnState_t *connPtr,
 
     // setup/send a Reject Indication
     // Note: This control packet is not queued, but merely sent.
-    if ( MAP_llSetupRejectInd( connPtr ) == FALSE )
+    if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_REJECT_IND) == FALSE )
     {
       // unable to malloc a packet!
       (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -6813,598 +4360,6 @@ void llSendReject( llConnState_t *connPtr,
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupConnParamReq
- *
- * @brief       This function is used to setup the Connection Parameter
- *              Request control procedure.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupConnParamReq( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_CONN_PARAM_REQ_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_CONN_PARAM_REQ_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN               +
-             LL_CONN_PARAM_REQ_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_CONNECTION_PARAM_REQ;
-
-    // ALT: Determine if this was initiated by the Host or by the Controller.
-    //      If the Host, then could use values as follows, but would need to
-    //      determine if offsets and periodicity need to be adjusted. If the
-    //      Controller, all values should be provided.
-
-    // write the min connection interval
-    pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-    pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-    // write the max connection interval
-    pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-    pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-    // write the connection latency
-    pData[5] = LO_UINT16( connPtr->connParams.latency );
-    pData[6] = HI_UINT16( connPtr->connParams.latency );
-
-    // write the connection timeout
-    pData[7] = LO_UINT16( connPtr->connParams.timeout );
-    pData[8] = HI_UINT16( connPtr->connParams.timeout );
-
-    // write the preferred periodicity - invalid
-    pData[9] = LO_UINT16( 0 );
-
-    // write the reference connection event count - invalid
-    pData[10] = LO_UINT16( 0 );
-    pData[11] = HI_UINT16( 0 );
-
-    // write offset0 - invalid
-    pData[12] = LO_UINT16( 0xFFFF );
-    pData[13] = HI_UINT16( 0xFFFF );
-
-    // write offset1 - invalid
-    pData[14] = LO_UINT16( 0xFFFF );
-    pData[15] = HI_UINT16( 0xFFFF );
-
-    // write offset2 - invalid
-    pData[16] = LO_UINT16( 0xFFFF );
-    pData[17] = HI_UINT16( 0xFFFF );
-
-    // write offset3 - invalid
-    pData[18] = LO_UINT16( 0xFFFF );
-    pData[19] = HI_UINT16( 0xFFFF );
-
-    // write offset4 - invalid
-    pData[20] = LO_UINT16( 0xFFFF );
-    pData[21] = HI_UINT16( 0xFFFF );
-
-    // write offset5 - invalid
-    pData[22] = LO_UINT16( 0xFFFF );
-    pData[23] = HI_UINT16( 0xFFFF );
-
-#ifdef LL_TEST_MODE
-    switch( llTestMode.testCase )
-    {
-      case LL_TEST_MODE_TP_CON_MAS_BV_28:
-        // write the min connection interval
-        pData[1] = LO_UINT16( 0x0006 );
-        pData[2] = HI_UINT16( 0x0006 );
-
-        // write the max connection interval
-        pData[3] = LO_UINT16( 0x0006 );
-        pData[4] = HI_UINT16( 0x0006 );
-
-        // write the connection latency
-        pData[5] = LO_UINT16( 0x0000 );
-        pData[6] = HI_UINT16( 0x0000 );
-
-        // write the connection timeout
-        pData[7] = LO_UINT16( 0x012C );
-        pData[8] = HI_UINT16( 0x012C );
-
-        // write the preferred periodicity - invalid
-        pData[9] = LO_UINT16( 0 );
-
-        // write the reference connection event count - invalid
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BV_31_1:
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_1:
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( 0x0001 );
-        pData[13] = HI_UINT16( 0x0001 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BV_31_2:
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_2:
-        // override Offset0 to CI-1.25ms
-        pData[12] = LO_UINT16( (connPtr->curParam.connInterval>>1)-1 );
-        pData[13] = HI_UINT16( (connPtr->curParam.connInterval>>1)-1 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BV_31_3:
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_3:
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( 0x0001 );
-        pData[13] = HI_UINT16( 0x0001 );
-
-        // override Offset1 to 1.25ms
-        pData[14] = LO_UINT16( 0x0002 );
-        pData[15] = HI_UINT16( 0x0002 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BV_32:
-      case LL_TEST_MODE_TP_CON_SLA_BV_31:
-        // write the min connection interval
-        pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-        pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-        // write the max connection interval
-        pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-        pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-        // override preferred periodicity - within CI range
-        pData[9] = LO_UINT16( 10 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BV_33:
-      case LL_TEST_MODE_TP_CON_SLA_BV_32:
-        // write the min connection interval
-        pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-        pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-        // write the max connection interval
-        pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-        pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-        // override preferred periodicity - within CI range
-        pData[9] = LO_UINT16( 10 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( 0x0001 );
-        pData[13] = HI_UINT16( 0x0001 );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_MAS_BI_06:
-      case LL_TEST_MODE_TP_CON_SLA_BI_08:
-        // write an invalid min connection interval
-        pData[1] = LO_UINT16( 0x0004 );
-        pData[2] = HI_UINT16( 0x0004 );
-
-        // write an invalid max connection interval
-        pData[3] = LO_UINT16( 0x0004 );
-        pData[4] = HI_UINT16( 0x0004 );
-
-        break;
-
-      // otherwise
-      default:
-        break;
-    }
-#endif // LL_TEST_MODE
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_CONN_PARAM_REQ_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-/*******************************************************************************
- * @fn          llSetupConnParamRsp
- *
- * @brief       This function is used to setup the Connection Parameter
- *              Response control procedure.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupConnParamRsp( llConnState_t *connPtr )
-{
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_CONN_PARAM_RSP_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_CONN_PARAM_RSP_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN               +
-             LL_CONN_PARAM_RSP_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_CONNECTION_PARAM_RSP;
-
-    // ALT: Determine if this was initiated by the Host or by the Controller.
-    //      If the Host, then could use values as follows, but would need to
-    //      determine if offsets and periodicity need to be adjusted. If the
-    //      Controller, all values should be provided.
-
-    // write the min connection interval
-    pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-    pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-    // write the max connection interval
-    pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-    pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-    // write the connection latency
-    pData[5] = LO_UINT16( connPtr->connParams.latency );
-    pData[6] = HI_UINT16( connPtr->connParams.latency );
-
-    // write the connection timeout
-    pData[7] = LO_UINT16( connPtr->connParams.timeout );
-    pData[8] = HI_UINT16( connPtr->connParams.timeout );
-
-    // write the preferred periodicity - invalid
-    pData[9] = LO_UINT16( 0 );
-
-    // write the reference connection event count - invalid
-    pData[10] = LO_UINT16( 0 );
-    pData[11] = HI_UINT16( 0 );
-
-    // write offset0 - invalid
-    pData[12] = LO_UINT16( 0xFFFF );
-    pData[13] = HI_UINT16( 0xFFFF );
-
-    // write offset1 - invalid
-    pData[14] = LO_UINT16( 0xFFFF );
-    pData[15] = HI_UINT16( 0xFFFF );
-
-    // write offset2 - invalid
-    pData[16] = LO_UINT16( 0xFFFF );
-    pData[17] = HI_UINT16( 0xFFFF );
-
-    // write offset3 - invalid
-    pData[18] = LO_UINT16( 0xFFFF );
-    pData[19] = HI_UINT16( 0xFFFF );
-
-    // write offset4 - invalid
-    pData[20] = LO_UINT16( 0xFFFF );
-    pData[21] = HI_UINT16( 0xFFFF );
-
-    // write offset5 - invalid
-    pData[22] = LO_UINT16( 0xFFFF );
-    pData[23] = HI_UINT16( 0xFFFF );
-
-#ifdef LL_TEST_MODE
-    switch( llTestMode.testCase )
-    {
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_1:
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( connPtr->connParams.offset0 );
-        pData[13] = HI_UINT16( connPtr->connParams.offset0 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_2:
-        // override Offset0 to CI-1.25ms
-        pData[12] = LO_UINT16( connPtr->connParams.offset0 );
-        pData[13] = HI_UINT16( connPtr->connParams.offset0 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_SLA_BV_30_3:
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( connPtr->connParams.offset0 );
-        pData[13] = HI_UINT16( connPtr->connParams.offset0 );
-
-        // override Offset1 to 1.25ms
-        pData[14] = LO_UINT16( connPtr->connParams.offset1 );
-        pData[15] = HI_UINT16( connPtr->connParams.offset1 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_SLA_BV_31:
-        // write the min connection interval
-        pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-        pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-        // write the max connection interval
-        pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-        pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-        // override preferred periodicity - within CI range
-        pData[9] = LO_UINT16( 10 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        break;
-
-      case LL_TEST_MODE_TP_CON_SLA_BV_32:
-        // write the min connection interval
-        pData[1] = LO_UINT16( connPtr->connParams.intervalMin );
-        pData[2] = HI_UINT16( connPtr->connParams.intervalMin );
-
-        // write the max connection interval
-        pData[3] = LO_UINT16( connPtr->connParams.intervalMax );
-        pData[4] = HI_UINT16( connPtr->connParams.intervalMax );
-
-        // override preferred periodicity - within CI range
-        pData[9] = LO_UINT16( 10 );
-
-        // write the reference connection event count - use current event count
-        pData[10] = LO_UINT16( connPtr->currentEvent );
-        pData[11] = HI_UINT16( connPtr->currentEvent );
-
-        // override Offset0 to 1.25ms
-        pData[12] = LO_UINT16( connPtr->connParams.offset0 );
-        pData[13] = HI_UINT16( connPtr->connParams.offset0 );
-
-        break;
-
-      // otherwise
-      default:
-        break;
-    }
-#endif // LL_TEST_MODE
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_CONN_PARAM_RSP_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llSetupRejectIndExt
- *
- * @brief       This function is used to setup the Reject Indications Extended
- *              control procedure used in the connection parameter control
- *              procedure. Once the rejection indication is sent and
- *              acknowledged, the control procedure is complete.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupRejectIndExt( llConnState_t *connPtr )
-{
-  // Note: No need to check if there's enough room in the TX FIFO since it was
-  //       forced to empty prior to beginning encryption control procedure.
-
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( LL_REJECT_EXT_IND_PAYLOAD_LEN );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-#ifdef USE_RCL
-    RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer *)( pData -
-                                     ((sizeof(RCL_Buffer_TxBuffer)) + RCL_BUFFER_MAX_HEADER_PAD_BYTES + LL_PKT_HDR_LEN) );
-    llSetupDataEntry(dataEntry,LL_REJECT_EXT_IND_PAYLOAD_LEN,connPtr->encEnabled);
-    // point to the payload
-    pData = &dataEntry->data[4];
-#else
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN               +
-             LL_REJECT_EXT_IND_PAYLOAD_LEN +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-#endif
-    // write control opcode
-    pData[0] = LL_CTRL_REJECT_EXT_IND;
-
-    // write the reject opcode
-    pData[1] = connPtr->rejectIndExt.rejectOpcode;
-
-    // write the reason code
-    pData[2] = connPtr->rejectIndExt.errorCode;
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      // encrypt PDU with authentication check
-      MAP_LL_ENC_Encrypt( connPtr,
-                          LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                          LL_REJECT_EXT_IND_PAYLOAD_LEN,
-                          pData );
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -7859,11 +4814,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
   {
     halIntState_t cs;
     uint32        curTime;
-#ifdef USE_RCL
     RCL_Command *connCmd = (RCL_Command *)connPtr->llTask->command;
-#else
-    ble5OpCmd_t *connCmd = (ble5OpCmd_t *)connPtr->llTask->command;
-#endif
     HAL_ENTER_CRITICAL_SECTION(cs);
 
     // update current time, and adjust for one event plus some pad
@@ -7878,11 +4829,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
     {
       // check if there's enough time before the next event for re-alignment
       // Note: Returns TRUE when first parameter is greater than second.
-#ifdef USE_RCL
       if ( MAP_llTimeCompare(connCmd->timing.absStartTime, curTime) )
-#else
-      if ( MAP_llTimeCompare(connCmd->rfOpCmd.startTime, curTime) )
-#endif
       {
         uint32      time;
         uint16      numEventsPast;
@@ -7895,11 +4842,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
         // Note: If a combination state is running, then we won't get here as
         //       the LL state won't be Central. Thus, combo roles and fast Tx
         //       don't work together.
-#ifndef USE_RCL
-        MAP_llHaltRadio( CMD_ABORT );
-#else
         RCL_Command_stop(connCmd, RCL_StopType_DescheduleOnly);
-#endif
         // get the time delta between current time (CT) and last start time
         // Note: The assumption here is that CT is always ahead of the
         //       lastStartTime because startTime is always ahead of
@@ -7928,11 +4871,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
         connPtr->nextEvent = connPtr->currentEvent + numEventsPast;
 
         // update time to next event based on last adjusted AP
-#ifdef USE_RCL
         connCmd->timing.absStartTime =
-#else
-        connCmd->rfOpCmd.startTime =
-#endif
           connPtr->llTask->lastStartTime +
           (((uint32)numEventsPast * (uint32)connPtr->curParam.connInterval) * RAT_TICKS_IN_625US);
 
@@ -7941,11 +4880,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
         MAP_llSetNextDataChan( connPtr );
 
         // enable RF event
-#ifdef USE_RCL
         LL_rclRescheduleCommand(NULL);
-#else
-        MAP_llScheduleTask( curTask );
-#endif
       }
       // else amount of time to next event is less than CI+pad, so do nothing
     }
@@ -7959,11 +4894,7 @@ void llAlignToNextEvent( llConnState_t *connPtr )
       //       necessarily be the next connection, but it will at least be
       //       realigned to its next most recent event. Larger fastTx latencies,
       //       for now, can result when there are many active connections.
-#ifdef USE_RCL
       connCmd->timing.absStartTime =
-#else
-      connCmd->rfOpCmd.startTime =
-#endif
       connPtr->llTask->lastStartTime;
 
       // Note: Do not try to reschedule as some BLE task is currently running.
@@ -8384,24 +5315,14 @@ void llShellSortActiveConns(uint8 *activeConnsArray, uint8 numActiveConns)
   {
     for (i = gap; i < numActiveConns; i++)
     {
-#ifdef USE_RCL
       RCL_Command *connCmd2 = (RCL_Command *)((llConnState_t *)(MAP_llDataGetConnPtr(activeConnsArray[i])))->llTask->command;
       tempST = connCmd2->timing.absStartTime;
-#else
-      ble5OpCmd_t *connCmd2 = (ble5OpCmd_t *)((llConnState_t *)(MAP_llDataGetConnPtr(activeConnsArray[i])))->llTask->command;
-      tempST = connCmd2->rfOpCmd.startTime;
-#endif
       tempIndex = activeConnsArray[i];
       j = i;
       while (j >= gap)
       {
-#ifdef USE_RCL
         RCL_Command *connCmdx  = (RCL_Command *)((llConnState_t *)(MAP_llDataGetConnPtr(activeConnsArray[j - gap])))->llTask->command;
         tempST1 = connCmdx->timing.absStartTime;
-#else
-        ble5OpCmd_t *connCmdx  = (ble5OpCmd_t *)((llConnState_t *)(MAP_llDataGetConnPtr(activeConnsArray[j - gap])))->llTask->command;
-        tempST1 = connCmdx->rfOpCmd.startTime;
-#endif
         if (tempST1 > tempST)
         {
           activeConnsArray[j]  = activeConnsArray [j - gap];
@@ -8454,13 +5375,8 @@ void llSortActiveConns( uint8 *activeConnsArray, uint8 numActiveConns )
     {
       connPtr1 = MAP_llDataGetConnPtr( activeConnsArray[i-1] );
       connPtr2 = MAP_llDataGetConnPtr( activeConnsArray[i] );
-#ifdef USE_RCL
       startTime1 = ((RCL_Command *)connPtr1->llTask->command)->timing.absStartTime;
       startTime2 = ((RCL_Command *)connPtr2->llTask->command)->timing.absStartTime;
-#else
-      startTime1 = ((ble5OpCmd_t *)connPtr1->llTask->command)->rfOpCmd.startTime;
-      startTime2 = ((ble5OpCmd_t *)connPtr2->llTask->command)->rfOpCmd.startTime;
-#endif
 
       // TRUE: First Param GT Second Param
       if ( MAP_llTimeCompare( startTime1, startTime2 ) == TRUE )
@@ -8504,18 +5420,10 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
   uint32 time;
   uint32 timeToNextEvt;
   uint16 numEventsPast = 0;
-#ifdef USE_RCL
   RCL_Command *connCmd  = ((RCL_Command *)connPtr->llTask->command);
-#else
-  ble5OpCmd_t *connCmd  = ((ble5OpCmd_t *)connPtr->llTask->command);
-#endif
   // check if the connection start time is in the past
   // FALSE: Second parameter is GE to first parameter; ST is in past.
-#ifdef USE_RCL
   if ( MAP_llTimeCompare(connCmd->timing.absStartTime, curTime) == FALSE )
-#else
-  if ( MAP_llTimeCompare(connCmd->rfOpCmd.startTime, curTime) == FALSE )
-#endif
   {
     // get the time delta between current time (CT) and last start time
     time = MAP_llTimeDelta( curTime, connPtr->llTask->lastStartTime );
@@ -8635,22 +5543,14 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
     }
 
     // calcluate the new start time
-#ifdef USE_RCL
     connCmd->timing.absStartTime =
-#else
-    connCmd->rfOpCmd.startTime =
-#endif
       connPtr->llTask->lastStartTime + (timeToNextEvt * RAT_TICKS_IN_625US);
 
     // set anchor point to the new start time - Central Only
     if ( connPtr->llTask->taskID == LL_TASK_ID_CENTRAL )
     {
-#ifdef USE_RCL
       // save off the anchor point
       connPtr->llTask->anchorPoint = connCmd->timing.absStartTime;
-#else
-      connPtr->llTask->anchorPoint = connCmd->rfOpCmd.startTime;
-#endif
       // setup the connection event End Time
       // Note: Per the spec, this an be as late as 150us (i.e. T_IFS) before the
       //       next connection event. However, we need to end before that to allow
@@ -8665,15 +5565,9 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
       //       as the common link parameter structure, the end time offset in
       //       the structure corresponds to the timeoutTime field.
       //linkParam[connPtr->connId].endTime =
-#ifdef USE_RCL
       ((RCL_CmdBle5Connection *)connCmd)->relRxTimeoutTime =
         ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
         (2 * RAT_TICKS_IN_150US);
-#else
-      ((linkParam_t *)connCmd->pParams)->timeoutTime =
-        ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
-        (2 * RAT_TICKS_IN_150US);
-#endif
     }
 
     // adjust timer drift to account for the missed events - Peripheral Only
@@ -8691,7 +5585,6 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
                              RAT_TICKS_IN_100US) + 1;
 #endif
 
-#ifdef USE_RCL
       // correct for elapsed timer drift
       connCmd->timing.absStartTime -= connPtr->timerDrift;
       // and adjust the timeout relative to the start time based on last timeout
@@ -8715,41 +5608,11 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
       connCmd->timing.relHardStopTime =
         ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
         (2 * RAT_TICKS_IN_150US);
-#else
-      // correct for elapsed timer drift
-      connCmd->rfOpCmd.startTime -= connPtr->timerDrift;
-
-      // and adjust the timeout relative to the start time based on last timeout
-      ((linkParam_t *)connCmd->pParams)->timeoutTime =
-        connPtr->lastTimeoutTime + (2 * connPtr->timerDrift);
-
-      // add window size to timeout time
-      if ( connPtr->pendingParamUpdate == PARAM_UPDATE_APPLIED )
-      {
-        linkParam[connPtr->connId].timeoutTime +=
-          ( (uint32)connPtr->curParam.winSize * RAT_TICKS_IN_625US );
-      }
-
-      // setup the connection event End Time relative to the timestamp
-      // Note: Per the spec, this an be as late as 150us (i.e. T_IFS) before the
-      //       next connection event. However, we need to end before that to allow
-      //       time to post-process. Also, Extended Data could potentially require
-      //       us to end the connection event at least 4.54ms before. In any case,
-      //       to allow some build time flexibility, the amount of back-off can
-      //       be set at build time using llConfig.connEvtCutoff.
-      linkParam[connPtr->connId].endTime =
-        ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
-        (2 * RAT_TICKS_IN_150US);
-#endif
     }
 
     // save off the start time in the BLE task
     connPtr->llTask->startTime =
-#ifdef USE_RCL
     connCmd->timing.absStartTime;
-#else
-    connCmd->rfOpCmd.startTime;
-#endif
     // adjust data channel
     connPtr->nextChan = connPtr->currentChan;
     MAP_llSetNextDataChan( connPtr );
@@ -10707,10 +7570,8 @@ void llProcessConnectionEstablishFailed( uint8 role, uint8 reason )
 void llProcessAdvAddrResolutionTimeout( void )
 {
   advSet_t *pAdvSet = advSetList;
-#ifdef USE_RCL
   // get pointer to RF command
   aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-#endif
 
   // for each Adv Set that is enabled, is Directed, and uses an Identity
   // address, update the peer InitA address' RPA, if in the RL
@@ -10739,14 +7600,12 @@ void llProcessAdvAddrResolutionTimeout( void )
           MAP_osal_memcpy( pAdvSet->peerAddr,
                            resolvingList[rlIndex].RPA,
                            B_ADDR_LEN );
-#ifdef USE_RCL
           // copy the peer address to the adv params
           MAP_osal_memcpy(pRf->advParam.peerA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
           // copy the peer address to the adv data
           MAP_osal_memcpy(pRf->advPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
           // copy the peer address to the scan rsp data
           MAP_osal_memcpy(pRf->scanRspPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
-#endif
         }
       }
     }
@@ -10757,14 +7616,12 @@ void llProcessAdvAddrResolutionTimeout( void )
       MAP_osal_memcpy( pAdvSet->ownAddr,
                        resolvingList[LOCAL_RL_INDEX].RPA,
                        B_ADDR_LEN );
-#ifdef USE_RCL
       // copy the advertising address to the adv params
       MAP_osal_memcpy(pRf->advParam.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
       // copy the advertising address to the adv data
       MAP_osal_memcpy(pRf->advPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
       // copy the advertising address to the scan rsp data
       MAP_osal_memcpy(pRf->scanRspPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
-#endif
     }
 
     pAdvSet = pAdvSet->next;
@@ -10809,6 +7666,7 @@ uint8 llCheckPeripheralTerminate( uint8 connId )
 }
 #endif
 
+#ifdef BLE_HEALTH
 /*******************************************************************************
  * @fn          llDbgInf_addSchedRec
  *
@@ -10884,6 +7742,7 @@ uint8_t llDbgInf_addConnTerm(uint16_t connHandle, uint8_t reasonCode)
   // Return status value
   return ( status );
 }
+#endif //BLE_HEALTH
 
 /*******************************************************************************
  * @fn          llHealthCheck
@@ -11240,6 +8099,49 @@ uint8 llConvertBlePhyToLlPhy(uint8 blePhy, uint8 *llPhy)
 }
 
 /*******************************************************************************
+ * @fn          llConvertAePhyToBlePhy
+ *
+ * @brief       This routine is used to convert the AE PHY values to BLE PHY
+ *              values.
+ *
+ * input parameters
+ *
+ * @param       aePhy   - AE PHY value.
+ *
+ * output parameters
+ *
+ * @param       blePhy  - Pointer to BLE Phy value. This value represents:
+ *                        1. Phy value in the Set_Phy Procedure PDU
+ *                        2. Phy value in the adv packet
+ *
+ */
+/********************************************************************************/
+void llConvertAePhyToBlePhy(uint8 aePhy, uint8 *blePhy)
+{
+  switch (aePhy)
+  {
+    case AE_PHY_1_MBPS:
+      *blePhy = BLE5_1M_PHY;
+    break;
+
+    case AE_PHY_2_MBPS:
+      *blePhy = BLE5_2M_PHY;
+    break;
+
+    case AE_PHY_CODED:
+    case AE_PHY_CODED_S2:
+      *blePhy = BLE5_CODED_PHY;
+    break;
+
+    // Won't get here, for safety enter Coded Phy and if it's
+    // a wrong Phy the connection will drop.
+    default:
+      *blePhy = BLE5_CODED_PHY;
+    break;
+  }
+}
+
+/*******************************************************************************
  * @fn          llConvertLlPhyToBlePhy
  *
  * @brief       This routine is used to convert the LL PHY values to BLE PHY
@@ -11359,7 +8261,7 @@ uint8 llSetPhy(llConnState_t *connPtr, uint8 blePhy)
  *
  * @brief       This routine calculates and sets the rangeDelay value into the RF
  *              command. The calculation is based on PHY coding.
-                Note: RfBleDpl_setRangeDelay is a dummy placement for USE_RCL
+                Note: RfBleDpl_setRangeDelay is a dummy placement for RCL
  *
  * input parameters
  *
@@ -11464,7 +8366,6 @@ uint8 llValidateConnectIndPkt( uint8 *pData )
   return TRUE;
 }
 
-#ifdef USE_RCL
 /*******************************************************************************
  * @fn          llUpdateRxBuffersForActiveConnections
  *
@@ -11501,9 +8402,7 @@ void llUpdateRxBuffersForActiveConnections(List_List *rxBuffers)
     curConnId++;
   }
 }
-#endif
 
-#ifdef USE_RCL
 /*******************************************************************************
  * @fn          llSetTxPower
  *
@@ -11592,15 +8491,21 @@ uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
 /*******************************************************************************
  * @fn          RfBleDpl_setAdvPhy
  *
- * @brief       This routine is used to set PHY value into RCL RF command.
-                LL phy and phyOpts values are converted into RF coded PHY values
-                and then set into the RF command.
+ * @brief       This routine is used to set PHY value into RCL Adv RF command.
+                The RCL use phyFeatures to get the primary channel phy.
+                The RCL takes the secondary channel phy from the AuxPhy inside
+                the AuxPtr inside the ADV_EXT_IND pkt, but it doesn't include
+                the type of Coded Phy, so in case the Secondary phy is coded,
+                it will take the Coded type from PhyFeatures.
+
+                Note: RCL doesn't support switching between Coded S2 and Coded S8
+                in the extended advertising process.
  *
  * input parameters
  *
  * @param       pRfCmd  - Pointer to the RF command.
- * @param       phy     - LL Phy value.
- * @param       phyOpts - LL Phy Options value.
+ * @param       primPhy - Primary channel Phy
+ * @param       secPhy  - secondary channel Phy
  *
  * output parameters
  *
@@ -11608,11 +8513,11 @@ uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
  *              FALSE - in case the set to RF command was not successful.
  */
 /********************************************************************************/
-uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 phy)
+uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 primPhy, uint8 secPhy)
 {
   uint16_t phyFeatures;
 
-  switch (phy)
+  switch (primPhy)
   {
     case AE_PHY_1_MBPS:
       // For 1 MBPS, use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_1MBPS,
@@ -11638,6 +8543,26 @@ uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 phy)
       /* Shouldn't be here */
       return FALSE;
       break;
+  }
+
+  switch (secPhy)
+  {
+
+  case AE_PHY_CODED:
+    // For secondary channel coded with S=8 (125 kbps) in TX , add | RCL_BLE_PHY_FEATURE_CODING_S8,
+    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS8;
+    break;
+
+  case AE_PHY_CODED_S2:
+    // For secondary channel coded with S=2 (500 kbps) in TX , add | RCL_BLE_PHY_FEATURE_CODING_S2,
+    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS2;
+    break;
+
+  // no need to add anything if Phy is 1M or 2M. the RCL will take it from the AuxPhy.
+
+  default:
+    break;
+
   }
 
   ((RCL_Command *)pRfCmd)->phyFeatures = phyFeatures;
@@ -11740,208 +8665,6 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
   }
 }
 
-#else // CC23X0
-
-/*******************************************************************************
- * @fn          RfBleDpl_setConnPhy
- *
- * @brief       This routine is used to set PHY value into AGAMA/THOR RF command.
-                LL phy and phyOpts values are converted into RF coded PHY values
-                and then set into the RF command.
- *
- * input parameters
- *
- * @param       connId  - The ID of the connection for RF Command update.
- * @param       phy     - LL Phy value.
- * @param       phyOpts - LL Phy Options value.
- *
- * output parameters
- *
- * @return      TRUE  - in case the set to RF command was successful.
- *              FALSE - in case the set to RF command was not successful.
- */
-/********************************************************************************/
-uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
-{
-  uint8 phyMode;
-  // set phy parameters for link command
-  switch (phy)
-  {
-    case LL_PHY_1_MBPS:
-      phyMode = BLE5_1M_PHY;
-    break;
-
-    case LL_PHY_2_MBPS:
-      phyMode = BLE5_2M_PHY;
-    break;
-
-    case LL_PHY_CODED:
-    {
-      switch (phyOpts)
-      {
-        case LL_PHY_OPT_S2:
-          phyMode = BLE5_CODED_S2_PHY;
-        break;
-        case LL_PHY_OPT_S8:
-          phyMode = BLE5_CODED_S8_PHY;
-        break;
-        default:
-          /* If not specified otherwise, Use the fastest available phy */
-          phyMode = BLE5_CODED_S2_PHY;
-      }
-    }
-    break;
-    default:
-      /* Shouldn't be here */
-      return FALSE;
-    break;
-  }
-  linkCmd[connId].phyMode = phyMode;
-  return TRUE;
-}
-
-/*******************************************************************************
- * @fn          RfBleDpl_setAdvPhy
- *
- * @brief       This routine is used to set PHY value into RCL RF command.
-                LL phy and phyOpts values are converted into RF coded PHY values
-                and then set into the RF command.
- *
- * input parameters
- *
- * @param       pRfCmd  - Pointer to the RF command.
- * @param       phy     - LL Phy value.
- * @param       phyOpts - LL Phy Options value.
- *
- * output parameters
- *
- * @return      TRUE  - in case the set to RF command was successful.
- *              FALSE - in case the set to RF command was not successful.
- */
-/********************************************************************************/
-uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 phy)
-{
-  // set PHY
-  // Note: Mask off the MSBit which indicates Coded Scheme.
-  // Note: Parameter value is +1 the values used in the RF command.
-  switch (phy)
-  {
-    case AE_PHY_1_MBPS:
-    case AE_PHY_2_MBPS:
-    {
-      ((ble5OpCmd_t *)pRfCmd)->phyMode = ( phy & AE_PHY_CODED_SCHEME_MASK) - 1;
-
-      // default range delay
-      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_UNCODED_RANGE_DELAY_RAT_TICKS;
-      break;
-    }
-
-    case AE_PHY_CODED_S2:
-    {
-      ((ble5OpCmd_t *)pRfCmd)->phyMode = BLE5_CODED_S2_PHY;
-
-      // set range delay
-      // Note: This is for Long Range (worst case distance of 1km, or 4us).
-      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_CODED_RANGE_DELAY_RAT_TICKS;
-      break;
-    }
-
-    case AE_PHY_CODED_S8:
-    {
-      ((ble5OpCmd_t *)pRfCmd)->phyMode = BLE5_CODED_S8_PHY;
-
-      // set range delay
-      // Note: This is for Long Range (worst case distance of 1km, or 4us).
-      ((ble5OpCmd_t *)pRfCmd)->rangeDelay = LL_CODED_RANGE_DELAY_RAT_TICKS;
-      break;
-    }
-
-    default:
-      break;
-  }
-
-  return TRUE;
-}
-
-
-/*******************************************************************************
- * @fn          RfBleDpl_setRangeDelay
- *
- * @brief       This routine is used to set rangeDelay into AGAMA/THOR RF command.
- *
- * input parameters
- *
- * @param       connId     - The ID of the connection for RF Command update.
- * @param       rangeDelay - rangeDelay value to set into the Command.
- *
- * output parameters
- *
- * @return      none
- */
-/********************************************************************************/
-void RfBleDpl_setRangeDelay(uint8 connId, uint8 rangeDelay)
-{
-    linkCmd[connId].rangeDelay = rangeDelay;
-}
-
-void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_HW_TYPE txPower)
-{
-  ((ble5OpCmd_t *)pRfCmd)->txPower = txPower;
-}
-
-uint8 RfBleDpl_getNumTxPwrVals()
-{
-  return llConfigTable.userCfgPtr->txPwrTblPtr->numTxPwrVals;
-}
-
-RFBLEDPL_TX_POWER_TYPE RfBleDpl_getTxPowerMax()
-{
-  return (RfBleDpl_getNumTxPwrVals() - 1);
-}
-
-RFBLEDPL_TX_POWER_TYPE RfBleDpl_getTxPowerMin()
-{
-  return 0;
-}
-
-RFBLEDPL_TX_POWER_HW_TYPE RfBleDpl_getTxPowerDefaultIdx()
-{
-  return llConfigTable.userCfgPtr->txPwrTblPtr->defaultTxPwrVal;
-}
-
-RFBLEDPL_TX_POWER_HW_TYPE RfBleDpl_getTxPower(uint8 pwrTblIdx)
-{
-  /* Valid range checking */
-  if (pwrTblIdx >= RfBleDpl_getNumTxPwrVals())
-  {
-    return llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[RfBleDpl_getTxPowerDefaultIdx()].txPwrVal;
-  }
-
-  return llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[pwrTblIdx].txPwrVal;
-}
-
-int8 RfBleDpl_getTxPowerDbm(RFBLEDPL_TX_POWER_TYPE pwrTblIdx)
-{
-  /* Valid range checking */
-  if (pwrTblIdx >= RfBleDpl_getNumTxPwrVals())
-  {
-    return llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[RfBleDpl_getTxPowerDefaultIdx()].Pout;
-  }
-
-  return llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[pwrTblIdx].Pout;
-}
-
-RFBLEDPL_TX_POWER_TYPE RfBleDpl_getTxPowerByTxPowerDbm(int8 txPowerDbm, uint8 fraction)
-{
-  return MAP_llTxPwrPoutLU( txPowerDbm );
-}
-
-bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
-{
-  return TRUE; /* Success */
-}
-
-#endif //USE_RCL
 
 /*********************************************************************
  * @fn      llSDAASetupRXWindowCmd
@@ -11961,7 +8684,7 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
  */
 uint8 llSDAASetupRXWindowCmd(void)
 {
-#ifndef USE_RCL
+#ifdef SDAA_ENABLE //RFLIB implement
     // allocate RX window task space
     pRXWindowTask = MAP_osal_mem_alloc( sizeof(taskInfo_t) );
 
@@ -12045,10 +8768,9 @@ uint8 llSDAASetupRXWindowCmd(void)
 
     // link the rx window command to the Fs command
     sdaaFsRfCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&sdaaRxWindowCmd;
-#endif //USE_RCL
+#endif //SDAA_ENABLE
     return( LL_STATUS_SUCCESS );
 }
-
 
 /*********************************************************************
  * @fn      llBleToRfChannel
@@ -12099,3 +8821,1251 @@ uint16 llBleToRfChannel(uint8 bleChannel)
 
     return rfChannel;
 }
+
+/*******************************************************************************
+ * @fn          llSetupCtrlPkt
+ *
+ * @brief       This function setup to generic part of the control packet and
+ *              call to more specific function for each case
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ * output parameters
+ *
+ * @param   TRUE/FALSE if setup success
+ */
+uint8_t llSetupCtrlPkt(llConnState_t *connPtr, uint8_t ctrlPkt)
+{
+  uint8_t status = TRUE; // TODO: use error code
+
+  RCL_Buffer_TxBuffer *pLocalTxBufferHead = RCL_TxBuffer_head(
+      ((txDataQ_t*) connPtr->pTxDataEntryQ)->rfDataBuffers );
+
+  if ( ctrlPkt > NUM_OF_CTRL_PKT )
+  {
+    status = FALSE;
+  }
+
+  // Before setup ENC/PAUSE_ENC control packet the TX should be empty
+  else if ( ((ctrlPkt == LL_CTRL_ENC_RSP)        ||
+             (ctrlPkt == LL_CTRL_ENC_REQ)        ||
+             (ctrlPkt == LL_CTRL_PAUSE_ENC_REQ)  ||
+             (ctrlPkt == LL_CTRL_PAUSE_ENC_RSP)) &&
+             (pLocalTxBufferHead != NULL)         )
+  {
+    status = FALSE;
+  }
+
+  else
+  {
+    uint8_t ctrlpktLen = ctrlPktLenTable[ctrlPkt];
+
+    uint8_t encPkt = llEncryptControlPkt( connPtr, ctrlPkt );
+
+    uint8_t dataEntryOffset = sizeof(RCL_Buffer_TxBuffer)     +
+                              RCL_BUFFER_MAX_HEADER_PAD_BYTES +
+                              LL_PKT_HDR_LEN;
+
+    // Allocate a data entry and payload to send control packet
+    uint8_t *pData = MAP_LL_TX_bm_alloc( ctrlpktLen );
+
+    // Check if we have a data entry
+    if ( pData != NULL )
+    {
+      RCL_Buffer_TxBuffer *dataEntry = (RCL_Buffer_TxBuffer*) (pData
+          - dataEntryOffset);
+
+      llSetupDataEntry( dataEntry, ctrlpktLen, encPkt );
+
+      // Point to data
+      pData = &dataEntry->data[LL_PKT_DATAENTRY_DATA_OFFSET];
+
+      // Populate data entry depend on opcode
+      llBuildCtrlPkt( connPtr, pData, ctrlPkt );
+
+      // Encrypt TX packet in place in the TX FIFO
+      if ( encPkt )
+      {
+        // Encrypt PDU with authentication check
+        MAP_LL_ENC_Encrypt( connPtr,
+                            LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
+                            ctrlpktLen,
+                            pData );
+      }
+
+      // Queue it on connection TX list and queue for RF
+      MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ, dataEntry );
+
+      // Handle action and database update post setup
+      llPostSetupCtrlPkt( connPtr, ctrlPkt );
+    }
+
+    // Data allocation failed
+    else
+    {
+      status = FALSE;
+    }
+
+  }
+
+  return (status);
+}
+
+/*******************************************************************************
+ * @fn          llBuildCtrlPkt
+ *
+ * @brief       This function setup control packet
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       pData     - Pointer to array to be fill
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ * @return      None
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llBuildCtrlPkt(llConnState_t *connPtr, uint8_t *pData,
+                                  uint8_t ctrlPkt)
+{
+  // Write control opcode
+  *pData++ = ctrlPkt;
+
+  switch ( ctrlPkt )
+  {
+    case LL_CTRL_TERMINATE_IND:
+    {
+      llSetupTermInd( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_UNKNOWN_RSP:
+    {
+      llSetupUnknownRsp( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_FEATURE_REQ:
+    case LL_CTRL_PERIPHERAL_FEATURE_REQ:
+    {
+      llSetupFeatureSetReq( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_FEATURE_RSP:
+    {
+      llSetupFeatureSetRsp( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_VERSION_IND:
+    {
+      llSetupVersionIndReq( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_CONNECTION_PARAM_REQ:
+    case LL_CTRL_CONNECTION_PARAM_RSP:
+    {
+      llSetupConnParam( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_REJECT_EXT_IND:
+    {
+      llSetupRejectIndExt( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_LENGTH_REQ:
+    case LL_CTRL_LENGTH_RSP:
+    {
+      llSetupLenCtrlPkt( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_PHY_REQ:
+    case LL_CTRL_PHY_RSP:
+    case LL_CTRL_PHY_UPDATE_REQ:
+    {
+      llSetupPhyCtrlPkt( connPtr, pData );
+      break;
+    }
+    default:
+    {
+      // Two functions handle relevant cases for specific roles.
+      // if a role is not enabled, the functions link to an empty function.
+      MAP_llBuildCtrlPktPeri( connPtr, pData, ctrlPkt );
+      MAP_llBuildCtrlPktCent( connPtr, pData, ctrlPkt );
+      break;
+    }
+  }
+}
+
+/*******************************************************************************
+ * @fn          llBuildCtrlPktPeri
+ *
+ * @brief       This function setup control packet that relevant to
+ *              peripheral role only.
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       pData     - Pointer to array to be fill
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ * @Output      pData - Packet's data payload
+ */
+void llBuildCtrlPktPeri(llConnState_t *connPtr, uint8_t *pData, uint8_t ctrlPkt)
+{
+  switch ( ctrlPkt )
+  {
+    case LL_CTRL_ENC_RSP:
+    {
+      llSetupEncRsp( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_REJECT_IND:
+    {
+      llSetupRejectInd( connPtr, pData );
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+}
+
+/*******************************************************************************
+ * @fn          llBuildCtrlPktCent
+ *
+ * @brief       This function setup control packet that relevant to
+ *              central role only.
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       pData     - Pointer to array to be fill
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ * @Output      pData - Packet's data payload
+ */
+void llBuildCtrlPktCent(llConnState_t *connPtr, uint8_t *pData, uint8_t ctrlPkt)
+{
+  switch ( ctrlPkt )
+  {
+    case LL_CTRL_CONNECTION_UPDATE_IND:
+    {
+      llSetupUpdateParamReq( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_CHANNEL_MAP_IND:
+    {
+      llSetupUpdateChanReq( connPtr, pData );
+      break;
+    }
+    case LL_CTRL_ENC_REQ:
+    {
+      llSetupEncReq( connPtr, pData );
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+}
+
+/*******************************************************************************
+ * @fn          llPostSetupCtrlPkt
+ *
+ * @brief       This function handles tasks after adding packets to the TX FIFO
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ */
+static inline void llPostSetupCtrlPkt(llConnState_t *connPtr, uint8_t ctrlPkt)
+{
+
+  if ( ctrlPkt == LL_CTRL_TERMINATE_IND )
+  {
+    // deactivate peripheral latency, if it was enabled
+    // Note: Not used by Central.
+    connPtr->peripheralLatency = 0;
+    // Per Core V4.0 spec change, the termination timeout is the LSTO
+    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->expirationValue;
+  }
+
+  // Our device is initiating the Length control procedure
+  else if ( ctrlPkt == LL_CTRL_LENGTH_REQ )
+  {
+    // it is, so set the Max Tx Octets to the mininum
+    // Note: This control procedure could result in a reduced OTA Tx packet
+    //       size, regardless of the value of connMaxTxOctets, since the
+    //       peer's connRemoteMaxRxOctets value can cap the max allowed
+    //       data size. It is unknown at this point what the resulting max
+    //       Tx packet size will be. So it is possible that this device
+    //       could end up queuing Tx packets with lengths that exceed the
+    //       peer's Rx buffer. To prevent this from happening, this device
+    //       must begin fragmenting to ensure no packet larger then the
+    //       minimum OTA size is sent. When the control procedure completes,
+    //       connActualMaxTxOctets will be updated accordingly.
+    //
+    //       For example:
+    //       A 200ms connection is currently using an OTA Tx size of 251.
+    //       The Peripheral sends a Length Request with MD=0 to change it to 27.
+    //       The connection event ends, and the Host queues up 20 packets
+    //       of size 251. No fragmentation occurs because the current OTA
+    //       size is 251. The next connection event begins and the peer's
+    //       Rx buffer size is too small, so it NACKs our device. Deadlock.
+    connPtr->lenInfo.connActualMaxTxOctets = LL_MIN_LINK_DATA_LEN;
+  }
+
+  else
+  {
+    //Two functions handle relevant cases for specific roles.
+    //If a role is not enabled, the functions link to an empty function.
+    MAP_llPostSetupCtrlPktPeri( connPtr, ctrlPkt );
+    MAP_llPostSetupCtrlPktCent( connPtr, ctrlPkt );
+  }
+
+  // This section specifies procedure timeout rules that shall be applied to all the
+  // Link Layer control procedures, except for the
+  // Connection Update and Channel Map Update procedures for which there are
+  // no timeout rules.
+  if ( ctrlPkt != LL_CTRL_CONNECTION_UPDATE_IND
+      && ctrlPkt != LL_CTRL_CHANNEL_MAP_IND )
+  {
+    // set the control packet timeout for 40s relative to our present time
+    // Note: This is done in terms of connection events there is convert function called
+    // llConvertCtrlProcTimeoutToEvent that convert 40s to connection events.
+    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+  }
+
+}
+
+/*******************************************************************************
+ * @fn          llPostSetupCtrlPktPeri
+ *
+ * @brief       This function handles tasks after adding packets to the TX FIFO
+ *              Note: For cases that relevant to peripheral role only
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ */
+void llPostSetupCtrlPktPeri(llConnState_t *connPtr, uint8_t ctrlPkt)
+{
+
+  if ( (ctrlPkt == LL_CTRL_REJECT_EXT_IND)       ||
+       (ctrlPkt == LL_CTRL_PING_REQ)             ||
+       (ctrlPkt == LL_CTRL_PING_RSP)             ||
+       (ctrlPkt == LL_CTRL_CONNECTION_PARAM_RSP) ||
+       (ctrlPkt == LL_CTRL_CONNECTION_PARAM_REQ) ||
+       (ctrlPkt == LL_CTRL_FEATURE_RSP)           )
+  {
+    // deactivate peripheral latency, if it was enabled
+    connPtr->peripheralLatency = 0; // TODO: align with spec, set zero to peripheralLatency shall be only for pdu with instant field
+  }
+
+  else if ( ctrlPkt == LL_CTRL_ENC_RSP )
+  {
+    // bytes are generated LSO..MSO, but need to be maintained as
+    // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
+    MAP_LL_ENC_ReverseBytes(
+        (uint8_t*) &connPtr->encInfo.SKD[LL_ENC_SKD_S_OFFSET],
+        LL_ENC_SKD_S_LEN );
+
+    // bytes are generated LSO..MSO, but need to be maintained as
+    // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
+    // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
+    MAP_LL_ENC_ReverseBytes(
+        (uint8_t*) &connPtr->encInfo.IV[LL_ENC_IV_S_OFFSET],
+        LL_ENC_IV_S_LEN );
+
+    // place the IV into the Nonce to be used for this connection
+    // Note: If a Pause Encryption control procedure is started, the
+    //       old Nonce value will be used until encryption is disabled.
+    // Note: The IV is sequenced LSO..MSO within the Nonce.
+    // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
+    for ( uint8_t i = 0; i < LL_ENC_IV_LEN; i++ )
+    {
+      connPtr->encInfo.nonce[ LL_ENC_NONCE_IV_OFFSET + i] =
+          connPtr->encInfo.IV[(LL_ENC_IV_LEN - i) - 1];
+    }
+  }
+
+}
+
+/*******************************************************************************
+ * @fn          llPostSetupCtrlPktCent
+ *
+ * @brief       This function handles tasks after adding packets to the TX FIFO
+ *              Note: For cases that relevant to central role only
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ */
+void llPostSetupCtrlPktCent(llConnState_t *connPtr, uint8_t ctrlPkt)
+{
+
+  if ( ctrlPkt == LL_CTRL_ENC_REQ )
+  {
+    // bytes are generated LSO..MSO, but need to be maintained as
+    // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
+    MAP_LL_ENC_ReverseBytes(
+        (uint8_t*) &connPtr->encInfo.SKD[LL_ENC_SKD_M_OFFSET],
+        LL_ENC_SKD_M_LEN );
+
+    // bytes are generated LSO..MSO, but need to be maintained as
+    // MSO..LSO, per FIPS 197 (AES), so reverse the bytes
+    // ALT: Maintain the IV in LSO..MSO order as the Nonce is formed that way.
+    MAP_LL_ENC_ReverseBytes(
+        (uint8_t*) &connPtr->encInfo.IV[LL_ENC_IV_M_OFFSET],
+        LL_ENC_IV_M_LEN );
+  }
+
+}
+
+/*******************************************************************************
+ * @fn          llSetupFeatureSetRsp
+ *
+ * @brief       This function is used to setup the Feature Set Response packet.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupFeatureSetRsp(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+  // use this connection's feature set as payload
+  // Note: Normally, this device's feature set would be used, but since there
+  //       is a HCI Extension command that allows the user to change this
+  //       device's feature set, and given that the Peripheral can now request a
+  //       feature set procedure (V4.1 specification update), the used feature
+  //       set could get changed.
+  // Note: Per Vol 6, Part B, Section 5.1.4, only byte 0 of the peer's
+  //       feature set is logically AND'ed with this device's feature set's
+  //       byte 0. All remaining bytes are set based on this devices feature
+  //       set.
+  *pCurData++ = connPtr->featureSetInfo.featureSet[0];
+
+  memcpy( pCurData,
+          &deviceFeatureSet.featureSet[1],
+          (LL_MAX_FEATURE_SET_SIZE - 1) );
+
+  // If a bit is shown as Host Controlled,
+  // the value may be set by the Host and shall default to zero.
+  // this function shout down bits by the table 4.7 in:
+  // BLUETOOTH CORE SPECIFICATION Version 5.4 | Vol 6, Part B page 2845.
+  llRemoveFeaturesForSendToPeer( pData );
+}
+
+/*******************************************************************************
+ * @fn          llSetupVersionIndReq
+ *
+ * @brief       This function is used to setup the version indication packet.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupVersionIndReq(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill verNum field
+  *pCurData++ = verInfo.verNum;
+
+  size_t nextCmdSize = ( sizeof(connPtr->verInfo.comId) +
+                         sizeof(connPtr->verInfo.subverNum) );
+
+  uint8_t *pSrcAddress = (uint8_t*)&(connPtr->verInfo.comId);
+
+  // Fill comId field
+  // Fill subverNum field
+  memcpy( pCurData, pSrcAddress, nextCmdSize );
+}
+
+/*******************************************************************************
+ * @fn          llSetupRejectInd
+ *
+ * @brief       This function is used to setup the encrypt reject
+ *              indication packet.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupRejectInd(llConnState_t *connPtr, uint8_t *pData)
+{
+  // Fill encRejectErrCode field
+  *pData = connPtr->encInfo.encRejectErrCode;
+}
+
+/*******************************************************************************
+ * @fn          llSetupConnParam
+ *
+ * @brief       This function is used to setup the Connection Parameter
+ *              Response/Request control procedure.
+ *
+ *              ALT: Determine if this was initiated by the Host or by the
+ *                   Controller. If the Host, then could use values as follows,
+ *                   but would need to determine if offsets and periodicity
+ *                   need to be adjusted. If the Controller,
+ *                   all values should be provided.
+ *
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupConnParam(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  uint8_t nextCmdSize = ( sizeof(connPtr->connParams.intervalMin) +
+                          sizeof(connPtr->connParams.intervalMax) +
+                          sizeof(connPtr->connParams.latency)     +
+                          sizeof(connPtr->connParams.timeout)     );
+
+  uint8_t *pSrcAddress = (uint8_t*)&(connPtr->connParams);
+
+  // Fill intervalMin field
+  // Fill intervalMax field
+  // Fill latency field
+  // Fill timeout field
+  memcpy( pCurData, pSrcAddress, nextCmdSize );
+
+  pCurData += nextCmdSize;
+
+  nextCmdSize = ( sizeof(connPtr->connParams.periodicity) +
+                  sizeof(connPtr->connParams.refConnEvtCount) );
+
+  // Fill zeroes to periodicity field
+  // Fill zeroes to refConnEvtCount field
+  memset( pCurData, 0, nextCmdSize );
+
+  pCurData += nextCmdSize;
+
+  // Size of 6 offsets fields (offset0-offset5)
+  nextCmdSize = (6 * sizeof(connPtr->connParams.offset0));
+
+  // Fill invalid to offset0-offset5
+  memset( pCurData, 0xFF, nextCmdSize );
+
+#ifdef LL_TEST_MODE
+  if(connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CONNECTION_PARAM_RSP)
+  {
+    llSetupConnParamRsp_testmode( connPtr, pData );
+  }
+  if(connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CONNECTION_PARAM_REQ)
+  {
+    llSetupConnParamReq_testmode( connPtr, pData );
+  }
+#endif //LL_TEST_MODE
+}
+
+/*******************************************************************************
+ * @fn          llSetupRejectIndExt
+ *
+ * @brief       This function is used to setup the extended reject indication
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupRejectIndExt(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill the reject opcode
+  *pCurData++ = connPtr->rejectIndExt.rejectOpcode;
+  // Fill the reason code
+  *pCurData = connPtr->rejectIndExt.errorCode;
+}
+
+/*******************************************************************************
+ * @fn          llSetupPhyCtrlPkt
+ *
+ * @brief       This function is used to setup the phy request, response, or
+ *              update control packet.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupPhyCtrlPkt(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill the TX PHY
+  // Note: This device only supports symmetric connections!
+  *pCurData++ = connPtr->phyInfo.updatePhy;
+  // Fill the RX PHY
+  *pCurData++ = connPtr->phyInfo.updatePhy;
+
+  if ( connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_PHY_UPDATE_REQ )
+  {
+    // Check whether an instant is required
+    // Note: When no phy change is to occur, the instant shall be zero.
+    if ( connPtr->phyUpdateEvent != 0 )
+    {
+      // convert relative instant number to an absolute event number
+      connPtr->phyUpdateEvent += connPtr->currentEvent;
+    }
+
+#if defined( LL_TEST_MODE )
+    if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_SLA_BI_09 )
+    {
+      // override the update event to cause a Instant in Past failure
+      connPtr->phyUpdateEvent = connPtr->currentEvent-1;
+    }
+#endif // LL_TEST_MODE
+
+    // Fill the update event count
+    *pCurData++ = LO_UINT16( connPtr->phyUpdateEvent );
+    *pCurData = HI_UINT16( connPtr->phyUpdateEvent );
+  }
+
+}
+
+/*******************************************************************************
+ * @fn          llSetupLenCtrlPkt
+ *
+ * @brief       This function is used to setup the length request, response
+ *              control packet.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupLenCtrlPkt(llConnState_t *connPtr, uint8_t *pData)
+{
+  // FILL the RX/TX lengths in octets, and time in us
+  memcpy( pData,
+          &connPtr->lenInfo,
+          (LL_LENGTH_REQ_PAYLOAD_LEN - 1) );
+
+#ifdef LL_TEST_MODE
+  if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_MAS_BI_07 )
+  {
+    // write invalid rx/tx lengths in octets, and time in us
+    // note: invalid values were configure using LL_EXT_SetMaxDataLen under LL_TEST_MODE
+    pData[0] = LO_UINT16(invalidRxOctets);
+    pData[1] = HI_UINT16(invalidRxOctets);
+    pData[2] = LO_UINT16(invalidRxTime);
+    pData[3] = HI_UINT16(invalidRxTime);
+    pData[4] = LO_UINT16(invalidTxOctets);
+    pData[5] = HI_UINT16(invalidTxOctets);
+    pData[6] = LO_UINT16(invalidTxTime);
+    pData[7] = HI_UINT16(invalidTxTime);
+  }
+#endif
+}
+
+/*******************************************************************************
+ * @fn          llSetupFeatureSetReq
+ *
+ * @brief       This function is used to setup the feature set request.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupFeatureSetReq(llConnState_t *connPtr, uint8_t *pData)
+{
+#ifdef LL_TEST_MODE
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_PAC_MAS_BV01:
+    case LL_TEST_MODE_TP_PAC_SLA_BV01:
+      // override opcode: send an invalid control packet opcode
+      *(pData - 1) = LL_CTRL_INVALID_OPCODE; //Change opcode
+      break;
+
+    default:
+      break;
+  }
+#endif // LL_TEST_MODE
+
+  // use this connection's feature set as payload
+  memcpy( pData,
+          &(deviceFeatureSet.featureSet),
+          LL_MAX_FEATURE_SET_SIZE );
+
+  // If a bit is shown as Host Controlled,
+  // the value may be set by the Host and shall default to zero.
+  // this function shout down bits by the table 4.7 in:
+  // BLUETOOTH CORE SPECIFICATION Version 5.4 | Vol 6, Part B page 2845.
+  llRemoveFeaturesForSendToPeer( pData );
+}
+
+/*******************************************************************************
+ * @fn          llSetupUpdateParamReq
+ *
+ * @brief       This function is used to setup the update parameter request.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupUpdateParamReq(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill window size
+  *pCurData++ = connPtr->paramUpdate.winSize;
+
+  uint8_t nextCmdSize = ( sizeof(connPtr->paramUpdate.winOffset)         +
+                          sizeof(connPtr->paramUpdate.connInterval)      +
+                          sizeof(connPtr->paramUpdate.peripheralLatency) +
+                          sizeof(connPtr->paramUpdate.connTimeout)       );
+
+  uint8_t *pSrcAddress = (uint8_t*) &(connPtr->paramUpdate.winOffset);
+
+  // Fill winOffset field
+  // Fill connInterval field
+  // Fill peripheralLatency field
+  // Fill connTimeout field
+  memcpy( pCurData, pSrcAddress, nextCmdSize );
+
+  pCurData += nextCmdSize;
+
+  // convert relative instant number to an absolute event number
+  connPtr->paramUpdateEvent += connPtr->currentEvent +
+                               (llConns.numActiveConns * LL_INSTANT_NUMBER_FACTOR);
+
+#ifdef LL_TEST_MODE
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_CON_SLA_BI_04:
+      // override paramUpdateEvent to cause a Passed Instant failure
+      connPtr->paramUpdateEvent = connPtr->currentEvent-1;
+
+      break;
+
+    default:
+      break;
+  }
+#endif // LL_TEST_MODE
+
+  // Fill the update event count
+  *pCurData++ = LO_UINT16( connPtr->paramUpdateEvent );
+  *pCurData = HI_UINT16( connPtr->paramUpdateEvent );
+}
+
+/*******************************************************************************
+ * @fn          llSetupUpdateChanReq
+ *
+ * @brief       This function is used to setup the update channel request.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupUpdateChanReq(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill with the new channel map
+  memcpy( pCurData,
+          &(connPtr->curChanMap.chanMap),
+          LL_NUM_BYTES_FOR_CHAN_MAP );
+
+  pCurData += LL_NUM_BYTES_FOR_CHAN_MAP;
+
+  // So convert relative instant number to an absolute event number
+  connPtr->chanMapUpdateEvent += connPtr->currentEvent;
+
+#ifdef LL_TEST_MODE
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_CON_SLA_BI_04:
+      // override chanMapUpdateEvent to cause a Passed Instant failure
+      connPtr->chanMapUpdateEvent = connPtr->currentEvent-1;
+      break;
+
+    case LL_TEST_MODE_JIRA_3646:
+      // so convert relative instant number to an absolute event number
+      connPtr->chanMapUpdateEvent++;
+      break;
+
+    default:
+      break;
+  }
+#endif // LL_TEST_MODE
+
+  // Fill the update event count field
+  *pCurData++ = LO_UINT16( connPtr->chanMapUpdateEvent );
+  *pCurData = HI_UINT16( connPtr->chanMapUpdateEvent );
+}
+
+/*******************************************************************************
+ * @fn          llSetupTermInd
+ *
+ * @brief       This function is used to setup the termination indication.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupTermInd(llConnState_t *connPtr, uint8_t *pData)
+{
+  // Fill reason code
+  *pData = connPtr->termInfo.reason;
+}
+
+/*******************************************************************************
+ * @fn          llSetupEncReq
+ *
+ * @brief       This function is used to setup the start encryption request.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupEncReq(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill the random vector field
+  memcpy( pCurData,
+          &(connPtr->encInfo.RAND),
+          LL_ENC_RAND_LEN );
+
+  pCurData += LL_ENC_RAND_LEN;
+
+  // Fill the encryption diversifier field
+  memcpy( pCurData,
+          &(connPtr->encInfo.EDIV),
+          LL_ENC_EDIV_LEN );
+
+  pCurData += LL_ENC_EDIV_LEN;
+
+  // Fill the central's session key diversifier field
+  // Note: The SKDm LSO is the LSO of the SKD.
+  memcpy( pCurData,
+          &(connPtr->encInfo.SKD[LL_ENC_SKD_M_OFFSET]),
+          LL_ENC_SKD_M_LEN );
+
+  pCurData += LL_ENC_SKD_M_LEN;
+
+  // Fill the central's initialization vector field
+  // Note: The IVm LSO is the LSO of the IV.
+  memcpy( pCurData,
+          &(connPtr->encInfo.IV[LL_ENC_IV_M_OFFSET]),
+          LL_ENC_IV_M_LEN );
+}
+
+/*******************************************************************************
+ * @fn          llSetupEncRsp
+ *
+ * @brief       This function is used to setup the start encryption respond.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupEncRsp(llConnState_t *connPtr, uint8_t *pData)
+{
+  uint8_t *pCurData = pData;
+
+  // Fill the SKDs payload field
+  memcpy( pCurData,
+          &(connPtr->encInfo.SKD[LL_ENC_SKD_S_OFFSET]),
+          LL_ENC_SKD_S_LEN );
+
+  pCurData += LL_ENC_SKD_S_LEN;
+
+  // Fill the IVs payload field
+  memcpy( pCurData,
+          &(connPtr->encInfo.IV[LL_ENC_IV_S_OFFSET]),
+          LL_ENC_SKD_S_LEN );
+}
+/*******************************************************************************
+ * @fn          llSetupUnknownRsp
+ *
+ * @brief       This function is used to setup unknown packet respond.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupUnknownRsp(llConnState_t *connPtr, uint8_t *pData)
+{
+  // Fill unknown control type as payload field
+  *pData = connPtr->unknownCtrlType;
+}
+/*******************************************************************************
+ * @fn          llEncryptControlPkt
+ *
+ * @brief       Set if control packet should encrypt or not, base on
+ *              connPtr->encEnabled value or override for control packet that
+ *              shall sent in mode specific
+ *
+ * input parameters
+ *
+ * @param       connPtr   - Pointer to the current connection
+ * @param       ctrlPkt   - Control packet opcode
+ *
+ */
+static inline uint8_t llEncryptControlPkt(llConnState_t *connPtr,
+                                          uint8_t ctrlPkt)
+{
+  uint8_t encPkt = FALSE;
+
+  if ( ctrlPkt == LL_CTRL_PAUSE_ENC_RSP )
+  {
+    // Only the Peripheral encrypts the Pause Encryption Response
+    if ( llState == LL_STATE_CONN_PERIPHERAL )
+    {
+      encPkt = TRUE;
+    } //else FASLE
+  }
+  else if ( (ctrlPkt == LL_CTRL_START_ENC_RSP) ||
+            (ctrlPkt == LL_CTRL_PAUSE_ENC_REQ) ||
+            (ctrlPkt == LL_CTRL_PING_REQ)      ||
+            (ctrlPkt == LL_CTRL_PING_RSP)       )
+  {
+    encPkt = TRUE;
+  }
+  else if ( (ctrlPkt == LL_CTRL_ENC_REQ)       ||
+            (ctrlPkt == LL_CTRL_ENC_RSP)       ||
+            (ctrlPkt == LL_CTRL_START_ENC_REQ) ||
+            (ctrlPkt == LL_CTRL_REJECT_IND)     )
+  {
+    encPkt = FALSE;
+  }
+  else
+  {
+    encPkt = connPtr->encEnabled;
+  }
+  return (encPkt);
+}
+
+#ifdef LL_TEST_MODE
+/*******************************************************************************
+ * @fn          llSetupConnParamReq_testmode
+ *
+ * @brief       This function is used to setup the Connection Parameter
+ *              Request control procedure for test mode.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupConnParamReq_testmode( llConnState_t *connPtr,
+                                                 uint8_t *pData  )
+{
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_CON_MAS_BV_28:
+      // write the min connection interval
+      pData[0] = LO_UINT16( 0x0006 );
+      pData[1] = HI_UINT16( 0x0006 );
+
+      // write the max connection interval
+      pData[2] = LO_UINT16( 0x0006 );
+      pData[3] = HI_UINT16( 0x0006 );
+
+      // write the connection latency
+      pData[4] = LO_UINT16( 0x0000 );
+      pData[5] = HI_UINT16( 0x0000 );
+
+      // write the connection timeout
+      pData[6] = LO_UINT16( 0x012C );
+      pData[7] = HI_UINT16( 0x012C );
+
+      // write the preferred periodicity - invalid
+      pData[8] = LO_UINT16( 0 );
+
+      // write the reference connection event count - invalid
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BV_31_1:
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_1:
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( 0x0001 );
+      pData[12] = HI_UINT16( 0x0001 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BV_31_2:
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_2:
+      // override Offset0 to CI-1.25ms
+      pData[11] = LO_UINT16( (connPtr->curParam.connInterval>>1)-1 );
+      pData[12] = HI_UINT16( (connPtr->curParam.connInterval>>1)-1 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BV_31_3:
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_3:
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( 0x0001 );
+      pData[12] = HI_UINT16( 0x0001 );
+
+      // override Offset1 to 1.25ms
+      pData[13] = LO_UINT16( 0x0002 );
+      pData[14] = HI_UINT16( 0x0002 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BV_32:
+    case LL_TEST_MODE_TP_CON_SLA_BV_31:
+      // write the min connection interval
+      pData[0] = LO_UINT16( connPtr->connParams.intervalMin );
+      pData[1] = HI_UINT16( connPtr->connParams.intervalMin );
+
+      // write the max connection interval
+      pData[2] = LO_UINT16( connPtr->connParams.intervalMax );
+      pData[3] = HI_UINT16( connPtr->connParams.intervalMax );
+
+      // override preferred periodicity - within CI range
+      pData[8] = LO_UINT16( 10 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BV_33:
+    case LL_TEST_MODE_TP_CON_SLA_BV_32:
+      // write the min connection interval
+      pData[0] = LO_UINT16( connPtr->connParams.intervalMin );
+      pData[1] = HI_UINT16( connPtr->connParams.intervalMin );
+
+      // write the max connection interval
+      pData[2] = LO_UINT16( connPtr->connParams.intervalMax );
+      pData[3] = HI_UINT16( connPtr->connParams.intervalMax );
+
+      // override preferred periodicity - within CI range
+      pData[8] = LO_UINT16( 10 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( 0x0001 );
+      pData[12] = HI_UINT16( 0x0001 );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_MAS_BI_06:
+    case LL_TEST_MODE_TP_CON_SLA_BI_08:
+      // write an invalid min connection interval
+      pData[0] = LO_UINT16( 0x0004 );
+      pData[1] = HI_UINT16( 0x0004 );
+
+      // write an invalid max connection interval
+      pData[2] = LO_UINT16( 0x0004 );
+      pData[3] = HI_UINT16( 0x0004 );
+
+      break;
+
+    // otherwise
+    default:
+      break;
+  }
+}
+/*******************************************************************************
+ * @fn          llSetupConnParamRsp_testmode
+ *
+ * @brief       This function is used to setup the Connection Parameter
+ *              Response control procedure for test mode.
+ *
+ * input parameters
+ *
+ * @param       connPtr - Pointer to the current connection
+ * @param       pData   - Pointer to array to be fill
+ *
+ * output parameters
+ *
+ * @Output      pData - Packet's data payload
+ */
+static inline void llSetupConnParamRsp_testmode( llConnState_t *connPtr,
+                                                 uint8_t *pData  )
+{
+  switch( llTestMode.testCase )
+  {
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_1:
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( connPtr->connParams.offset0 );
+      pData[12] = HI_UINT16( connPtr->connParams.offset0 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_2:
+      // override Offset0 to CI-1.25ms
+      pData[11] = LO_UINT16( connPtr->connParams.offset0 );
+      pData[12] = HI_UINT16( connPtr->connParams.offset0 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_SLA_BV_30_3:
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( connPtr->connParams.offset0 );
+      pData[12] = HI_UINT16( connPtr->connParams.offset0 );
+
+      // override Offset1 to 1.25ms
+      pData[13] = LO_UINT16( connPtr->connParams.offset1 );
+      pData[14] = HI_UINT16( connPtr->connParams.offset1 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_SLA_BV_31:
+      // write the min connection interval
+      pData[0] = LO_UINT16( connPtr->connParams.intervalMin );
+      pData[1] = HI_UINT16( connPtr->connParams.intervalMin );
+
+      // write the max connection interval
+      pData[2] = LO_UINT16( connPtr->connParams.intervalMax );
+      pData[3] = HI_UINT16( connPtr->connParams.intervalMax );
+
+      // override preferred periodicity - within CI range
+      pData[8] = LO_UINT16( 10 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      break;
+
+    case LL_TEST_MODE_TP_CON_SLA_BV_32:
+      // write the min connection interval
+      pData[0] = LO_UINT16( connPtr->connParams.intervalMin );
+      pData[1] = HI_UINT16( connPtr->connParams.intervalMin );
+
+      // write the max connection interval
+      pData[2] = LO_UINT16( connPtr->connParams.intervalMax );
+      pData[3] = HI_UINT16( connPtr->connParams.intervalMax );
+
+      // override preferred periodicity - within CI range
+      pData[8] = LO_UINT16( 10 );
+
+      // write the reference connection event count - use current event count
+      pData[9] = LO_UINT16( connPtr->currentEvent );
+      pData[10] = HI_UINT16( connPtr->currentEvent );
+
+      // override Offset0 to 1.25ms
+      pData[11] = LO_UINT16( connPtr->connParams.offset0 );
+      pData[12] = HI_UINT16( connPtr->connParams.offset0 );
+
+      break;
+
+    // otherwise
+    default:
+      break;
+  }
+}
+#endif // LL_TEST_MODE

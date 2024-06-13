@@ -41,12 +41,8 @@
 #ifndef CC23X0
 #include DeviceFamily_constructPath(driverlib/flash.h)
 #include DeviceFamily_constructPath(driverlib/ioc.h)
-#else // CC23X0
-#ifdef CONFIG_SOC_CC2340R5
-#include <ti/drivers/Power.h>
-#endif
-#endif // CC23X0
-#else // CC33xx
+#endif //CC23X0
+#else
 #include "osi.h"
 #endif //CC33xx
 
@@ -179,26 +175,6 @@ typedef bool halIntState_t;
   IntEnable(INT_RFCOREERR);             \
 }
 
-#ifndef USE_RCL
-/* Enable interrupts */
-#define HAL_ENABLE_INTERRUPTS()     IntMasterEnable()
-
-/* Disable interrupts */
-#define HAL_DISABLE_INTERRUPTS()    IntMasterDisable()
-
-static bool halIntsAreEnabled(void)
-{
-  bool status = !IntMasterDisable();
-  if (status)
-  {
-    IntMasterEnable();
-  }
-  return status;
-}
-
-#define HAL_INTERRUPTS_ARE_ENABLED() halIntsAreEnabled()
-#endif
-
 #ifdef CC23X0
 #define HAL_ENTER_CRITICAL_SECTION(x)  \
   do { (x) = !IntDisableMaster(); } while (0)
@@ -251,8 +227,4 @@ static bool halIntsAreEnabled(void)
 #define HAL_AES_EXIT_WORKAROUND()
 /**************************************************************************************************
  */
-#ifdef CONFIG_SOC_CC2340R5
-#define SystemReset()         Power_reset();
-#define SystemResetSoft()
-#endif //CONFIG_SOC_CC2340R5
 #endif

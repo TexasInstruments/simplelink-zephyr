@@ -200,7 +200,6 @@ llStatus_t llDynamicAlloc( void )
 #ifdef LL_CONN_SIZE
     totalConnSize += (totalConnSize * maxNumConns);
 #endif // LL_CONN_SIZE
-#ifdef USE_RCL
     // Connection Commands
     linkCmd = (RCL_CmdBle5Connection *)MAP_osal_mem_alloc( sizeof(RCL_CmdBle5Connection) * maxNumConns );
 
@@ -218,59 +217,6 @@ llStatus_t llDynamicAlloc( void )
     }
     // Connection Transmit Queue - one per connection
     txDataQ = (txDataQ_t *)MAP_osal_mem_alloc( sizeof(txDataQ_t) * maxNumConns );
-
-#else
-    // Connection Commands
-    linkCmd = MAP_osal_mem_alloc( sizeof(ble5OpCmd_t) * maxNumConns );
-
-    // check linkCmd there was enough heap
-    if ( !linkCmd )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-
-#ifdef LL_CONN_SIZE
-    totalConnSize += sizeof(ble5OpCmd_t);
-#endif // LL_CONN_SIZE
-
-    // Central Parameters - one per connection
-    linkParam = MAP_osal_mem_alloc( sizeof(linkParam_t) * maxNumConns );
-
-    if ( !linkParam )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-
-#ifdef LL_CONN_SIZE
-    totalConnSize += sizeof(linkParam_t);
-#endif // LL_CONN_SIZE
-
-    // Connection Transmit Queue - one per connection
-    txDataQ = (dataQ_t *)MAP_osal_mem_alloc( sizeof(dataQ_t) * maxNumConns );
-#endif
-    if ( !txDataQ )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-
-#ifdef LL_CONN_SIZE
-    totalConnSize += sizeof(dataQ_t);
-#endif // LL_CONN_SIZE
-
-#ifdef RTLS_CTE
-    // malloc array used to CTE per connection
-    llCte = MAP_osal_mem_alloc( sizeof(llCte_t) * maxNumConns );
-
-    // check that there was enough heap
-    if ( llCte == NULL )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-
-#ifdef LL_CONN_SIZE
-    totalConnSize += sizeof(llCte_t);
-#endif // LL_CONN_SIZE
-#endif
   }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -303,28 +249,6 @@ llStatus_t llDynamicAlloc( void )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
-
-#ifndef USE_RCL
-  /* This only relevant when working with CC13XX_CC26XX RF */
-
-  // RPA configuration structure
-  pRpaCfg =  (rpaCfg_t *)MAP_osal_mem_alloc( sizeof(rpaCfg_t));
-  if ( !pRpaCfg )
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-  }
-
-  // RPA initA
-  pRpaCfg->pRpaInitA =  (uint8 *)MAP_osal_mem_alloc( sizeof(uint8) * B_ADDR_LEN );
-  if ( !pRpaCfg->pRpaInitA )
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-  }
-
-  // The TargetAList can be used to send new TargetA in AUX_CONNECT_RSP when using undirected connectable advertising.
-  // Currently this ability is not used because the spec don't require it.
-  pRpaCfg->pRpaTargetAList = NULL;
-#endif
 
   // RF Patch Compensation
   pRfPathComp = MAP_osal_mem_alloc( sizeof(rfPathComp_t) );
@@ -505,19 +429,6 @@ void llDynamicFree( void )
     MAP_osal_mem_free( resolvingList );
   }
 
-#ifndef USE_RCL
-  // RPA initA
-  if ( pRpaCfg->pRpaInitA )
-  {
-    MAP_osal_mem_free( pRpaCfg->pRpaInitA );
-  }
-
-  // RPA configuration structure
-  if ( pRpaCfg )
-  {
-    MAP_osal_mem_free( pRpaCfg );
-  }
-#endif
   // RF Patch Compensation
   if ( pRfPathComp )
   {

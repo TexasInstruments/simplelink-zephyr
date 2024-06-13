@@ -22,13 +22,8 @@
 #include "osal_timers.h"
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#else
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#endif
 #include "hci_event.h"
 #include "ll_common.h"
 #include "ll_enc.h"
@@ -43,12 +38,10 @@
 /*******************************************************************************
  * EXTERNS
  */
-#ifdef USE_RCL
 extern void LL_rclAdvCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclScanCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclInitCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclRescheduleCommand(RCL_Command *cmd);
-#endif
 
 /*******************************************************************************
  * CONSTANTS
@@ -123,7 +116,7 @@ extScanReportState_t extScanReportState[EXT_SCAN_STATE_LIST_MAX_ENTRIES];
 uint8  lastScanAdvSid;
 #endif
 // RF Command Preemption
-llRfCmdPreemption_t llRfCmdPreemption;
+static llRfCmdPreemption_t llRfCmdPreemption;
 
 /*******************************************************************************
  * GLOBAL VARIABLES
@@ -166,21 +159,16 @@ extScanInfo_t  *extScanInfo = NULL;
 uint8           extScanIndex;
 uint16          extScanNumMissed = 0;
 uint8           extScanPriority = 0;
-//
-#ifdef USE_RCL
+
+// RCL Command Structures
 RCL_CmdBle5Scanner   extScanCmd;
 RCL_CtxScanInit      extScanParam;
 RCL_StatsAdvScanInit extScanOutput;
 extern List_List     scanDataQueue;
-#else
-ble5OpCmd_t     extScanCmd;
-adiList_t       adiList[AE_MAX_NUM_SID];
-extScanParam_t  extScanParam;
-extScanOut_t    extScanOutput;
-#endif
+
 // Extended Scan Report State Variables
 uint8 scanState   = WAIT_FOR_ADV_EXT_IND;
-//
+
 // Define the scan channel mapping
 // default mapping would be all channels (37,38,39).
 uint8 extScanChanMap = LL_SCN_ADV_MAP_CHAN_ALL;
@@ -193,18 +181,12 @@ uint8 extScanChanMap = LL_SCN_ADV_MAP_CHAN_ALL;
 extInitInfo_t  *extInitInfo = NULL;
 uint8           extInitIndex;
 //
-#ifdef USE_RCL
 RCL_CmdBle5Initiator  extInitCmd;
 RCL_CtxScanInit       extInitParam;
 RCL_StatsAdvScanInit  extInitOutput;
 #ifdef RCL_329
 RCL_FilterList        peerAddrInitCmd ALIGNED;       // RCL Accept List table - used when connecting to RPA with LL_INIT_AL_POLICY_USE_PEER_ADDR as filter policy
 #endif // RCL_329
-#else
-ble5OpCmd_t     extInitCmd;
-extInitParam_t  extInitParam;
-extScanOut_t    extInitOutput;
-#endif
 #endif // INIT_CFG
 
 #ifndef QUAL_TEST
@@ -605,11 +587,7 @@ uint32 llGetSecondaryTaskEndTime( taskInfo_t    *secTask,
   }
 
   connTask = connPtr->llTask;
-#ifdef USE_RCL
   uint32 connStartTime = ((RCL_Command *)connTask->command)->timing.absStartTime;
-#else
-  uint32 connStartTime = ((ble5OpCmd_t *)connTask->command)->rfOpCmd.startTime;
-#endif
 
   /*********** Calculate the Secondary Task End Time ***********/
 
@@ -1498,19 +1476,17 @@ uint8 llCheckRfCmdPreemption( uint32 endTime ,uint8 priority)
   if ((MAP_llTimeCompare(llRfCmdPreemption.startTime , endTime)) || (priority > llStatePriority))
   {
     HAL_ENTER_CRITICAL_SECTION(cs);
+
     // Enable the preemption in order to call the appropriate post process function in abort interrupt
     llRfCmdPreemption.enable = TRUE;
 
-#ifdef USE_RCL
     // Abort the current RF command
     RCL_Command_stop((RCL_Command_Handle)llTaskList.curTask->command, RCL_StopType_DescheduleOnly);
     // call the scheduler
     // we call it with NULL because we do not want to set the status to idle
     // while it's in the middle of the stop process
     LL_rclRescheduleCommand(NULL);
-#else
-    MAP_llHaltRadio( CMD_ABORT );
-#endif
+
     HAL_EXIT_CRITICAL_SECTION(cs);
 
     return TRUE;
@@ -1601,7 +1577,6 @@ sortedAdv_t *llDetachNode(sortedAdv_t *aeNode)
 
   return (temp);
 }
-
 #endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
@@ -1639,7 +1614,6 @@ void llSetAETimeConsume(sortedAdv_t *aeNode)
     aeRf_t *pRf;
     // get pointer to RF command.
     pRf = (aeRf_t *)(aeNode->AdvEntry->pRfCmds);
-#ifdef USE_RCL
     /*
      *
      * The time between each ADV indication or AUX packet in the RCL is ~400us
@@ -1663,90 +1637,16 @@ void llSetAETimeConsume(sortedAdv_t *aeNode)
       totTime += (uint16)(2 * AE_T_IFS_US);
       // Payload is calculated the same but in scannable mode we have 1 more PDU
       // so one more empty payload is being added.
-      totTime += (uint16)MAP_llOctets2Time( pRf->extRfCmd.common.phyFeatures & 0x03,      // first two bits only
-                                            ((uint16)pRf->extRfCmd.common.phyFeatures >> 2U) & 0x01,  // scheme
+      totTime += (uint16)MAP_llOctets2Time( pRf->advCmd.common.phyFeatures & 0x03,      // first two bits only
+                                            ((uint16)pRf->advCmd.common.phyFeatures >> 2U) & 0x01,  // scheme
                                                  (aeNode->AdvEntry->auxExtHdrSize + 1U),
                                                   MIC_NOT_ENABLED );
     }
-#else
-    // time consumed on primary channels.
-    totTime = AE_CONSUME_OVERHEAD;
-    if (!aeNode->AdvEntry->otaTimeExtAdv)
-    {
-      totTime += MAP_llOctets2Time(pRf->extRfCmd[0].phyMode & 0x03, // first two bits only
-                (pRf->extRfCmd[0].phyMode>>2) & 0x01, // scheme
-                 AE_NUM_BYTES_OVERHAED_27_BYTES * 5,
-                 MIC_NOT_ENABLED );
-    }
-    else
-    {
-      totTime += aeNode->AdvEntry->otaTimeExtAdv;
-    }
-
-    // time consumed on secondary channels.
-    // NOTE : we distinguish between scannable and non scannable due to the fact
-    // that otaTimeAuxAdv in the scannable case is not calculated with the "worse case scenario" timing.
-    // "worse case scenario" is when the advertiser receives a scan req and then it will send a scan rsp.
-
-    // check if not scanable.
-    if (!TST_AE_PROPS_SCAN(aeNode->AdvEntry->pAdvParam->eventProps ))
-    {
-      if (!aeNode->AdvEntry->otaTimeAuxAdv)
-      {
-        totTime += MAP_llOctets2Time(pRf->auxRfCmd.phyMode & 0x03,  // first two bits only
-                  (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                   aeNode->AdvEntry->dataLen ? aeNode->AdvEntry->dataLen : AE_NUM_BYTES_OVERHAED_27_BYTES * 2,
-                   MIC_NOT_ENABLED );
-      }
-      else
-      {
-        // more then 1 fragment OTA
-        if (aeNode->AdvEntry->numFrags > 1)
-        {
-          totTime += ((AE_MIN_T_MAFS_IN_US + aeNode->AdvEntry->otaTimeAuxAdv) * (aeNode->AdvEntry->numFrags - 1))
-                    + (MAP_llOctets2Time( pRf->auxRfCmd.phyMode & 0x03,    // first two bits only
-                                        (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                         aeNode->AdvEntry->lastFragLen,
-                                         MIC_NOT_ENABLED ));
-        }
-        else
-        // one fragment will be sent OTA
-        {
-          totTime += aeNode->AdvEntry->otaTimeAuxAdv;
-        }
-      }
-    }
-    else // scannable
-    {
-      uint32 firstFragConsume;
-      // calculation of first fragment as it should have been.
-      firstFragConsume = MAP_llOctets2Time(pRf->auxRfCmd.phyMode & 0x03,     // first two bits only
-                                          (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                           aeNode->AdvEntry->fragLen,
-                                           MIC_NOT_ENABLED );
-      // more then 1 fragment OTA
-      if (aeNode->AdvEntry->numFrags > 1)
-      {
-        totTime += ((AE_MIN_T_MAFS_IN_US + firstFragConsume) * (aeNode->AdvEntry->numFrags - 1))
-                  + (MAP_llOctets2Time( pRf->auxRfCmd.phyMode & 0x03,    // first two bits only
-                                      (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                      aeNode->AdvEntry->lastFragLen,
-                                      MIC_NOT_ENABLED ));
-
-      }
-      else
-      // one fragment will be sent OTA
-      {
-        totTime += firstFragConsume;
-      }
-    }
-#endif // USE_RCL
   }
 #endif // USE_AE
   // set the total time to be consumed over the air.
   aeNode->timeConsume = totTime;
 }
-
 #endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
@@ -1818,7 +1718,7 @@ llStatus_t llAddAdvSortedEntry( advSet_t *pAdvSet, sortedAdv_t** newNode, uint32
   newAdvEntry = llGetAdvSortedEntry(pAdvSet);
   if (newAdvEntry != NULL)
   {
-    // The entry does exsist,
+    // The entry does exist,
     *newNode = NULL;
     *pAdvStartTime = AE_INVALID_START_TIME;
   }
@@ -1944,61 +1844,6 @@ void llRemoveAdvSortedEntry( advSet_t *pAdvSet )
 #endif
 
 #ifdef USE_AE
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-#ifndef USE_RCL
-/*******************************************************************************
- * @fn          llSetRestPrimaryChannels
- *
- * @brief       This routine is used to set randomly the rest of the primary
- *              channels number. In case the channel map has 3 channels, it will set
- *              second and third channels randomly according to the first channel.
- *              In case it includes only 2 channels, it will set only the second.
- *
- * input parameters
- *
- * @param       pAdvSet - Pointer to advertising set.
- *
- * output parameters
- *
- * @param       none.
- *
- * @return      none.
- */
-void llSetRestPrimaryChannels( advSet_t *pAdvSet )
-{
-  aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
-  uint8 i;
-
-  // initialise the first index channel as reference
-  pRf->extRfCmd[1].chan = pAdvSet->firstPrimChan;
-  // update the channels
-  for (i=1; i<(pAdvSet->numPrimChans); i++)
-  {
-    // update the channel
-    if ((i == 1) && (pAdvSet->numPrimChans == LL_MAX_NUM_ADV_CHAN))
-    {
-      // set randomly one of the other two channels
-      pRf->extRfCmd[i].chan = pAdvSet->firstPrimChan + ((MAP_llGetCurrentTime() % 2) + 1);
-      // in case the first channel was 39
-      if (pRf->extRfCmd[i].chan > LL_LAST_RF_CHAN)
-      {
-        pRf->extRfCmd[i].chan -= LL_MAX_NUM_ADV_CHAN;
-      }
-    }
-    else // set the last channel
-    {
-      pRf->extRfCmd[i].chan = ((pAdvSet->pAdvParam->primChanMap & ((~(BV(pRf->extRfCmd[1].chan - LL_ADV_BASE_CHAN) | BV(pAdvSet->firstPrimChan - LL_ADV_BASE_CHAN)))&LL_ADV_CHAN_ALL))| 36);
-      // in case the last channel is 39
-      if (pRf->extRfCmd[i].chan == (LL_MAX_NUM_DATA_CHAN - 1))
-      {
-        pRf->extRfCmd[i].chan = LL_LAST_RF_CHAN;
-      }
-    }
-  }
-}
-#endif // USE_RCL
-#endif
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 /*******************************************************************************
  * @fn          llSetExtendedAdvParams
@@ -2795,16 +2640,12 @@ void *llFindNextAdvSet( void )
         }
       }
     }
-  }while (pNextAdvSet->AdvEntry->advMode == LL_ADV_MODE_OFF);
+  } while (pNextAdvSet->AdvEntry->advMode == LL_ADV_MODE_OFF);
   // save the handle of the next scheduled AE set
   aeCurHandle = pNextAdvSet->AdvEntry->pAdvParam->handle;
 
   //update the start time
-#ifdef USE_RCL
   ((RCL_Command *)pNextAdvSet->AdvEntry->pRfCmds)->timing.absStartTime = pNextAdvSet->AdvEntry->advStartTime;
-#else
-  ((rfOpCmd_t *)pNextAdvSet->AdvEntry->pRfCmds)->startTime = pNextAdvSet->AdvEntry->advStartTime;
-#endif
   // set the correct rf cmd in the adv task
   pNextAdvSet->AdvEntry->llTask->command = (uint32)pNextAdvSet->AdvEntry->pRfCmds;
 
@@ -3363,7 +3204,8 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
 {
   uint32               auxTimeOffset = 0;  // AUX PTR time offset in usec
   extScanReportState_t *pScanState = NULL; // report state per SID
-  uint8 sendReport = ((pBleEvtMask[LE_EVT_INDEX_EXTENDED_ADV_REPORT] & LE_EVT_MASK_EXTENDED_ADV_REPORT) &&
+
+  uint8 sendReport = ((MAP_HCI_CheckEventMaskLe(LE_EVT_EXTENDED_ADV_REPORT_BIT)) &&
                       (MAP_llCheckCBack(LL_CBACK_EXT_ADV_REPORT)));
 
   // init event type based on advertising mode
@@ -3497,12 +3339,7 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
     pPkt += dataLen;
   }
 
-#ifndef USE_RCL
-  // adjust RSSI based on Rx RF path compensation
-  extAdvRpt->rssi += pRfPathComp->rfRxPathCompVal;
-  // get the channel index
-  *pChannelIndex = *pPkt++;
-#endif
+
   // check the channel index
   if ((GET_CHANNEL_IDX(*pChannelIndex)) < LL_ADV_BASE_CHAN)
   {
@@ -3718,11 +3555,7 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
     // set the primary PHY
     // Note: The Rx status returns 1M/2M/S8/S2 as 0..3, so +1 to match the
     //       parameter, except for S2.
-#ifdef USE_RCL
 	extAdvRpt->primPhy = extScanCmd.common.phyFeatures;
-#else
-    extAdvRpt->primPhy = *pPkt++;
-#endif
     extAdvRpt->primPhy += (extAdvRpt->primPhy == BLE5_S2_PHY) ? 0 : 1;
 
     // set secondary PHY
@@ -3742,9 +3575,6 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
       {
         // SID already exist - Drop packet
         // enable adiStatus.state to be reset
-#ifndef USE_RCL
-        CLR_EXT_SCAN_FILTER_CFG_EXCLUSIVE_SID( extScanParam.extFltrCfg );
-#endif
       }
       else
       {
@@ -3761,10 +3591,6 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
         {
           MAP_osal_memset( &pScanState->advAddr, 0, B_ADDR_LEN );
         }
-#ifndef USE_RCL
-        // prevent adiStatus.state from being reset
-        SET_EXT_SCAN_FILTER_CFG_EXCLUSIVE_SID( extScanParam.extFltrCfg );
-#endif
       }
     }
     else // no auxPtr
@@ -3795,11 +3621,7 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
 void llProcessExtScanRxFIFO( void )
 {
   aeExtAdvRptEvt_t *extAdvRpt = NULL;
-#ifdef USE_RCL
   RCL_Buffer_DataEntry *pDataEntry;
-#else
-  dataEntry_t      *pDataEntry;
-#endif //USE_RCL
 #ifdef USE_AE
   uint8             extHdrFlgs = 0;
 #endif //USE_AE
@@ -3809,39 +3631,22 @@ void llProcessExtScanRxFIFO( void )
 #endif //USE_PERIODIC_SCAN || USE_AE
   uint8            *pPkt;
   uint8             pHdr;
-  uint8             dataLen;
-  uint16            evtType;
+  uint8             dataLen = 0;
+  uint16            evtType = LL_PKT_TYPE_RESERVED;
   uint8             sendReport;
   uint8             checkSyncInfo = FALSE;
   uint8             channelIndex = 0xFF;
   uint8             ignoreBit = 0;
   // get pointer to packet
-#ifdef USE_RCL
   while ((pDataEntry = RCL_MultiBuffer_RxEntry_get(&extScanParam.rxBuffers, &scanDataQueue)) != NULL)
   {
-#else
-  pDataEntry = (dataEntry_t *)MAP_RFHAL_GetNextDataEntry( extScanParam.pRXQ );
-
-  if ( (pDataEntry == NULL) || (pDataEntry->status != DATASTAT_FINISHED) )
-  {
-    return;
-  }
-#endif
-  if ((extScanInfo == NULL) || (extScanInfo->scanMode == LL_SCAN_STOP))
-  {
-#ifdef USE_RCL
-    llClearRxDataEntry(&extScanParam.rxBuffers, &scanDataQueue);
-#else
-    MAP_RFHAL_NextDataEntryDone( extScanParam.pRXQ );
-#endif
-    return;
-  }
+    if ((extScanInfo == NULL) || (extScanInfo->scanMode == LL_SCAN_STOP))
+    {
+      llClearRxDataEntry(&extScanParam.rxBuffers, &scanDataQueue);
+      return;
+    }
   // get pointer to BLE PDU packet
-#ifdef USE_RCL
   pPkt = (uint8 *)(pDataEntry->data + (pDataEntry->numPad - 1));
-#else
-  pPkt = (uint8 *)(pDataEntry + 1);
-#endif
   // get packet header
   pHdr = *pPkt++;
   // get data length
@@ -3854,11 +3659,8 @@ void llProcessExtScanRxFIFO( void )
         (extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_ANY_ADV_PKTS_EXT)) &&
         (alTableScan->numAlEntries == alTableScan->numBusyAlEntries))
     {
-#ifdef USE_RCL
       llClearRxDataEntry(&extScanParam.rxBuffers, &scanDataQueue);
-#else
-      MAP_RFHAL_NextDataEntryDone( extScanParam.pRXQ );
-#endif
+
       return;
     }
     dataLen = *pPkt++ - B_ADDR_LEN;
@@ -3885,8 +3687,8 @@ void llProcessExtScanRxFIFO( void )
     }
   }
 #endif
-  sendReport = (((pBleEvtMask[LE_EVT_INDEX_ADV_REPORT] & LE_EVT_MASK_ADV_REPORT) ||
-                 (pBleEvtMask[LE_EVT_INDEX_EXTENDED_ADV_REPORT] & LE_EVT_MASK_EXTENDED_ADV_REPORT)) &&
+  sendReport = (((MAP_HCI_CheckEventMaskLe(LE_EVT_ADV_REPORT_BIT)) ||
+                 (MAP_HCI_CheckEventMaskLe(LE_EVT_EXTENDED_ADV_REPORT_BIT))) &&
                  (MAP_llCheckCBack(LL_CBACK_EXT_ADV_REPORT)));
 #if defined (USE_AE) && defined (USE_PERIODIC_SCAN)
   checkSyncInfo = ((!LL_LEGACY_ADV_PDU( pHdr )) &&
@@ -3906,7 +3708,7 @@ void llProcessExtScanRxFIFO( void )
     extAdvRpt = MAP_osal_mem_allocLimited( sizeof(aeExtAdvRptEvt_t) );
     if ((extAdvRpt == NULL) &&
         (MAP_llCheckCBack(LL_CBACK_EXT_ADV_REPORT)) &&
-        (pBleEvtMask[LE_EVT_INDEX_EXTENDED_ADV_REPORT] & LE_EVT_MASK_EXTENDED_ADV_REPORT))
+        (MAP_HCI_CheckEventMaskLe(LE_EVT_EXTENDED_ADV_REPORT_BIT)))
     {
       // out of memory
       MAP_llExtAdvCBack( LL_CBACK_OUT_OF_MEMORY, NULL );
@@ -4072,7 +3874,6 @@ void llProcessExtScanRxFIFO( void )
             // denylist entry index
             if ( MAP_AL_AddEntry( alTableScan, extAdvRpt->addr, extAdvRpt->addrType, BLE_IGNORE_AL_ENTRY ) == LL_STATUS_SUCCESS )
             {
-#ifdef USE_RCL
               uint8 alScanIdx = 0;
 
               // Find the new entry index
@@ -4081,8 +3882,7 @@ void llProcessExtScanRxFIFO( void )
                                             extAdvRpt->addrType);
 
               // Update the RCL Accept List
-              MAP_llRclPrepareAndUpdateAlEntry( extScanParam.filterList, alTableScan->pAlEntries[alScanIdx].alFlags, extAdvRpt->addr, alScanIdx);
-#endif
+              MAP_llPrepareAndUpdateAlEntry( extScanParam.filterList, alTableScan->pAlEntries[alScanIdx].alFlags, extAdvRpt->addr, alScanIdx);
             }
           }
         }
@@ -4102,10 +3902,8 @@ void llProcessExtScanRxFIFO( void )
 #ifdef USE_AE
     else //!legacy
     {
-#ifdef USE_RCL
       extAdvRpt->rssi = RCL_BLE5_getRxRssi(pDataEntry);
       channelIndex = RCL_BLE5_getRxChannel(pDataEntry);
-#endif
       sendReport = MAP_llSetExtendedAdvReport(extAdvRpt,pPkt,evtType,extHdrFlgs,
                                               pHdr,dataLen,&pSyncInfo,&secPhy,&channelIndex);
       ignoreBit = GET_IGNORE_BIT( channelIndex );
@@ -4234,17 +4032,8 @@ void llProcessExtScanRxFIFO( void )
       MAP_osal_mem_free( extAdvRpt );
     }
   }
-#ifdef USE_RCL
   } // while
-#endif
-#ifdef USE_RCL
   llClearRxDataEntry(&extScanParam.rxBuffers, &scanDataQueue);
-#else
-  // in all cases, mark the RX queue data entry as free
-  // Note: Even if there isn't any heap to copy to, this packet is considered
-  //       lost, and the queue entry is marked free for radio use.
-  MAP_RFHAL_NextDataEntryDone( extScanParam.pRXQ );
-#endif
 
   return;
 }
@@ -5024,87 +4813,6 @@ void llAllocRfMem( advSet_t *pAdvSet )
     MAP_osal_memset( pAdvSet->pRfCmds, 0, sizeof(aeRfCmdSize_t) );
   }
 
-#ifndef USE_RCL
-  // check if this will be a legacy advertisement
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    aeLegacyRf_t *pRfCmds = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-
-    // setup adv command's next pointers
-    pRfCmds->advCmd[0].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRfCmds->advCmd[1];
-    pRfCmds->advCmd[1].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRfCmds->advCmd[2];
-    pRfCmds->advCmd[2].rfOpCmd.pNextRfOp = NULL;
-
-    // setup the parameters
-    pRfCmds->advCmd[0].pParams = (uint8 *)&pRfCmds->advParam;
-    pRfCmds->advCmd[1].pParams = (uint8 *)&pRfCmds->advParam;
-    pRfCmds->advCmd[2].pParams = (uint8 *)&pRfCmds->advParam;
-
-    // setup the output parameters
-    pRfCmds->advCmd[0].pOutput = (uint8 *)&pRfCmds->advOutput;
-    pRfCmds->advCmd[1].pOutput = (uint8 *)&pRfCmds->advOutput;
-    pRfCmds->advCmd[2].pOutput = (uint8 *)&pRfCmds->advOutput;
-
-    // update adv set
-    pAdvSet->pRfCmds = (uint8 *)pRfCmds;
-  }
-#ifdef USE_AE
-  else // !legacy
-  {
-    aeRf_t *pRfCmds = (aeRf_t *)pAdvSet->pRfCmds;
-
-    // Primary channel RF command next pointer
-    pRfCmds->extRfCmd[0].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRfCmds->extRfCmd[1];
-    pRfCmds->extRfCmd[1].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRfCmds->extRfCmd[2];
-    pRfCmds->extRfCmd[2].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRfCmds->auxRfCmd;
-
-    // Primary channel RF command parameters pointer
-    pRfCmds->extRfCmd[0].pParams = (uint8 *)&pRfCmds->extRfParam;
-    pRfCmds->extRfCmd[1].pParams = (uint8 *)&pRfCmds->extRfParam;
-    pRfCmds->extRfCmd[2].pParams = (uint8 *)&pRfCmds->extRfParam;
-
-    // Primary channel RF command output parameters pointer
-    pRfCmds->extRfCmd[0].pOutput = (uint8 *)&pRfCmds->comOutput;
-    pRfCmds->extRfCmd[1].pOutput = (uint8 *)&pRfCmds->comOutput;
-    pRfCmds->extRfCmd[2].pOutput = (uint8 *)&pRfCmds->comOutput;
-
-    // Secondary channel RF command next pointer
-    pRfCmds->auxRfCmd.rfOpCmd.pNextRfOp =
-      (rfOpCmd_t *)&pRfCmds->countCmd;
-
-    // Secondary channel RF command parameters pointer
-    pRfCmds->auxRfCmd.pParams =
-      (uint8 *)&pRfCmds->auxRfParam;
-
-    // Secondary channel RF command output parameters pointer
-    pRfCmds->auxRfCmd.pOutput =
-      (uint8 *)&pRfCmds->comOutput;
-
-    // Secondary channel RF Counter command next pointer
-    pRfCmds->countCmd.rfOpCmd.pNextRfOp =
-     (rfOpCmd_t *)&pRfCmds->auxRfCmd;
-
-    // Extended Advertising Command Extended Header pointer
-    pRfCmds->extRfParam.pAdvPkt =
-      (uint8 *)&pRfCmds->comPkt;
-
-    // Secondary Advertising Command Extended Header Adv pointer
-    pRfCmds->auxRfParam.pAdvPkt =
-      (uint8 *)&pRfCmds->comPkt;
-
-    // Secondary Advertising Command Extended Header Response pointer
-    pRfCmds->auxRfParam.pRspPkt =
-      (uint8 *)&pRfCmds->comPkt;
-
-    // Common Format Packet Extended Buffer pointer
-    pRfCmds->comPkt.pExtHeader =
-      pRfCmds->extHdr;
-
-    // update adv set
-    pAdvSet->pRfCmds = (uint8 *)pRfCmds;
-  }
-#endif //USE_AE
-#endif
   return;
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
@@ -5206,23 +4914,19 @@ void llSetupExtHdr( advSet_t *pAdvSet,
 {
   uint8 *pBuf = ((aeRf_t *)pAdvSet->pRfCmds)->extHdr;
 
-#ifdef USE_RCL
   MAP_osal_memset(pBuf, 0U, EXTHDR_TOTAL_BUF_SIZE);
 
   // Save the extended header flags
   *pBuf = hdrFlags;
    pBuf++;
-#endif
 
   // check if the AdvA flag is present
   // Note: The CM0 supports auto-insertion of AdvA, so should not need this.
   if ( TST_EXTHDR_FLAG(hdrFlags, EXTHDR_FLAG_ADVA) )
   {
-#ifdef USE_RCL
     // store AdvA. RCL doesn't support auto-insertion
     MAP_osal_memcpy(pBuf, pAdvSet->ownAddr, B_ADDR_LEN);
     pBuf += B_ADDR_LEN;
-#endif
   }
 
   // check if the TargetA flag is present
@@ -5235,17 +4939,15 @@ void llSetupExtHdr( advSet_t *pAdvSet,
         CLR_EXT_ADV_HDR_CFG_SKIP_TGTA( ((aeRf_t *)pAdvSet->pRfCmds)->comPkt.extHdrConfig );
 
         // copy targetA address into common header
-        MAP_osal_memcpy( pBuf, pAdvSet->pAdvParam->peerAddr, B_ADDR_LEN );
+        MAP_osal_memcpy( pBuf, pAdvSet->peerAddr, B_ADDR_LEN );
         pBuf += B_ADDR_LEN;
       }
-#ifdef USE_RCL
       else
       {
         // Store TargetA. RCL doesn't support auto-insertion
         MAP_osal_memcpy(pBuf, pAdvSet->pAdvParam->peerAddr, B_ADDR_LEN);
         pBuf += B_ADDR_LEN;
       }
-#endif
   }
 
   // check if the ADI flag is present
@@ -5286,7 +4988,6 @@ void llSetupExtHdr( advSet_t *pAdvSet,
 
     // time to update the Extended Header buffer
 
-#ifdef USE_RCL
     /**
      * When AUX offset is set to 0 and the offset units to 1 the RCL will automatically
      * calculate the offset for the next offset unit and will send the next AUX packet
@@ -5295,7 +4996,6 @@ void llSetupExtHdr( advSet_t *pAdvSet,
      */
      auxOffsetUnits = 1;
      auxOffset = 0;
-#endif // USE_RCL
     // store the Offset Units, CA, and Channel Index in first byte of AuxPtr
     *pBuf++ = (auxOffsetUnits << 7) |
               (auxCA << 6)          |
@@ -5327,10 +5027,6 @@ void llSetupExtHdr( advSet_t *pAdvSet,
   {
 
     *pBuf = RfBleDpl_getTxPowerDbm(pAdvSet->txPowerIndex);
-#ifndef USE_RCL
-     // adjust Tx Power based on Tx RF path compensation
-    *pBuf += pRfPathComp->rfTxPathCompVal;
-#endif // !USE_RCL
     pBuf++;
   }
 
@@ -5349,7 +5045,6 @@ void llSetupExtHdr( advSet_t *pAdvSet,
 }
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-#ifdef USE_RCL
 /*******************************************************************************
  * @fn          llBuildExtAdvPacket
  *
@@ -5453,7 +5148,6 @@ llStatus_t llBuildExtAdvPacket(advSet_t *pAdvSet, uint8 pktType, uint8 payloadLe
 
   return LL_STATUS_SUCCESS;
 }
-#endif // USE_RCL
 
 /*******************************************************************************
  * @fn          llSetupExtAdv
@@ -5476,11 +5170,7 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   aeRf_t *pRf;
   uint32 aeStartTime = AE_INVALID_START_TIME;
   sortedAdv_t *nodePtr = NULL;
-#ifndef USE_RCL
-  ble5OpCmd_t *pAuxRfCmd = NULL;
-#else
   llStatus_t status;
-#endif // USE_RCL
 
   // check input parameter
   if (pAdvSet == NULL )
@@ -5499,16 +5189,15 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   /*
   ** Setup First Primary RF Command
   */
-#ifdef USE_RCL
-  pRf->extRfCmd = RCL_CmdBle5Advertiser_DefaultRuntime();
-  pRf->extRfCmd.txPower = RfBleDpl_getTxPower(pAdvSet->txPowerIndex);
-  pRf->extRfCmd.chanMap = pAdvSet->pAdvParam->primChanMap;
+  pRf->advCmd = RCL_CmdBle5Advertiser_DefaultRuntime();
+  pRf->advCmd.txPower = RfBleDpl_getTxPower(pAdvSet->txPowerIndex);
+  pRf->advCmd.chanMap = pAdvSet->pAdvParam->primChanMap;
   // Run in increasing order
-  pRf->extRfCmd.order = 0;
+  pRf->advCmd.order = 0;
 
   // Use common parameters and output
-  pRf->extRfCmd.ctx = &pRf->advParam;
-  pRf->extRfCmd.stats = &pRf->advOutput;
+  pRf->advCmd.ctx = &pRf->advParam;
+  pRf->advCmd.stats = &pRf->advOutput;
   pRf->advParam = RCL_CtxAdvertiser_DefaultRuntime();
   pRf->advOutput = RCL_StatsAdvScanInit_DefaultRuntime();
 
@@ -5522,55 +5211,25 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   if (nodePtr != NULL)
   {
     // Set the advertising start time
-    pRf->extRfCmd.common.timing.absStartTime = aeStartTime;
+    pRf->advCmd.common.timing.absStartTime = aeStartTime;
     // start trigger
-    pRf->extRfCmd.common.scheduling = RCL_Schedule_AbsTime;
-    pRf->extRfCmd.common.allowDelay = TRUE;
+    pRf->advCmd.common.scheduling = RCL_Schedule_AbsTime;
+    pRf->advCmd.common.allowDelay = TRUE;
   }
 
   // Set the advertising callbacks
-  pRf->extRfCmd.common.runtime.callback = LL_rclAdvCallback;
-  pRf->extRfCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
+  pRf->advCmd.common.runtime.callback = LL_rclAdvCallback;
+  pRf->advCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
                                                        RCL_EventTxBufferFinished.value;
 
   // save the absolute start time of the advertiser for post-processing
   // Note: The start time is advanced for primary channels, so we need the
   //       original advertisement event start time to keep the advertisement
   //       interval.
-  pAdvSet->advStartTime = pRf->extRfCmd.common.timing.absStartTime;
+  pAdvSet->advStartTime = pRf->advCmd.common.timing.absStartTime;
 
   // Reset the TX counter
   pAdvSet->txCount = 0;
-#else
-  // init radio command
-  pRf->extRfCmd[0].rfOpCmd.cmdNum    = CMD_BLE5_ADV_EXT;
-  pRf->extRfCmd[0].rfOpCmd.status    = RFSTAT_IDLE;
-  pRf->extRfCmd[0].rfOpCmd.startTrig = TRIGTYPE_AT_ABS_TIME;
-  pRf->extRfCmd[0].rfOpCmd.condition = CONDTYPE_RUN_TRUE_STOP_FALSE;
-
-  // add AE node into AE List and determine its start time.
-  status = MAP_llAddAdvSortedEntry(pAdvSet, &nodePtr, &aeStartTime);
-  if (status == LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED)
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED);
-  }
-  if (nodePtr != NULL)
-  {
-    pRf->extRfCmd[0].rfOpCmd.startTime = aeStartTime;
-  }
-
-  // save the absolute start time of the advertiser for post-processing
-  // Note: The start time is advanced for primary channels, so we need the
-  //       original advertisement event start time to keep the advertisement
-  //       interval.
-  pAdvSet->advStartTime = pRf->extRfCmd[0].rfOpCmd.startTime;
-
-  // set randomly the channel number and enable BLE whitening
-  // ALT: Get rid of advChan[i] from flash?
-  pAdvSet->firstPrimChan = LL_ADV_BASE_CHAN + llGetRandChannelMapIndex(pAdvSet->pAdvParam->primChanMap);
-  pRf->extRfCmd[0].chan = pAdvSet->firstPrimChan;
-  SET_WHITENING_BLE( pRf->extRfCmd[0].whitening );
-#endif // USE_RCL
 
   // Update the default priority for the extended advertise set.
   pAdvSet->priority = qosDefaultPriorityAdvParameter;
@@ -5579,24 +5238,13 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   // Note: The 2M PHY is not allowed for primary channels.
   LL_ASSERT( pAdvSet->pAdvParam->primPhy != AE_PHY_2_MBPS );
 
-#ifdef USE_RCL
-  // set primary PHY
-  RfBleDpl_setAdvPhy((void *)&pRf->extRfCmd, pAdvSet->pAdvParam->primPhy);
+  // Set primary PHY and the secondary coded type.
+  // The RCL will take the secondary Phy type from the Aux Ptr.
+  RfBleDpl_setAdvPhy((void *)&pRf->advCmd, pAdvSet->pAdvParam->primPhy, pAdvSet->pAdvParam->secPhy);
 
-  llSetPower((uint32 *)&pRf->extRfCmd,
+  llSetPower((uint32 *)&pRf->advCmd,
               pAdvSet->txPowerIndex,
               RfBleDpl_getTxPower(pAdvSet->txPowerIndex));
-#else
-  // set primary PHY
-  // Note: Mask off the MSBit which indicates Coded Scheme.
-  // Note: Parameter value is +1 the values used in the RF command.
-  // set the aux PHY in the CM0
-  RfBleDpl_setAdvPhy((void *)&pRf->extRfCmd[0], pAdvSet->pAdvParam->primPhy);
-
-  llSetPower((uint32 *)&pRf->extRfCmd[0],
-              pAdvSet->txPowerIndex,
-              RfBleDpl_getTxPower(pAdvSet->txPowerIndex));
-#endif
 
   // check if the user set the Tx Power option
   if ( TST_AE_PROPS_TX_PWR(pAdvSet->pAdvParam->eventProps) )
@@ -5621,20 +5269,9 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   ** Setup Primary Channel Command Parameters
   */
 
-#ifdef USE_RCL
   // set device address and address type
   pRf->advParam.addrType.own = MASK_ID_ADDRTYPE(pAdvSet->ownAddrType);
   MAP_osal_memcpy(pRf->advParam.advA, pAdvSet->ownAddr, B_ADDR_LEN);
-#else
-  // set parameters advertisement configuraiton
-  CLR_ADV_CFG( pRf->extRfParam.advCfg );
-
-  SETVAR_ADV_CFG_DEV_ADDR_TYPE( pRf->extRfParam.advCfg,
-                                pAdvSet->ownAddrType );
-
-  // set pointer to device address
-  pRf->extRfParam.pDeviceAddr = pAdvSet->ownAddr;
-#endif // USE_RCL
 
   // determine if an auxPtr is needed
   if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
@@ -5659,92 +5296,14 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
 
     // determine size of Extended Header buffer
     pAdvSet->extHdrSize = MAP_llGetExtHdrLen( pAdvSet->extHdrFlags );
-#ifdef USE_RCL
+
     // For the RCL, otaTimeExtAdv will be used to hold the time it takes to transmit
     // the EXT_ADV_IND. It will be use for the calculation of time the command will
     // consume
-    pAdvSet->otaTimeExtAdv = MAP_llOctets2Time( pRf->extRfCmd.common.phyFeatures & 0x03,      // first two bits only
-                                               (pRf->extRfCmd.common.phyFeatures>>2) & 0x01,  // scheme
+    pAdvSet->otaTimeExtAdv = MAP_llOctets2Time( pRf->advCmd.common.phyFeatures & 0x03,      // first two bits only
+                                               (pRf->advCmd.common.phyFeatures>>2) & 0x01,  // scheme
                                                (pAdvSet->extHdrSize+1),
                                                 MIC_NOT_ENABLED );
-#else
-    uint8 rem;
-
-    // calculate the auxPtrTargetType/Time from start of ADV_EXT_IND
-
-    // setup auxPtr's in ADV_EXT_IND relative to start of aux packet
-    // Note: The CM0 takes the time (auxPtrTgtTime) and trigger (auxPtrTgtType)
-    //       and updates the content of the Extended Header in terms of offset
-    //       units based on the trigger type. We therefore need to calculate
-    //       the time of an ADV_EXT_IND packet (based on size and PHY), and
-    //       total that based on the number of primary channels being sent,
-    //       the interpacket time, and T_MAFS. This time can then be specified
-    //       as being relative to the start of the packet. Then, after each
-    //       primary channel completes, the next time is adjusted by one less
-    //       packet and interpacket time.
-
-    // convert the OTA size to time based on the PHY
-    // Note: The AUX PHY field in AuxPtr is minus one the parameters.
-    // Note: The expected phy and coding by llOctets2Time:
-    //         BLE5_1M_PHY, BLE5_2M_PHY, BLE5_CODED_PHY
-    //         BLE5_CODED_S8_DEFAULT, BLE5_CODED_S2_DEFAULT
-    pAdvSet->otaTimeAdjust = MAP_llOctets2Time( pRf->extRfCmd[0].phyMode & 0x03,      // first two bits only
-                                               (pRf->extRfCmd[0].phyMode>>2) & 0x01,  // scheme
-                                                (pAdvSet->extHdrSize+1),
-                                                MIC_NOT_ENABLED );
-
-    // time for last PDU, rounded up to next 30us unit
-    rem = (pAdvSet->otaTimeAdjust + AE_MIN_T_MAFS_IN_US) % AE_AUX_OFFSET_30_US_UNIT_VALUE;
-    pAdvSet->otaTimeExtAdv = (pAdvSet->otaTimeAdjust + AE_MIN_T_MAFS_IN_US) +
-                             ((rem) ? (AE_AUX_OFFSET_30_US_UNIT_VALUE - rem) : 0);
-
-    // time for each PDU (used to subtract from otaTimeExtAdv after each int)
-    pAdvSet->otaTimeAdjust += AE_MIN_CMD_TIME_IN_US;
-
-    // adjust time per channel to align auxPtrs to Rx window
-    rem = pAdvSet->otaTimeAdjust % AE_AUX_OFFSET_30_US_UNIT_VALUE;
-    pAdvSet->otaTimeAdjust += ((rem) ? (AE_AUX_OFFSET_30_US_UNIT_VALUE - rem) : 0);
-
-    // adjust total time to align start time of AUX PDU
-    pAdvSet->otaTimeExtAdv += (pAdvSet->numPrimChans-1) * pAdvSet->otaTimeAdjust;
-
-    // set the auxPtr time and type
-    // Note: CM0 expects time in RAT ticks.
-    pRf->extRfParam.auxPtrTgtTime = US_TO_RAT_TICKS( pAdvSet->otaTimeExtAdv + PRIMARY_CMD_START_SYNTH_TO_RAT_OFFSET );
-    pRf->extRfParam.auxPtrTgtType = TRIGTYPE_REL_FIRST_CHAIN_CMD;
-
-    // ADI mandatory in AUX packet
-    SET_EXTHDR_FLAG( pAdvSet->auxHdrFlags,
-                     EXTHDR_FLAG_ADI );
-    pAuxRfCmd = &pRf->auxRfCmd;
-  }
-  else // no auxPtr needed
-  {
-    // AdvA mandatory
-    SET_EXTHDR_FLAG( pAdvSet->extHdrFlags,
-                     EXTHDR_FLAG_ADVA );
-
-    // check if directed
-    if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-    {
-      // it is, so include TargetA in extHdrFlags
-      SET_EXTHDR_FLAG( pAdvSet->extHdrFlags,
-                       EXTHDR_FLAG_TARGETA );
-    }
-
-    // determine size of Extended Header buffer
-    pAdvSet->extHdrSize = MAP_llGetExtHdrLen( pAdvSet->extHdrFlags );
-
-    pAdvSet->otaTimeAdjust = MAP_llOctets2Time( pRf->extRfCmd[0].phyMode & 0x03,      // first two bits only
-                                               (pRf->extRfCmd[0].phyMode>>2) & 0x01,  // scheme
-                                               (pAdvSet->extHdrSize+1),
-                                                MIC_NOT_ENABLED );
-    pAdvSet->otaTimeAdjust += AE_MIN_CMD_TIME_IN_US;
-    // default aux type
-    // Note: Set trigger to NOW when there is no subordinate packet
-    pRf->extRfParam.auxPtrTgtTime = 0;
-    pRf->extRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-#endif // USE_RCL
   }
 
   /*
@@ -5790,7 +5349,6 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
                      pAdvSet->extHdrFlags,
                      AE_AUX_OFFSET_AUTO_INSERT );
 
-#ifdef USE_RCL
   // Build EXT_ADV_IND packet and add it to the command TX queue
   uint8_t payloadLen = AE_EXT_HDR_ADV_TYPE_FIELD_SIZE + pAdvSet->extHdrSize;
   pRf->buffNo = 0;
@@ -5800,46 +5358,10 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   {
     return status;
   }
-#else
-  /*
-  ** Setup Second and third Primary Channel RF Commands
-  */
-  for (uint8 i=1; i < pAdvSet->numPrimChans; i++)  {
-    // copy the content from the first command
-    MAP_osal_memcpy( &pRf->extRfCmd[i], &pRf->extRfCmd[0], sizeof(ble5OpCmd_t) );
-    // update the start time as related to the previous command start time
-    pRf->extRfCmd[i].rfOpCmd.startTrig = TRIGTYPE_REL_PREV_CMD_START;
-    pRf->extRfCmd[i].rfOpCmd.startTime = US_TO_RAT_TICKS(pAdvSet->otaTimeAdjust);
-
-    llSetPower((uint32 *)&pRf->extRfCmd[i],
-                pAdvSet->txPowerIndex,
-                RfBleDpl_getTxPower(pAdvSet->txPowerIndex));
-  }
-
-  // set randomly the rest of the channels
-  llSetRestPrimaryChannels(pAdvSet);
-  // set the next pointers
-  switch (pAdvSet->numPrimChans)
-  {
-    case 1:
-      pRf->extRfCmd[0].rfOpCmd.pNextRfOp = (rfOpCmd_t *)pAuxRfCmd;
-      break;
-    case 2:
-      pRf->extRfCmd[0].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->extRfCmd[1];
-      pRf->extRfCmd[1].rfOpCmd.pNextRfOp = (rfOpCmd_t *)pAuxRfCmd;
-      break;
-    case 3:
-      pRf->extRfCmd[0].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->extRfCmd[1];
-      pRf->extRfCmd[1].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->extRfCmd[2];
-      pRf->extRfCmd[2].rfOpCmd.pNextRfOp = (rfOpCmd_t *)pAuxRfCmd;
-      break;
-  }
-#endif // USE_RCL
 
   /*
   ** Setup Secondary RF Command
   */
-#ifdef USE_RCL
   pRf->advParam.filterPolicy = pAdvSet->pAdvParam->filterPolicy;
 
   if ((pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_CONNECT_IND) ||
@@ -5847,6 +5369,7 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   {
     pRf->advParam.filterListConn = (RCL_FilterList *)(((uint32)&alTable->pAlEntries[0]) - sizeof(uint32));//&alTable->numEntries;
   }
+
   if ((pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
       (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ))
   {
@@ -5866,98 +5389,22 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   {
     pRf->auxPhyFeature = BLE5_CODED_PHY;
   }
-#else
-  // init radio command
-  pRf->auxRfCmd.rfOpCmd.cmdNum    = CMD_BLE5_ADV_AUX;
-  pRf->auxRfCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  pRf->auxRfCmd.rfOpCmd.startTime = pRf->extRfCmd[0].rfOpCmd.startTime +
-                                    US_TO_RAT_TICKS(pAdvSet->otaTimeExtAdv);
-  pRf->auxRfCmd.rfOpCmd.startTrig = PAST_TRIG_START_ASAP |
-                                    TRIGTYPE_AT_ABS_TIME;
-  pRf->auxRfCmd.rfOpCmd.condition = CONDTYPE_RUN_TRUE_STOP_FALSE;
-
-  // set the channel number and enable BLE whitening
-  pRf->auxRfCmd.chan = pAdvSet->auxChanIndex & AE_CHAN_INDEX_MASK;
-  SET_WHITENING_BLE( pRf->auxRfCmd.whitening );
-
-    // set secondary PHY
-  RfBleDpl_setAdvPhy((void*)&pRf->auxRfCmd, pAdvSet->pAdvParam->secPhy);
-
-  // set the RF command with Tx power value based on index
-  pRf->auxRfCmd.txPower = RfBleDpl_getTxPower(pAdvSet->txPowerIndex);
-#endif // USE_RCL
 
   /*
   ** Setup Secondary Channel Command Parameters
   */
-#ifdef USE_RCL
   // initiate RX Q
   RCL_MultiBuffer_put(&pRf->advParam.rxBuffers, MAP_llSetupAdvDataEntryQueue());
-#else
-  // set adv Rx one entry queue (only for scannable or connectable)
-  pRf->auxRfParam.pRXQ = NULL;
-
-  if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
-       TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-  {
-    // shared static Rx buffer
-    // ALT: make dynamic, use llSetupAdvDataEntryQueue during init, set queue/buf here.
-    // ALT: Update this to use same shared RXQ.
-    pRf->auxRfParam.pRXQ = MAP_llSetupAdvDataEntryQueue();
-
-    // set the Adv RX queue configuration
-    pRf->auxRfParam.rxCfg         =
-    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-      RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-      RXQ_CFG_INCLUDE_PKT_LEN_BYTE  |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG)       ? RXQ_CFG_INCLUDE_CRC      : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG)      ? RXQ_CFG_APPEND_RSSI      : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG)    ? RXQ_CFG_APPEND_STATUS    : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0) );
-  }
-
-  // set the Adv configuration
-  CLR_ADV_CFG( pRf->auxRfParam.advCfg );
-  SETVAR_ADV_CFG_FILTER_POLICY( pRf->auxRfParam.advCfg,
-                                pAdvSet->pAdvParam->filterPolicy );
-
-  SETVAR_ADV_CFG_DEV_ADDR_TYPE( pRf->auxRfParam.advCfg,
-                                pAdvSet->ownAddrType );
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  SETVAR_ADV_CFG_PEER_ADDR_TYPE( pRf->auxRfParam.advCfg,
-                                 pAdvSet->peerAddrType );
-#endif // ADV_CONN_CFG
-
-  // enable strict length checks by radio
-  // Note: May need to check this vis-a-vis AUX_SCAN_REQ and AUX_CONNECT_REQ.
-  SETVAR_ADV_CFG_STRICT_LEN_FILTER( pRf->auxRfParam.advCfg,
-                                    ADV_CFG_DISCARD_BAD_LEN_MSG );
-
-#endif // USE_RCL
 
   // only if address resolution is enabled
   if ( privInfo.addrResolution )
   {
-#ifdef USE_RCL
     // Enable privIgn
     pRf->advParam.privIgnMode = TRUE;
     // Enable rpaMode
     pRf->advParam.rpaModePeer = TRUE;
     // Enable acceptAll
     pRf->advParam.acceptAllRpaConnectInd = TRUE;
-#else
-    // enable RPA Mode in Adv configuration
-    // Per Erratum #6984.
-    // ALT: Do not enable RPA Mode, and allow unresolved RPA if FP=ANY.
-    //SET_ADV_CFG_RPA_MODE( advParam.advCfg );
-
-    // enable Privacy Ignore in Adv Configuration
-    SET_ADV_CFG_PRIV_IGN_MODE( pRf->auxRfParam.advCfg );
-    // clear the Autoflush Ignored Packet flag
-    pRf->auxRfParam.rxCfg &= ~RXQ_CFG_AUTOFLUSH_IGNORED_PKT;
-#endif // USE_RCL
   }
 
   // determine size of Extended Header buffer
@@ -5966,7 +5413,6 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   // determine if there is any data, and if so, how many fragments
   MAP_llSetupExtData( pAdvSet );
 
-#ifdef USE_RCL
   uint8  pktSize = 0;
   uint16 totLen = 0; // Advertising data length + (extended header length*num of frags)
 
@@ -6042,158 +5488,10 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
 
     return status;
   }
-#else
-  // determine if an auxPtr is needed
-  // Note: Done not only for Nonconnectable/Nonscannable, but for Scannable as
-  //       well, even though AUX_ADV_IND for Scannable does not have AuxPtr.
-  //       But if there's a AUX_SCAN_RESPONSE with data, these values are used.
-  if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR) )
-  {
-    uint8 pktSize = (pAdvSet->auxExtHdrSize+1);
-
-    // Scannable?
-    // Note: If NC/NS, then data is part of AUX_ADV_IND PDU. This is true too
-    //       for Connectable/NS, but there's no auxPtr in that case.
-    if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-    {
-      // auxPtr not included in size
-      pktSize -= EXTHDR_FLAG_AUXPTR_SIZE;
-    }
-    else // !Scannable
-    {
-      // include data fragment length
-      pktSize += pAdvSet->fragLen;
-    }
-
-    // calculate the auxPtrTargetType/Time from start of ADV_EXT_IND
-
-    // setup auxPtr's to AUX_CHAIN_IND or AUX_SCAN_RSP, relative to start of AUX_ADV_IND
-    // Note: The CM0 takes the time (auxPtrTgtTime) and trigger (auxPtrTgtType)
-    //       and updates the content of the Extended Header in terms of offset
-    //       units based on the trigger type. Two possiblities exist: NC/NS
-    //       where the next PDU is an AUX_CHAIN_IND, or NC/Scannable, where
-    //       we're actually referring to the AUX_SCAN_RSP's auxPtr to a
-    //       possible AUX_CHAIN_IND. We therefore need to calculate the time
-    //       of an AUX_ADV_IND packet (based on size and PHY), including the
-    //       T_MAFS
-    //       total that based on the number of primary channels being sent,
-    //       the interpacket time, and T_MAFS. This time can then be specified
-    //       as being relative to the start of the packet. Then, after each
-    //       primary channel completes, the next time is adjusted by one less
-    //       packet and interpacket time.
-
-    // convert the OTA size of AUX packet to time based on the PHY
-    // Note: The AUX PHY field in AuxPtr is minus one the value of the parameters.
-    // Note: The expected phy and coding by llOctets2Time:
-    //         BLE5_1M_PHY, BLE5_2M_PHY, BLE5_CODED_PHY
-    //         BLE5_CODED_S8_DEFAULT, BLE5_CODED_S2_DEFAULT
-    pAdvSet->otaTimeAuxAdv = MAP_llOctets2Time( pRf->auxRfCmd.phyMode & 0x03,      // first two bits only
-                                                (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                                pktSize,
-                                                MIC_NOT_ENABLED );
-
-    pAdvSet->minTimeAdj = AE_MIN_OFFSET_UNIT_IN_US -
-                          ((pAdvSet->otaTimeAuxAdv + AE_T_MAFS_IN_US) % AE_MIN_OFFSET_UNIT_IN_US);
-
-    // for Scannable, don't include the T_MAFS because it is not needed to find
-    // the start time of the AUX_SCAN_RSP
-    pAdvSet->otaTimeAuxAdv += ((TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps)) ?
-                               0                                                   :
-                               AE_MIN_T_MAFS_IN_US);
-
-    // save initial otaTimeAuxAdv time in case we're Scannable, since the
-    // otaTimeAuxAdv is subsequently updated in case a AUX_SCAN_RSP is sent
-    pAdvSet->otaTimeAuxAdvScan = pAdvSet->otaTimeAuxAdv;
-
-    // set the auxPtr time and type
-    pRf->auxRfParam.auxPtrTgtTime = pRf->auxRfCmd.rfOpCmd.startTime         +
-                                    US_TO_RAT_TICKS( pAdvSet->otaTimeAuxAdv +
-                                                     pAdvSet->minTimeAdj    +
-                                                     START_SYNTH_TO_RAT_OFFSET );
-
-    pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-  }
-  else // no auxPtr needed
-  {
-    // default aux type
-    // Note: Set trigger to NOW when there is no subordinate packet
-    pRf->auxRfParam.auxPtrTgtTime = 0;
-    pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-  }
-
-  // set a pointer to our device address
-  pRf->auxRfParam.pDeviceAddr = pAdvSet->ownAddr;
-
-  // set AL, if used
-  if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-  {
-    pRf->auxRfParam.pAcceptList = (alEntry_t *)pAdvSet->peerAddr;
-
-    // indicate this is a directed advertisement
-    // Note: There is no chSel bit since Algo #2 is always required for AE.
-    SET_ADV_CFG_DIRECTED( pRf->auxRfParam.advCfg );
-  }
-  else // not directed, so use AL
-  {
-  pRf->auxRfParam.pAcceptList = &alTable->pAlEntries[0];
-
-  // Note: Bit 5 is bDirected instead of Channel Selection Algo!
-  CLR_ADV_CFG_DIRECTED( pRf->auxRfParam.advCfg );
-  }
-
-  /*
-  ** Setup Common Format Packet for Secondary Channel Command
-  */
-
-  // Note: The common format packet's content is shared, so cannot be updated
-  //       with secondary information yet. This information will be updated
-  //       at the appropriate time during RF Callbacks. Note though that the
-  //       extHdrConfig field will remain common to all packets.
-
-  // add length to Extended Header Info
-  SET_EXTHDR_LEN( pAdvSet->auxHdrInfo,
-                  pAdvSet->auxExtHdrSize );
-
-  /*
-  ** Setup Secondary Channel RF Command Loop Counter
-  */
-
-  pRf->countCmd.rfOpCmd.cmdNum    = CMD_COUNTER;
-  pRf->countCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  pRf->countCmd.rfOpCmd.startTime = RAT_TICKS_IN_1US *
-                                     (*llConfigTable.advExtSecLoopOffsetUs);
-  if ((*llConfigTable.advExtSecLoopOffsetUs) != 0)
-  {
-    pRf->countCmd.rfOpCmd.startTrig = TRIGTYPE_REL_END_PREV_CMD;
-  }
-  else
-  {
-    pRf->countCmd.rfOpCmd.startTrig = TRIGTYPE_NOW;
-  }
-  pRf->countCmd.rfOpCmd.condition = CONDTYPE_RUN_TRUE_STOP_FALSE;
-  // set the counter based on the number of additional aux packets needed
-  // Note: If the numFrags=0, then there is no secondary channel packet, so
-  //       this counter will never be used.
-  pRf->countCmd.counter           = pAdvSet->numFrags;
-
-  if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-  {
-    // set to one in case there's not AUX_SCAN_REQ, to end command chain
-    // Note: If there is a AUX_SCAN_REQ, then we'll send a AUX_SCAN_RSP and
-    //       get a Tx Done interrupt. The ISR will update the counter to
-    //       pAdvSet->numFrags-1. Yes, I get there's a possible race
-    //       condition here.
-    // Note: If Scannable, we just send a AUX_ADV_IND, so pAdvSet->numFrags
-    //       is always at least one, but can be more if there's fragmented
-    //       AUX_SCAN_RSP data.
-    pRf->countCmd.counter = 1;
-  }
-#endif // USE_RCL
 
   /*
   ** Setup AUX_SCAN_RSP packet when scannable mode is in use
   */
-#ifdef USE_RCL
   // When using scannable mode, RCL expect that all the first 3 PDUs will
   //  be inserted on command start include AUX_SCAN_RSP
   if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps))
@@ -6248,6 +5546,7 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
 
     // Only TargetA and AdvA flags are mandatory and any other
     // flag is forbidden
+    pRf->comPkt.extHdrFlags = 0;
     SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TARGETA);
     SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_ADVA);
 
@@ -6268,7 +5567,6 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
                   AE_ADV_MODE_CONNECTABLE );
   }
 
-#endif // USE_RCL
   if (nodePtr != NULL)
   {
     // update the time consumed over the air
@@ -6795,7 +6093,6 @@ llStatus_t llSetupExtAdvLegacy( advSet_t *pAdvSet )
       return LL_STATUS_ERROR_BAD_PARAMETER;
     }
   }
-#ifdef USE_RCL
   pRf->advCmd = RCL_CmdBle5Advertiser_DefaultRuntime();
 
   pRf->advCmd.txPower = RfBleDpl_getTxPower(pAdvSet->txPowerIndex);
@@ -6820,112 +6117,16 @@ llStatus_t llSetupExtAdvLegacy( advSet_t *pAdvSet )
   pRf->advCmd.stats = &pRf->advOutput;
   pRf->advParam = RCL_CtxAdvertiser_DefaultRuntime();
   pRf->advOutput = RCL_StatsAdvScanInit_DefaultRuntime();
-#else
-  // setup each radio operation, channel by channel
-  for (uint8 i=0; i<LL_MAX_NUM_ADV_CHAN; i++)
-  {
-    // check if the channel map is set
-    if ( pAdvSet->pAdvParam->primChanMap & BV(i) )
-    {
-      // it is, so initialize the radio operation block
-      pRf->advCmd[i].rfOpCmd.cmdNum = advEvt2Cmd[ pAdvSet->advEvtType ];
 
-      // set the channel number and enable BLE whitening
-      pRf->advCmd[i].chan = advChan[i];
-      SET_WHITENING_BLE( pRf->advCmd[i].whitening );
-    }
-    else // no radio operation for unused channel
-    {
-      // so set command as a NOP
-      pRf->advCmd[i].rfOpCmd.cmdNum = CMD_NOP;
-    }
-
-    // common initialization
-    pRf->advCmd[i].rfOpCmd.status    = RFSTAT_IDLE;
-    pRf->advCmd[i].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->advCmd[i+1];
-
-    CLR_RFOP_ALT_TRIG_CMD( pRf->advCmd[i].rfOpCmd.startTrig );
-    SET_RFOP_PAST_TRIG( pRf->advCmd[i].rfOpCmd.startTrig );
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-    if ( pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT )
-    {
-      // all HDC Directed Adv must be done in 3.75ms, so fix at 1.25ms each
-      // Note: For this relative timing value, the fist command in the chain
-      //       is started immediately.
-
-      // start trigger
-      SET_RFOP_TRIG_TYPE( pRf->advCmd[i].rfOpCmd.startTrig,
-                          ((i==0) ? TRIGTYPE_AT_ABS_TIME :
-                                    TRIGTYPE_REL_PREV_CMD_START) );
-      // start time
-      pRf->advCmd[i].rfOpCmd.startTime = ((i==0) ? (MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS) :  RAT_TICKS_IN_1_25MS);
-
-      SET_RFOP_COND_RULE( pRf->advCmd[i].rfOpCmd.condition, CONDTYPE_RUN_TRUE_STOP_FALSE );
-    }
-    else // all other Adv Event Types
-#endif // ADV_CONN_CFG
-    {
-      // Start Adv at an absolute time, but let all subsequent commands (if any)
-      // start as quickly as possible.
-
-      // start trigger
-      SET_RFOP_TRIG_TYPE( pRf->advCmd[i].rfOpCmd.startTrig,
-                          ((i==0) ? TRIGTYPE_AT_ABS_TIME :
-                                    TRIGTYPE_NOW) );
-
-      // start time
-      pRf->advCmd[i].rfOpCmd.startTime = ((i==0) ? (MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS) :  0);
-
-      // command condition
-      SET_RFOP_COND_RULE( pRf->advCmd[i].rfOpCmd.condition,
-                          ( (i==2) ? CONDTYPE_NEVER_RUN_NEXT_CMD :
-                                     CONDTYPE_RUN_TRUE_STOP_FALSE) );
-    }
-
-    // use common parameters and output
-    pRf->advCmd[i].pParams = (uint8 *)&pRf->advParam;  //(uint8 *)&advParam;
-    pRf->advCmd[i].pOutput = (uint8 *)&pRf->advOutput; //(uint8 *)&advOutput;
-  }
-
-  // setup next radio operation command pointer based on Adv event type
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  // Note: HDC Directed advertising is continuous until either a connection is
-  //       formed, or a timeout occurs, thus it's command structure is in
-  //       a loop. All others end when the last command executes, thus it's
-  //       last command structure's next command is null terminated.
-  if ( pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT )
-  {
-    // set the chain loop by having the last command point to the hdc command
-    pRf->advCmd[2].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->advCmd[3];
-    // create the hdc command as copy of the first command which will be use in the chain loop
-    MAP_osal_memcpy(&pRf->advCmd[3],&pRf->advCmd[0],sizeof(bleOpCmd_t));
-    pRf->advCmd[3].rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pRf->advCmd[1];
-    // set the start time
-    pRf->advCmd[3].rfOpCmd.startTime = RAT_TICKS_IN_1_25MS;
-    SET_RFOP_TRIG_TYPE( pRf->advCmd[3].rfOpCmd.startTrig, TRIGTYPE_REL_PREV_CMD_START );
-    SET_RFOP_COND_RULE( pRf->advCmd[3].rfOpCmd.condition, CONDTYPE_RUN_TRUE_STOP_FALSE );
-  }
-  else // all other Adv Event Types
-#endif // ADV_CONN_CFG
-  {
-    // bring an end to the command chain
-    pRf->advCmd[2].rfOpCmd.pNextRfOp = NULL;
-  }
-#endif
   // save the absolute start time of the advertiser for post-processing
   // Note: The start time is advanced for primary channels, so we need the
   //       original advertisement event start time to keep the advertisement
   //       interval.
-#ifdef USE_RCL
   pAdvSet->advStartTime = pRf->advCmd.common.timing.absStartTime;
-#else
-  pAdvSet->advStartTime = pRf->advCmd[0].rfOpCmd.startTime;
-#endif
+
   // Update the default priority for the advertise set.
   pAdvSet->priority = qosDefaultPriorityAdvParameter;
 
-#ifdef USE_RCL
   /* Set device address */
   // only if address resolution is enabled
   if ( privInfo.addrResolution )
@@ -7012,7 +6213,7 @@ llStatus_t llSetupExtAdvLegacy( advSet_t *pAdvSet )
     pRf->advParam.filterPolicy = pAdvSet->pAdvParam->filterPolicy;
 
     // (Radio core using dynamic filter list)
-    if ( useDFL == TRUE )
+    if ( llUserConfig.useDFL == TRUE )
     {
       if (LL_DFL_Init( LL_DFL_GetDynamicFilterlist(), LL_DFL_GetRankTable() ) != USUCCESS)
       {
@@ -7090,108 +6291,6 @@ llStatus_t llSetupExtAdvLegacy( advSet_t *pAdvSet )
     pRf->advParam.acceptAllRpaConnectInd = FALSE;
   }
 
-#else
-  // set the advertiser's receive queue with one data entry
-  // Note: Technically not needed for non-connectable or scannable advertisers.
-  pRf->advParam.pRXQ = MAP_llSetupAdvDataEntryQueue();
-
-  // set the Adv RX queue configuration
-  pRf->advParam.rxCfg =
-    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-      RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-      RXQ_CFG_INCLUDE_PKT_LEN_BYTE  |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG)       ? RXQ_CFG_INCLUDE_CRC      : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG)      ? RXQ_CFG_APPEND_RSSI      : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG)    ? RXQ_CFG_APPEND_STATUS    : 0) |
-      ((llConfigTable.advPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0) );
-
-  // set the Adv configuration
-  CLR_ADV_CFG( pRf->advParam.advCfg );
-  SETVAR_ADV_CFG_FILTER_POLICY( pRf->advParam.advCfg, pAdvSet->pAdvParam->filterPolicy );
-  SETVAR_ADV_CFG_DEV_ADDR_TYPE( pRf->advParam.advCfg, pAdvSet->ownAddrType );
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  SETVAR_ADV_CFG_PEER_ADDR_TYPE( pRf->advParam.advCfg, pAdvSet->peerAddrType );
-#endif // ADV_CONN_CFG
-  SETVAR_ADV_CFG_STRICT_LEN_FILTER( pRf->advParam.advCfg, ADV_CFG_DISCARD_BAD_LEN_MSG );
-
-  // setup Adv and Scan Response lengths and pointers, if applicable
-  // Note: Assume there is no data or AL (use peer address). This will work for
-  //       both Directed (LDC and HDC) as well has when no data was defined
-  //       for non-directed advertising.
-  pRf->advParam.advLen       = 0;
-  pRf->advParam.scanRspLen   = 0;
-  pRf->advParam.pAdvData     = NULL;
-  pRf->advParam.pScanRspData = NULL;
-
-  // for Directed Adv, there is no AL table - use Peer address instead
-  pRf->advParam.pAcceptList   = (alEntry_t *)pAdvSet->peerAddr;
-
-  // setup data for non-directed advertising
-  if ( !(pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT) &&
-       !(pAdvSet->advEvtType == LL_ADV_CONNECTABLE_LDC_DIRECTED_EVT) )
-  {
-    // check if there's adv data
-    if ( pAdvSet->pAdvData )
-    {
-      pRf->advParam.advLen   = pAdvSet->pAdvData->dataLen;
-      pRf->advParam.pAdvData = pAdvSet->pAdvData->pData;
-    }
-
-    // check if there's scan response data
-    if ( pAdvSet->pScanRspData )
-    {
-      pRf->advParam.scanRspLen   = pAdvSet->pScanRspData->dataLen;
-      pRf->advParam.pScanRspData = pAdvSet->pScanRspData->pData;
-    }
-    pRf->advParam.pAcceptList = &alTable->pAlEntries[0];
-  }
-
-  // set a pointer to our device address
-  pRf->advParam.pDeviceAddr = pAdvSet->ownAddr;
-
-  // initialize the End Trigger and Time for advertising
-  // Note: This is not needed for non-Directed advertising, but it doesn't
-  //       hurt to leave this here as only Directed advertising is continuous
-  //       (i.e. command chain is in a loop). All other advertising ends when
-  //       the command chain ends, and there's no way a non-Directed advertiser
-  //       can take 1.28s to complete!
-  CLR_RFOP_ALT_TRIG_CMD( pRf->advParam.endTrig );
-  SET_RFOP_PAST_TRIG( pRf->advParam.endTrig );
-  SET_RFOP_TRIG_TYPE( pRf->advParam.endTrig, TRIGTYPE_REL_FIRST_CHAIN_CMD );
-  pRf->advParam.endTime = (pAdvSet->pEnable->duration == 0)?RAT_TICKS_IN_1_28S:
-                          (pAdvSet->pEnable->duration * RAT_TICKS_IN_10MS);
-
-  // only if address resolution is enabled
-  if ( privInfo.addrResolution )
-  {
-    // enable RPA Mode in Adv configuration
-    // Per Erratum #6984.
-    // ALT: Do not enable RPA Mode, and allow unresolved RPA if FP=ANY.
-    //SET_ADV_CFG_RPA_MODE( advParam.advCfg );
-
-    // enable Privacy Ignore in Adv Configuration
-    SET_ADV_CFG_PRIV_IGN_MODE( pRf->advParam.advCfg );
-
-    // clear the Autoflush Ignored Packet flag
-    pRf->advParam.rxCfg &= ~RXQ_CFG_AUTOFLUSH_IGNORED_PKT;
-  }
-
-  // enable the chSel bit in the advertisement ind if we support Algo #2
-  // Note: Only relevent for connectable advertisement packets.
-  // Note: There's a Vendor Specific command to change the Local Feature
-  //       Set, so just because the build includes this feature, this
-  //       does not mean our device supports it for this connection.
-  if ( deviceFeatureSet.featureSet[1] & (uint8)LL_FEATURE_CHAN_ALGO_2 )
-  {
-    SET_ADV_CFG_CHAN_SELECT( pRf->advParam.advCfg );
-  }
-  else // channel selection algorithm 1
-  {
-    CLR_ADV_CFG_CHAN_SELECT( pRf->advParam.advCfg );
-  }
-#endif
-
   // update the time consumed over the air
   nodePtr->timeConsume = LEGACY_ADV_MAX_TIME_CONSUME;
 
@@ -7226,11 +6325,8 @@ llStatus_t llGetNextOrPreviousExtScanChannelIndex( uint8 getNextOrPrevious )
   uint8 numChannels = BF(extScanChanMap,LL_SCN_ADV_MAP_CHAN_37,0) + BF(extScanChanMap,LL_SCN_ADV_MAP_CHAN_38,1) + BF(extScanChanMap,LL_SCN_ADV_MAP_CHAN_39,2);
 
   // Get the index of the current scan channel
-#ifdef USE_RCL
   uint8 indexCurrExtScanChan = (extScanCmd.channel - LL_ADV_BASE_CHAN);
-#else
-  uint8 indexCurrExtScanChan = (extScanCmd.chan - LL_ADV_BASE_CHAN);
-#endif
+
   // Invalid parameters
   if ((getNextOrPrevious != LL_GET_NEXT_SCAN_CHAN) &&
       (getNextOrPrevious != LL_GET_PREV_SCAN_CHAN))
@@ -7383,7 +6479,6 @@ uint8 llGetFirstExtScanChannelIndex( void )
  */
 llStatus_t llSetupExtScan( void )
 {
-#ifdef USE_RCL
   // init radio command
   extScanCmd = RCL_CmdScanner_DefaultRuntime();
   extScanCmd.common.timing.absStartTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS;
@@ -7464,175 +6559,6 @@ llStatus_t llSetupExtScan( void )
   extScanCmd.common.runtime.rclCallbackMask.value =  RCL_EventLastCmdDone.value |
                                                      RCL_EventCmdStarted.value  |
                                                      RCL_EventRxEntryAvail.value;
-#else
-  // init radio command
-  extScanCmd.rfOpCmd.cmdNum    = CMD_BLE5_SCANNER;
-  extScanCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  extScanCmd.rfOpCmd.pNextRfOp = NULL;
-  extScanCmd.rfOpCmd.startTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS;
-
-  // save the absolute start time of the scanner for post-processing
-  // Note: The start time has to be adjusted for AE packets because they cause
-  //       the CM0 to end when a secondary channel is followed.
-  extScanInfo->scanStartTime = extScanCmd.rfOpCmd.startTime;
-
-  // set start trigger
-  SET_RFOP_TRIG_TYPE( extScanCmd.rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
-  SET_RFOP_PAST_TRIG( extScanCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( extScanCmd.rfOpCmd.condition, CONDTYPE_NEVER_RUN_NEXT_CMD );
-
-  // set the channel number
-  extScanCmd.chan = llGetFirstExtScanChannelIndex();
-  if (extScanCmd.chan == LL_INVALID_SCAN_CHAN)
-  {
-    return LL_STATUS_ERROR_INVALID_PARAMS;
-  }
-  // enable BLE whitening
-  SET_WHITENING_BLE( extScanCmd.whitening );
-
-  // use common parameters and output
-  extScanCmd.pParams = (uint8 *)&extScanParam;
-  extScanCmd.pOutput = (uint8 *)&extScanOutput;
-
-  // set the Scan receive queue
-  extScanParam.pRXQ = MAP_llSetupScanDataEntryQueue();
-
-  // set Scan Rx queue configuration
-  extScanParam.rxCfg =
-    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-      RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-      RXQ_CFG_INCLUDE_PKT_LEN_BYTE  |
-      ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG)       ? RXQ_CFG_INCLUDE_CRC      : 0) |
-      ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG)      ? RXQ_CFG_APPEND_RSSI      : 0) |
-      ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG)    ? RXQ_CFG_APPEND_STATUS    : 0) |
-      ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0) );
-
-  // update the RxConfig if SCAN_OPTIMIZATION is enabled
-  MAP_llSetRxCfg();
-
-  // set Scan configuration
-  CLR_SCAN_CFG( extScanParam.scanCfg );
-  SETVAR_SCAN_CFG_FILTER_POLICY( extScanParam.scanCfg, extScanInfo->pScanParam->scanFilterPolicy );
-  SETVAR_SCAN_CFG_ACTIVE_SCAN( extScanParam.scanCfg, extScanInfo->pScanParam->extScanParam[extScanIndex].scanType );
-  SETVAR_SCAN_CFG_DEV_ADDR_TYPE( extScanParam.scanCfg, extScanInfo->ownAddrType );
-  // TODO: NEEDED?
-  //SETVAR_SCAN_CFG_STRICT_LEN_FILTER( extScanParam.scanCfg, SCAN_CFG_DISCARD_ILLEGAL_LEN );
-
-  // set backoff parameters
-  // Note: The Upper Limit is kept as a binary log.
-  extScanParam.backoffCount = 1;
-  SETVAR_SCAN_BACKOFF_CFG_UL( extScanParam.backoffParam, 0 );
-  SETVAR_SCAN_BACKOFF_CFG_LAST_SUCCCEEDED( extScanParam.backoffParam, 0 );
-  SETVAR_SCAN_BACKOFF_CFG_LAST_FAILED( extScanParam.backoffParam, 0 );
-
-  // set random state value
-  MAP_LL_ENC_GenerateTrueRandNum( (uint8 *)&extScanParam.randState, sizeof(uint16) );
-
-  // set a pointer to our device address
-  extScanParam.pDeviceAddr = extScanInfo->ownAddr;
-
-  // setup the accept list based on duplicate filtering and accept list policy
-  if ( (extScanInfo->pEnable->dupFiltering == LL_FILTER_REPORTS_ENABLE) ||
-       (extScanInfo->pEnable->dupFiltering == LL_FILTER_REPORTS_RESET_EACH_SCAN_PERIOD) )
-  {
-    // set extended filter configuration
-    SETVAR_EXT_SCAN_FILTER_CFG( extScanParam.extFltrCfg,
-                                EXT_SCAN_CFG_CHECK_ADI        |
-                                EXT_SCAN_CFG_AUTO_AL_IGNORE   |
-                                EXT_SCAN_CFG_AUTO_ADI_PROCESS );
-
-    // instruct radio to auto-set the AL ignore bit
-    // Note: This operation is only valid for Scan.
-    SET_SCAN_CFG_AUTO_SET_AL_IGNORE( extScanParam.scanCfg );
-
-    // check the Scan accept list policy
-    if ( (extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST) ||
-         ((privInfo.addrResolution) &&
-          (extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST_EXT)) )
-    {
-      // use standard accept list
-      extScanParam.pAcceptList = &alTable->pAlEntries[0];
-
-      // clear any ignore bits that might be set
-      MAP_AL_ClearIgnoreList( alTable );
-    }
-    else // LL_SCAN_AL_POLICY_ANY_ADV_PKTS
-    {
-      // use alternate accept list for duplicate filtering during scan
-      extScanParam.pAcceptList =  &alTableScan->pAlEntries[0];
-
-      // clear alternate accept list used for duplicate filtering
-      MAP_AL_Scan_Init( alTableScan );
-    }
-  }
-  else // duplicate filtering disabled
-  {
-    // set extended filter configuration
-    CLR_EXT_SCAN_FILTER_CFG( extScanParam.extFltrCfg );
-
-    // instruct radio to not auto-set the ignore bit
-    CLR_SCAN_CFG_AUTO_SET_AL_IGNORE( extScanParam.scanCfg );
-
-    // use standard accept list
-    extScanParam.pAcceptList = &alTable->pAlEntries[0];
-
-    // clear any ignore bits that might be set
-    MAP_AL_ClearIgnoreList( alTable );
-  }
-
-  // setup adiList
-  extScanParam.pAdiList = adiList;
-
-  // initialize adiList
-  for (uint8 i=0; i<AE_MAX_NUM_SID; i++) adiList[i] = EXT_SCAN_ADI_INIT;
-
-#ifdef QUAL_TEST
-  // maxWaitForAux is a feature that can be used to get the device to enter
-  // power saving mode if the wait time for the AUX channel is long.
-  // If maxWaitForAux is set to 0, the feature is disabled, and the radio
-  // will wait for the AUX packet whatever time is signaled in the AUX pointer.
-  // When maxWaitForAux is set to 0xFFFF, this time limit is set to 16.3 ms.
-  extScanParam.maxWaitForAux = 0;
-#else
-  // set max wait time for aux channel
-  extScanParam.maxWaitForAux = 0xFFFF;
-#endif
-
-  // initialize Timeout Trigger and Time based on Scan window
-  CLR_RFOP_ALT_TRIG_CMD( extScanParam.timeoutTrig );
-  SET_RFOP_PAST_TRIG( extScanParam.timeoutTrig );
-  SET_RFOP_TRIG_TYPE( extScanParam.timeoutTrig, TRIGTYPE_AT_ABS_TIME );
-  // update timeout when command is actually about to start
-  extScanParam.timeoutTime = extScanCmd.rfOpCmd.startTime +
-                             (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
-
-  // initialize the End Trigger and Time based on Scan Interval
-  CLR_RFOP_ALT_TRIG_CMD( extScanParam.endTrig );
-  SET_RFOP_PAST_TRIG( extScanParam.endTrig );
-  SET_RFOP_TRIG_TYPE( extScanParam.endTrig, TRIGTYPE_NEVER );
-  extScanParam.endTime = 0;
-
-  // clear unused fields
-  // Note: These are read-only once the command starts.
-  extScanParam.rxStartTime  = 0;
-  extScanParam.rxListenTime = 0;
-  extScanParam.chan         = 0;
-  extScanParam.phyMode      = 0;
-
-  // only if address resolution is enabled
-  // Note: RPA Mode is no longer needed for Scanner since an unresolved RPA
-  //       is accepted if the filter policy is ANY (i.e. if AL is not used).
-  //       In this case, the RPA is accepted by the PHY if it meets the usual
-  //       PHY AdvA filter checking, and rejected otherwise.
-  //if ( privInfo.addrResolution )
-  //{
-  //  // enable rpaMode in Scan configuration
-  //  SET_SCAN_CFG_RPA_MODE( extScanParam.scanCfg );
-  //}
-#endif
 
   // use default Tx Power
   extScanCmd.txPower = RfBleDpl_getTxPower(curTxPowerVal);
@@ -7658,12 +6584,7 @@ llStatus_t llSetupExtScan( void )
       break;
   }
 
-#ifdef USE_RCL
   extScanCmd.common.phyFeatures = phyMode;
-#else
-  extScanCmd.phyMode = phyMode;
-  extScanCmd.rangeDelay =  ( extScanCmd.phyMode == BLE5_1M_PHY ) ? LL_UNCODED_RANGE_DELAY_RAT_TICKS : LL_CODED_RANGE_DELAY_RAT_TICKS;
-#endif //USE_RCL
 
   return( LL_STATUS_SUCCESS );
 }
@@ -8162,23 +7083,15 @@ void llSetupExtData( advSet_t *pAdvSet )
 void llSetupExtInit( uint8 connId )
 {
   llConnState_t *connPtr = MAP_llDataGetConnPtr( connId );
-#ifdef USE_RCL
   uint8 ownAddrType = 0;
   uint8 peerAddrType = 0;
 
   // init radio command
   extInitCmd = RCL_CmdInitiator_DefaultRuntime();
   extInitCmd.common.timing.absStartTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS;
-#else
-  extInitCmd.rfOpCmd.cmdNum    = CMD_BLE5_INITIATOR;
-  extInitCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  extInitCmd.rfOpCmd.pNextRfOp = NULL;
-  extInitCmd.rfOpCmd.startTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS;
-#endif
   // save the absolute start time of the scanner for post-processing
   // Note: The start time has to be adjusted for AE packets because they cause
   //       the CM0 to end when a secondary channel is followed.
-#ifdef USE_RCL
   extInitInfo->initStartTime = extInitCmd.common.timing.absStartTime;
   // set start trigger
   extInitCmd.common.scheduling = RCL_Schedule_AbsTime;
@@ -8187,20 +7100,7 @@ void llSetupExtInit( uint8 connId )
   extInitCmd.acceptExtended = TRUE;
   // set the channel number
   extInitCmd.channel = LL_SCAN_ADV_CHAN_37;
-#else
-  extInitInfo->initStartTime = extInitCmd.rfOpCmd.startTime;
 
-  // set start trigger
-  SET_RFOP_TRIG_TYPE( extInitCmd.rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
-  SET_RFOP_PAST_TRIG( extInitCmd.rfOpCmd.startTrig );
-
-  // set the command condition
-  SET_RFOP_COND_RULE( extInitCmd.rfOpCmd.condition, CONDTYPE_NEVER_RUN_NEXT_CMD );
-
-  // set the channel number and enable BLE whitening
-  extInitCmd.chan = LL_SCAN_ADV_CHAN_37;
-  SET_WHITENING_BLE( extInitCmd.whitening );
-#endif
   uint8 phyMode;
   // set the primary PHY; check if there's more than one Scan primary PHY
   switch( extInitInfo->pCreateConn->initPhys )
@@ -8230,7 +7130,6 @@ void llSetupExtInit( uint8 connId )
   }
 
   // use common parameters and output
-#ifdef USE_RCL
   extInitCmd.ctx = &extInitParam;
   extInitCmd.stats = &extInitOutput;
   extInitParam = RCL_CtxScanInit_DefaultRuntime();
@@ -8281,103 +7180,6 @@ void llSetupExtInit( uint8 connId )
   // update timeout when command is actually about to start
   extInitCmd.common.timing.relGracefulStopTime = extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US;
   extInitCmd.common.phyFeatures = phyMode;
-#else
-  extInitCmd.pParams = (uint8 *)&extInitParam;
-  extInitCmd.pOutput = (uint8 *)&extInitOutput;
-
-  extInitCmd.phyMode = phyMode;
-  extInitCmd.rangeDelay =  ( extInitCmd.phyMode == BLE5_1M_PHY ) ? LL_UNCODED_RANGE_DELAY_RAT_TICKS : LL_CODED_RANGE_DELAY_RAT_TICKS;
-
-  // set the Init receive queue
-  // Note: Only need one entry to hold the Adv packet that causes the
-  //       AUX_CONNECT_REQ packet to be sent.
-  extInitParam.pRXQ = MAP_llSetupInitDataEntryQueue();
-
-  // set Init Rx queue configuration
-  extInitParam.rxCfg =
-    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-      RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-      RXQ_CFG_INCLUDE_PKT_LEN_BYTE  |
-      ((llConfigTable.initPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG)       ? RXQ_CFG_INCLUDE_CRC      : 0) |
-      ((llConfigTable.initPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG)      ? RXQ_CFG_APPEND_RSSI      : 0) |
-      ((llConfigTable.initPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG)    ? RXQ_CFG_APPEND_STATUS    : 0) |
-      ((llConfigTable.initPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0) );
-
-  // start by assuming nothing
-  CLR_INIT_CFG( extInitParam.initCfg );
-
-  // set accept list policy
-  SETVAR_INIT_CFG_FILTER_POLICY( extInitParam.initCfg,
-                                 extInitInfo->pCreateConn->initFilterPolicy );
-
-#ifndef LL_MANUAL_WINOFFSET
-  // set use of dynamic window offset
-  // Note: Normally, the window offset is managed dynamically so that precise
-  //       connection start times can be achieved (necessary for multiple
-  //       connnections). However, sometimes it is useful to force the window
-  //       offset to something specific for testing. This can be done by here
-  //       when the project is built with the above define.
-  // Note: This define should only be used for testing one connection and will
-  //       NOT work when multiple connections are attempted!
-  // Note: This define should NEVER be used for a ROM build!
-  // ROM WORKAROUND - FLASH ONLY BUILD
-  SETVAR_INIT_CFG_DYN_WINOFFSET( extInitParam.initCfg,
-                                 INIT_CFG_USE_DYN_WINOFFSET );
-#endif // !LL_MANUAL_WINOFFSET
-
-  // set own address type
-  // Note: May be changed based on Privacy.
-  // Note that the macro forces type to one bit, so ID address types okay.
-  SETVAR_INIT_CFG_DEV_ADDR_TYPE( extInitParam.initCfg,
-                                 extInitInfo->ownAddrType );
-
-  // set peer address type
-  // Note: May be changed based on Privacy.
-  // Note that the macro forces type to one bit, so ID address types okay.
-  if ( LL_IS_ADDR_TYPE_RPA(connPtr->peerInfo.peerAddrType) )
-  {
-    // set address type as Random.
-    // RPA address is sent over the air with type LL_DEV_ADDR_TYPE_RANDOM
-    SETVAR_INIT_CFG_PEER_ADDR_TYPE(extInitParam.initCfg, LL_DEV_ADDR_TYPE_RANDOM);
-  }
-  else
-  {
-    // set peer address type as provided
-    SETVAR_INIT_CFG_PEER_ADDR_TYPE( extInitParam.initCfg,
-                                    connPtr->peerInfo.peerAddrType );
-  }
-
-  // enable the chSel bit in the connection ind if we support Algo #2
-  // Note: There's a Vendor Specific command to change the Local Feature
-  //       Set, so just because the build includes this feature, this
-  //       does not mean our device supports it for this connection.
-  if ( deviceFeatureSet.featureSet[1] & (uint8)LL_FEATURE_CHAN_ALGO_2 )
-  {
-    SET_ADV_CFG_CHAN_SELECT( extInitParam.initCfg );
-  }
-  else // channel selection algorithm 1
-  {
-    CLR_ADV_CFG_CHAN_SELECT( extInitParam.initCfg );
-  }
-
-  // OPT: Optionally adhere to strict packet lengths per the specification.
-  //SETVAR_INIT_CFG_STRICT_LEN_FILTER( extInitParam.initCfg,
-  //                                   INIT_CFG_DISCARD_ILLEGAL_LEN);
-
-  // set backoff parameters
-  // Note: The Upper Limit is kept as a binary log.
-  extInitParam.backoffCount = 1;
-  SETVAR_SCAN_BACKOFF_CFG_UL( extInitParam.backoffParam, 0 );
-  SETVAR_SCAN_BACKOFF_CFG_LAST_SUCCCEEDED( extInitParam.backoffParam, 0 );
-  SETVAR_SCAN_BACKOFF_CFG_LAST_FAILED( extInitParam.backoffParam, 0 );
-
-  // set random state value
-  MAP_LL_ENC_GenerateTrueRandNum( (uint8 *)&extInitParam.randState, sizeof(uint16) );
-
-  // set the size of the CONNECT_IND LL_Data
-  extInitParam.connReqLen = LL_CONNECT_IND_LL_DATA_LEN;
-#endif
 
   // use default Tx Power
   extInitCmd.txPower = RfBleDpl_getTxPower(curTxPowerVal);
@@ -8387,7 +7189,6 @@ void llSetupExtInit( uint8 connId )
   // setup the AUX_CONNECT_REQ/CONNECT_IND data for all possible PHYs
   for ( uint8_t i=0,j=0; i<LL_PHY_NUMBER_OF_PHYS; i++ )
   {
-#ifdef USE_RCL
     connReqData[i].state = RCL_BufferStatePending;
     connReqData[i].length = LL_CONNECT_IND_PKT_LEN + 6;
     connReqData[i].numPad = 3;
@@ -8422,18 +7223,13 @@ void llSetupExtInit( uint8 connId )
     MAP_osal_memcpy( connReqData[i].ownAddr, extInitInfo->ownAddr, B_ADDR_LEN );
     // set peer address
     MAP_osal_memcpy( connReqData[i].peerAddr, extInitInfo->pCreateConn->peerAddr, B_ADDR_LEN );
-#endif
     // set the common fields
     connReqData[i].accessAddress = connPtr->accessAddr;
     connReqData[i].crcInit[0]    = connPtr->crcInit & 0xFF;
     connReqData[i].crcInit[1]    = (connPtr->crcInit >> 8) & 0xFF;
     connReqData[i].crcInit[2]    = (connPtr->crcInit >> 16) & 0xFF;
     connReqData[i].winSize       = LL_WINDOW_SIZE;
-#ifdef USE_RCL
     connReqData[i].winOffset     = connPtr->curParam.winOffset;
-#else
-    connReqData[i].winOffset     = LL_WINDOW_OFFSET;
-#endif
     connReqData[i].chanMap[0]    = connPtr->curChanMap.chanMap[0];
     connReqData[i].chanMap[1]    = connPtr->curChanMap.chanMap[1];
     connReqData[i].chanMap[2]    = connPtr->curChanMap.chanMap[2];
@@ -8462,9 +7258,24 @@ void llSetupExtInit( uint8 connId )
     }
   }
 
-#ifdef USE_RCL
-  /* Provide buffer holding CONNECT_IND */
-  RCL_TxBuffer_put(&extInitParam.txBuffers, (RCL_Buffer_TxBuffer *)&connReqData[extInitIndex]);
+
+  // Set Phy 2M Parameters so the RCL could use them in case the secondary phy is 2M.
+  extInitParam.connParams.ble2M.interval = connReqData[BLE5_2M_PHY].connInterval;
+  extInitParam.connParams.ble2M.latency  = connReqData[BLE5_2M_PHY].latency;
+  extInitParam.connParams.ble2M.timeout  = connReqData[BLE5_2M_PHY].timeout;
+
+  // Set Coded Phy Parameters so the RCL could use them in case the secondary phy is Coded.
+  extInitParam.connParams.bleCoded.interval = connReqData[BLE5_CODED_PHY].connInterval;
+  extInitParam.connParams.bleCoded.latency  = connReqData[BLE5_CODED_PHY].latency;
+  extInitParam.connParams.bleCoded.timeout  = connReqData[BLE5_CODED_PHY].timeout;
+
+  // The RCL struct does not contain 1M because 1M is inserted as default in the TX Buffer itself
+  // For AE, if secondary Phy is different, the RCL will change it to the correct Phy parameters
+  // from the struct above.
+
+  // Provide buffer holding CONNECT_IND / AUX_CONN_REQ
+  RCL_TxBuffer_put(&extInitParam.txBuffers, (RCL_Buffer_TxBuffer *)&connReqData[BLE5_1M_PHY]);
+
   // set accept list or peer address, depending on accept list policy
   if ( extInitInfo->pCreateConn->initFilterPolicy == LL_INIT_AL_POLICY_USE_ACCEPT_LIST )
   {
@@ -8521,65 +7332,7 @@ void llSetupExtInit( uint8 connId )
     extInitCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
                                                       RCL_EventRxEntryAvail.value;
   }
-#else
-  // set the pointer to the AUX_CONNECT_REQ/CONNECT_IND data
-  extInitParam.pConnReqData = (uint8 *)&connReqData[extInitIndex];
 
-  // set a pointer to our device address
-  extInitParam.pDeviceAddr = extInitInfo->ownAddr;
-
-  // set accept list or peer address, depending on accept list policy
-  if ( extInitInfo->pCreateConn->initFilterPolicy == LL_INIT_AL_POLICY_USE_PEER_ADDR )
-  {
-    // use peer address
-    // Note: The type conversion is obviously only to resolve the pointer type.
-    // ALT: Make pAcceptList a pointer to uint8.
-    extInitParam.pAcceptList = (alEntry_t *)connPtr->peerInfo.peerAddr;
-  }
-  else // LL_INIT_AL_POLICY_USE_ACCEPT_LIST
-  {
-    // use accept list
-    extInitParam.pAcceptList = &alTable->pAlEntries[0];
-  }
-
-  // Note: extInitParam.connectTime setup in call to llSetupConn.
-
-  // set max wait time for aux channel
-  extInitParam.maxWaitForAux = 0xFFFF;
-
-  // initialize Timeout Trigger and Time based on Scan window
-  CLR_RFOP_ALT_TRIG_CMD( extInitParam.timeoutTrig );
-  SET_RFOP_PAST_TRIG( extInitParam.timeoutTrig );
-  SET_RFOP_TRIG_TYPE( extInitParam.timeoutTrig, TRIGTYPE_AT_ABS_TIME );
-  // update timeout when command is actually about to start
-  extInitParam.timeoutTime = extInitCmd.rfOpCmd.startTime +
-                             (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US);
-
-  // initialize the End Trigger and Time based on Scan Interval
-  CLR_RFOP_ALT_TRIG_CMD( extInitParam.endTrig );
-  SET_RFOP_PAST_TRIG( extInitParam.endTrig );
-  SET_RFOP_TRIG_TYPE( extInitParam.endTrig, TRIGTYPE_NEVER );
-  extInitParam.endTime = 0;
-
-  // clear unused fields
-  // Note: These are read-only once the command starts.
-  extInitParam.rxStartTime  = 0;
-  extInitParam.rxListenTime = 0;
-  extInitParam.chan         = 0;
-
-  // only if address resolution is enabled
-  if ( privInfo.addrResolution )
-  {
-    // check if own address is a public identity address and IRK is valid
-    if ( (extInitInfo->ownAddrType == LL_DEV_ADDR_TYPE_PUBLIC_ID) &&
-         !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK ) )
-    {
-      // make sure own address type sent OTA is random type
-      // Note: Value of LL_DEV_ADDR_TYPE_RANDOM_ID ends up just being RANDOM.
-      SETVAR_INIT_CFG_DEV_ADDR_TYPE( extInitParam.initCfg, LL_DEV_ADDR_TYPE_RANDOM_ID );
-    }
-  }
-#endif
   return;
 }
 #endif // INIT_CFG
@@ -8989,8 +7742,7 @@ void llSendAdvSetTermEvent( advSet_t *pAdvSet,
 {
   // check if there's a registered callback and if not masked by the Host
   if (( MAP_llCheckCBack(LL_CBACK_ADV_SET_TERMINATED) ) &&
-     ( pBleEvtMask[LE_EVT_INDEX_EXTENDED_ADV_SET_TERIMINATED] &
-       LE_EVT_MASK_EXTENDED_ADV_SET_TERIMINATED ))
+     (  MAP_HCI_CheckEventMaskLe(LE_EVT_EXTENDED_ADV_SET_TERIMINATED_BIT)))
   {
     // malloc adv set terminated event
     aeAdvSetTerm_t *pAdvSetTerm = MAP_osal_mem_allocLimited( sizeof(aeAdvSetTerm_t) );
@@ -9350,136 +8102,10 @@ dataEntryQ_t *llSetupPeriodicScanDataEntryQueue( void )
 #endif
 #endif // USE_PERIODIC_SCAN
 
-#ifndef USE_RCL
+
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************
- * @fn          llAddExtAlAndSetIgnBit
- *
- * @brief       Check if adv is in Extended AL, if not add.
- *              Then check if the ignore bit is on and turn it off.
- *              We don't want to ignore the first occurrence of this Advertising.
- *              Enable the ExtAL ignore bit so that this adv is ignored on the
- *              next occurneces.
- *
- * input parameters
- *
- * @param extAdvRpt pointer to advertisement
- * @param ignoreBit Ignore bit that indicates whether the RxEntry should be
- *                  ignored or processed.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      updated ignore
- */
-uint8 llAddExtAlAndSetIgnBit(aeExtAdvRptEvt_t *extAdvRpt, uint8 ignoreBit)
-{
-  uint8 extAlIdx;
-  uint8 newIgnoreBit = ignoreBit;
-  if ( (extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST) ||
-       (extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST_EXT) )
-  {
-    // Find in Ext AL
-    extAlIdx = MAP_LL_PRIV_FindExtALEntry( GET_AL_TABLE_POINTER(extScanParam.pAcceptList),
-                                                extAdvRpt->addr,
-                                                extAdvRpt->addrType);
-
-    if (extAlIdx == INVALID_EXT_ACCEPT_LIST_INDEX)
-    {
-      // not found in Extended AL, add it
-      extAlIdx = MAP_LL_PRIV_AddExtALEntry(GET_AL_TABLE_POINTER(extScanParam.pAcceptList),
-                                          extAdvRpt->addr,
-                                          extAdvRpt->addrType,
-                                          PRIV_USE_AL_ENTRY);
-      // If added successfully to EXT AL
-      if (extAlIdx)
-      {
-        // Check if Ignore bit is on
-        if (newIgnoreBit)
-        {
-          // This is the first time we see this RPA, and we are able to resolve it.
-          // so do not ignore it.
-          newIgnoreBit = 0;
-        }
-
-        // If duplicate filtering is in use
-        if ( (extScanInfo->pEnable->dupFiltering == LL_FILTER_REPORTS_ENABLE) ||
-            (extScanInfo->pEnable->dupFiltering == LL_FILTER_REPORTS_RESET_EACH_SCAN_PERIOD) )
-        {
-          // set the AL ignore bit.
-          SET_AL_ENTRY_IGNORE(GET_AL_TABLE_POINTER(extScanParam.pAcceptList)->pAlEntries[extAlIdx].alFlags);
-        }
-      }
-    }
-  }
-  return newIgnoreBit;
-}
-
-/*******************************************************************************
- * @fn          llFlushIgnoredRxEntry
- *
- * @brief       if ignoreBit is 1 flush Rx Entry.
- *
- * input parameters
- *
- * @param ignoreBit Ignore bit that indicates whether the RxEntry should be
- *                  ignored or processed.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      TRUE if Entry is flushed. False otherwise
- */
-uint8 llFlushIgnoredRxEntry(uint8 ignoreBit)
-{
-  // check the ignored bit
-  if (ignoreBit)
-  {
-    // this entry should be ignored, so flush
-    MAP_RFHAL_NextDataEntryDone(extScanParam.pRXQ);
-    return TRUE;
-  }
-  return FALSE;
-}
-
-/*******************************************************************************
- * @fn          llSetRxCfg
- *
- * @brief       Set the Rx Config
- *              This function is used to set the AutoFlush bit off.
- *              As part of the Scan Optimization
- *
- * input parameters
- *
- * @param None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetRxCfg(void)
-{
-  // set Scan Rx queue configuration
-  extScanParam.rxCfg =
-      (RXQ_CFG_NO_AUTOFLUSH_IGNORED_PKT |
-       RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-       RXQ_CFG_AUTOFLUSH_EMPTY_PKT |
-       RXQ_CFG_INCLUDE_PKT_LEN_BYTE |
-       ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_CRC_FLAG) ? RXQ_CFG_INCLUDE_CRC : 0) |
-       ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_RSSI_FLAG) ? RXQ_CFG_APPEND_RSSI : 0) |
-       ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_STATUS_FLAG) ? RXQ_CFG_APPEND_STATUS : 0) |
-       ((llConfigTable.scanPktSuffixPtr->suffixSel & SUFFIX_TIMESTAMP_FLAG) ? RXQ_CFG_APPEND_TIMESTAMP : 0));
-}
-#endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-#endif //# !USE_RCL
-
-#if defined(USE_RCL) && defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-/*******************************************************************************
- * @fn          llRclPrepareAndUpdateAlEntry
+ * @fn          llPrepareAndUpdateAlEntry
  *
  * @brief       This function will prepare a new AL entry and will call the RCL
  *              to update the relevant AL
@@ -9491,7 +8117,7 @@ void llSetRxCfg(void)
  *
  * @return      None.
  */
-void llRclPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint8 *pAddr, uint8 alIndex)
+void llPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint8 *pAddr, uint8 alIndex)
 {
   alEntry_t newAlEntry;
 
@@ -9509,6 +8135,6 @@ void llRclPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint
                              (RCL_FilterList *)(filterList),
                              alIndex );
 }
-#endif //defined(USE_RCL) && defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
+#endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************
  */

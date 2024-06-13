@@ -339,16 +339,6 @@ extern "C"
  * MACROS
  */
 
- // Update the connection handle (Mandatory for CC33xx with power management enabled. Optional for other devices)
- // This is done in order to distinguished between CMD to ACL packets when received under autonomous UART mode
- // Note this change is applied regardless of the current autonomous UART state as it changes dynamically
- #ifndef CONN_HANDLE_HCI_MASK
- #define CONN_HANDLE_HCI_MASK 0
- #endif
-
- #define CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle)    (uint16_t)((connHandle) & ~CONN_HANDLE_HCI_MASK)
- #define CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle)    (uint16_t)((connHandle) | CONN_HANDLE_HCI_MASK)
-
 /*
  * CONSTANTS
  */

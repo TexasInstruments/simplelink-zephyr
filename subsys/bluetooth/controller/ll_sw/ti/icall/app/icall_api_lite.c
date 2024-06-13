@@ -22,9 +22,6 @@
 #include "gatt.h"
 #include "ble_dispatch.h"
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#endif
 #ifndef CC23X0
 #include "trng_api.h"
 #endif
@@ -39,15 +36,6 @@
 pfnBMAlloc_t pfnBMAlloc = NULL;
 pfnBMFree_t  pfnBMFree  = NULL;
 
-#ifndef USE_RCL // no error callback in rcl open
-// RF Driver error callback
-void rfErrCb(RF_Handle h, RF_CmdHandle ch, RF_EventMask e)
-{
-  HAL_ASSERT( HAL_ASSERT_CAUSE_RF_DRIVER_ERROR );
-}
-
-RF_Callback pRfErrCb = &rfErrCb;
-#endif
 uint32 lastAppOpcodeIdxSent = 0xFFFFFFFF;
 
 #ifndef STACK_LIBRARY

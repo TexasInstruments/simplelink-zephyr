@@ -116,12 +116,6 @@
  */
 #define st(x)      do { x } while (__LINE__ == -1)
 
-/*
- * This macro is used to determine the number of elements in an array of complex type
- */
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE( _array ) (sizeof(_array) / sizeof(_array)[0])
-#endif /* ifndef ARRAY_SIZE */
 /**************************************************************************************************
  */
 #endif

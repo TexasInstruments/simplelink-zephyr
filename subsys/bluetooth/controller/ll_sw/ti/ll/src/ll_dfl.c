@@ -72,10 +72,10 @@ uint8 LL_DFL_GetDynamicFLSize( dynamicFL_t *dynamicFL )
 */
 void LL_DFL_SetDynamicFLSize( dynamicFL_t *dynamicFL, uint8 size )
 {
-    // Sanity Check
-    LL_ASSERT( dynamicFL != ((void *)0)); // (stands for NULL)
-
-    (void)MAP_osal_memcpy(&size, &dynamicFL->numEntries, 1);
+    if( dynamicFL != NULL )
+    {
+        dynamicFL->numEntries = size;
+    }
 }
 
 /*******************************************************************************

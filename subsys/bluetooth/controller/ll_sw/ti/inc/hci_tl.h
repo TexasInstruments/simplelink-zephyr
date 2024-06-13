@@ -384,6 +384,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_GET_RX_STATS                                0xFC31    //!< opcode of @ref HCI_EXT_GetRxStatisticsCmd
 #define HCI_EXT_GET_TX_STATS                                0xFC32    //!< opcode of @ref HCI_EXT_GetTxStatisticsCmd
 #define HCI_EXT_GET_COEX_STATS                              0xFC33    //!< opcode of @ref HCI_EXT_GetCoexStatisticsCmd
+#define HCI_EXT_HOST_TO_CONTROLLER                          0xFC34    //!< opcode of @ref HCI_EXT_HostToControllerCmd
 
 #define HCI_EXT_LL_TEST_MODE                                0xFC70    //!< opcode of @ref HCI_EXT_LLTestModeCmd
 
@@ -450,9 +451,6 @@ extern uint8 hciSmpTaskID;
 #define HCI_BLE_CONNECTIONLESS_IQ_REPORT_EVENT            0x15      //!< CTE sample connectionless report
 #define HCI_BLE_CONNECTION_IQ_REPORT_EVENT                0x16      //!< CTE sample connection report
 #define HCI_BLE_CTE_REQUEST_FAILED_EVENT                  0x17      //!< CTE sample failed
-
-#define HCI_BLE_BLE_LOG_STRINGS_MAX 0x17
-extern char *BLEEventCode_BleLogStrings[];
 
 // VS Meta Event Codes - Texas Instruments Inc specific!
 #define HCI_BLE_SCAN_REQ_REPORT_EVENT                     0x80      //!< event of type @ref hciEvt_BLEScanReqReport_t

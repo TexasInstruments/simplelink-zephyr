@@ -13,7 +13,6 @@ zephyr_include_directories(
   rom
   hal
   hal/ti
-  hci/inc
 )
 
 zephyr_library_sources(

@@ -3,7 +3,7 @@
  @file  hci_tl.c
 
  @brief This file includes implementation for HCI task, event handler,
-        HCI Command, Data, and Event procoessing and sending, for the
+        HCI Command, Data, and Event processing and sending, for the
         BLE Transport Layer.
 
  Group: WCS, BTS
@@ -23,6 +23,7 @@
 #include "hci_event.h"
 #include "hci_tl.h"
 #include "osal_bufmgr.h"
+#include "map_direct.h"
 
 #ifndef ICALL_LITE
 #if !defined(HCI_TL_NONE)
@@ -534,10 +535,7 @@ void HCI_Init( uint8 taskID )
   hciSmpTaskID   = 0;
 
   // reset the Bluetooth and the BLE event mask bits
-  hciInitEventMasks();
-
-  // set again here to avoid patch. Updated LE_EVT_MASK_BYTE2 to include CTE related events.
-  pBleEvtMask[2] = LE_EVT_MASK_BYTE2;
+  MAP_HCI_InitEventMasks();
 
   // disable PTM runtime flag
   hciPTMenabled = FALSE;

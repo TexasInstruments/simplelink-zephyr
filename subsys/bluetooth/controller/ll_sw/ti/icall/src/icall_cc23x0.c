@@ -19,16 +19,15 @@
 #include <stdint.h>
 
 #include <ti/drivers/Power.h>
+#ifdef DeviceFamily_CC27XX
+#include <ti/drivers/power/PowerCC27XX.h>
+#else
 #include <ti/drivers/power/PowerCC23X0.h>
-
+#endif
 #ifdef __IAR_SYSTEMS_ICC__
 #include <intrinsics.h>
 #endif
 
-/* temporary until next kernel define it in the power header file*/
-#ifndef CC23X0
-extern bool PowerCC23X0_isStableXOSC_HF(void);
-#endif
 /**
  * @internal Flag offset where dependencies starts.
  * Note that the value may change if ICallCC26xxDefs.h changes.
@@ -295,9 +294,6 @@ ICallPlatform_pwrRegisterNotify(ICall_PwrRegisterNotifyArgs *args)
 ICall_Errno
 ICallPlatform_pwrIsStableXOSCHF(ICall_GetBoolArgs* args)
 {
-#ifndef CC23X0
-  args->value = PowerCC23X0_isStableXOSC_HF();
-#endif
   return ICALL_ERRNO_SUCCESS;
 }
 
@@ -305,9 +301,6 @@ ICallPlatform_pwrIsStableXOSCHF(ICall_GetBoolArgs* args)
 ICall_Errno
 ICallPlatform_pwrSwitchXOSCHF(ICall_FuncArgsHdr* args)
 {
-#ifndef CC23X0
-  PowerCC23X0_switchXOSC_HF();
-#endif
   return ICALL_ERRNO_SUCCESS;
 }
 
@@ -323,11 +316,5 @@ ICallPlatform_pwrGetTransitionState(ICall_PwrGetTransitionStateArgs *args)
 ICall_Errno
 ICallPlatform_pwrGetXOSCStartupTime(ICall_PwrGetXOSCStartupTimeArgs * args)
 {
-  /*??????????????
-   * #ifdef CC23X0 ??????????
-   * */
-#ifndef CC23X0
-  args->value = PowerCC23X0_getXoscStartupTime(args->timeUntilWakeupInMs);
-#endif
   return ICALL_ERRNO_SUCCESS;
 }

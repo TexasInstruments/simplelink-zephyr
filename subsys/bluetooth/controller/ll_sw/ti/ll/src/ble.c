@@ -21,14 +21,8 @@
 
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#else
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#include "rf_hal.h"
-#endif
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
 #include "ble.h"
@@ -72,15 +66,11 @@
  * GLOBAL VARIABLES
  */
 
-#ifndef USE_RCL
-extern RF_Handle rfHandle;
-#endif
 //
 // Initiator
 //
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-#ifdef USE_RCL
 struct
 {
   List_Elem            __elem__;
@@ -90,30 +80,17 @@ struct
   uint16_t             tailIndex;   ///< Number of bytes written
   union
   {
-    uint8  data[ LL_PKT_HDR_LEN + MAX_BLE_ADV_PKT_SIZE + RCL_BUFFER_RX_HEADER_ENTRY_SIZE + SUFFIX_MAX_SIZE ];
+    /* When using AE, the initiator will receive 3 packets, so the buffer need
+       to contain all of them. it's possible to clean the buffer after receiving each packet,
+       but it's not recommended because the RCL command is still active. */
+    uint8  data[ MAX_EXT_ADV_PKT_SIZE + AUX_CONN_RSP_PKT_SIZE + MAX_BLE_ADV_PKT_SIZE +
+                 3 * (LL_PKT_HDR_LEN + RCL_BUFFER_RX_HEADER_ENTRY_SIZE + SUFFIX_MAX_SIZE) ];
     uint32 reserved;
   };
 } initDataEntry;
 
 // Init Data finished buffers
 RCL_MultiBuffer *initDataQueue = NULL;
-
-#else
-// Initiator Data Entry
-struct
-{
-  dataEntry_t entry;
-  union
-  {
-    uint8  data[ LL_PKT_HDR_LEN + MAX_BLE_ADV_PKT_SIZE + SUFFIX_MAX_SIZE ];
-    uint32 reserved;
-  };
-} initDataEntry;
-
-// Init Data Queue
-dataQ_t       initDataQueue;
-
-#endif
 
 connReqData_t connReqData[LL_PHY_NUMBER_OF_PHYS];
 #endif // INIT_CFG
@@ -124,37 +101,20 @@ connReqData_t connReqData[LL_PHY_NUMBER_OF_PHYS];
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 // Connection Command and Parameters
-#ifdef USE_RCL
 RCL_CmdBle5Connection *linkCmd;
 RCL_CtxConnection     *linkParam;
-#else
-ble5OpCmd_t *linkCmd;
-linkParam_t *linkParam;
-#endif
 #endif // ADV_CONN_CFG | INIT_CFG
 
 //
 // Connection Data
 //
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-#ifdef USE_RCL
 // Connection Receive Queue
 rxDataQ_t rxDataQ = {0};
 txDataQ_t *txDataQ;
 // Connection Output
 RCL_StatsConnection connOutput;
 
-#else
-// Connection Receive Queue
-dataQ_t rxDataQ;
-dataQ_t *txDataQ;
-
-// Connection Data Entry Ring Buffer using Pointer Entries
-dataEntryPtr_t rxRingBuf[NUM_RX_DATA_ENTRIES];
-
-// Connection Output
-connOut_t connOutput;
-#endif
 #endif // ADV_CONN_CFG | INIT_CFG
 
 //
@@ -162,7 +122,6 @@ connOut_t connOutput;
 //
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-#ifdef USE_RCL
 struct
 {
   List_Elem            __elem__;
@@ -179,21 +138,6 @@ struct
 // Scan Data finished buffers
 List_List     scanDataQueue;
 
-#else
-// Static Data Entries
-struct
-{
-  dataEntry_t entry;
-  union
-  {
-    uint8  data[ LL_PKT_HDR_LEN + MAX_BLE_ADV_PKT_SIZE + SUFFIX_MAX_SIZE ];
-    uint32 reserved;
-  };
-} scanDataEntry[ NUM_RX_SCAN_ENTRIES ];
-
-// Scan Data Queue
-dataQ_t       scanDataQueue;
-#endif
 #endif // SCAN_CFG
 
 //
@@ -201,7 +145,6 @@ dataQ_t       scanDataQueue;
 //
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-#ifdef USE_RCL
 typedef struct
 {
   List_Elem            __elem__;
@@ -219,185 +162,17 @@ typedef struct
 advDataEntry_t advDataEntry[RCL_NUM_ADV_RX];
 RCL_MultiBuffer *pAdvDataEntry = NULL;
 
-#else
-// Adv Data Entry
-struct
-{
-  dataEntry_t entry;
-  union
-  {
-    uint8  data[ LL_PKT_HDR_LEN + MAX_BLE_CONNECT_IND_SIZE + SUFFIX_MAX_SIZE ];
-    uint32 reserved;
-  };
-} advDataEntry;
-
-// Adv Data Queue
-dataQ_t advDataQueue;
-
-// Constants
-const uint8 advChan[] = { 37, 38, 39 };
-
-const uint16 advEvt2Cmd[] = { CMD_BLE_ADV,
-                              CMD_BLE_ADV_DIR,               // HDC Directed
-                              CMD_BLE_ADV_SCAN,
-                              CMD_BLE_ADV_NC,
-                              CMD_BLE_ADV_DIR };             // LDC Directed
-#endif
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 
 //
 // Direct Test Mode
 //
-#ifdef USE_RCL
 // DTM Command, Parameters and Output
 RCL_CmdBle5DtmTx      txDtmTestCmd;
 RCL_CmdBle5GenericRx  rxTestCmd;
 RCL_CtxGenericRx      rxTestParam;
 RCL_StatsGenericRx    rxTestOut;
 RCL_CmdBle5TxTest     txTestCmd;
-
-#else
-
-// DTM Command, Parameters, and Output
-ble5OpCmd_t   trxTestCmd;
-txTestParam_t txTestParam;
-txOut_t       txTestOut;
-rxTestParam_t rxTestParam;
-rxOut_t       rxTestOut;
-
-// Modem Tests (TELECO)
-rfOpCmd_TxTest_t txModemTestCmd;
-rfOpCmd_RxTest_t rxModemTestCmd;
-// RX command for sdaa module
-rfOpCmd_RxTest_t sdaaRxWindowCmd;
-rfOpCmd_freqSynthCtrl_t sdaaFsRfCmd;
-#endif
-
-#ifndef USE_RCL
-/*
-** RF Hardware Abstraction Layer Application Programming Interface
-*/
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llCreateRxBuffer
- *
- * @brief       This routine is used to create a dynamic data entry pointer
- *              buffer based on the current connEffectiveMaxRxOctets. If there
- *              isn't enough heap, the data entry pointer is left NULL.
- *
- *              Note: While it is assumed the data entry pointer is NULL, this
- *                    routine will simply return if it is not.
- *
- * input parameters
- *
- * @param       connPtr    - Pointer to the current connection.
- * @param       pDataEntry - Pointer to data entry.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to the Rx Data Entry Queue.
- */
-void llCreateRxBuffer( llConnState_t *connPtr,
-                       dataEntry_t   *pDataEntry )
-{
-  // make sure the pointer really is NULL
-  // Note: This is a sanity check. The call should not be made if != NULL.
-  if ( ((dataEntryPtr_t *)pDataEntry)->pData == NULL )
-  {
-    uint16 dataLength;
-
-    dataLength = connPtr->lenInfo.connEffectiveMaxRxOctets +
-                 LL_PKT_MIC_LEN                            +
-                 llConfigTable.rxPktSuffixPtr->suffixSize;
-
-    // replace buffer
-    // Note: Two bytes for header are excluded as they will be covered
-    //       by additional five bytes of transport layer.
-    // ALT: Use a general purpose way to decide the packet size.
-    ((dataEntryPtr_t *)pDataEntry)->pData = MAP_LL_RX_bm_alloc( dataLength );
-
-    // check if we're out of memory
-    if ( ((dataEntryPtr_t *)pDataEntry)->pData != NULL )
-    {
-      // make room for the two byte packet header
-      // Note: These two bytes will overlap the five byte Transport Layer
-      //       header, which will overwrite them.
-      ((dataEntryPtr_t *)pDataEntry)->pData -= LL_PKT_HDR_LEN;
-
-      // fill in length
-      // Note: Even though the two bytes for the header are covered by the extra
-      //       bytes in the HCI packet allocated, the radio only gets the length
-      //       of the payload+MIC+RSSI+Timestamp, which would be two bytes short.
-      //       So the header size needs to be added to the entry length.
-      pDataEntry->length = dataLength + LL_PKT_HDR_LEN;
-
-      // make Rx entry available to CM0
-      pDataEntry->status = DATASTAT_PENDING;
-    }
-    else // out of heap
-    {
-      // clear the length so the radio doesn't think the buffer is valid
-      // Note: Not clear if radio checks NULL pointer, so set length.
-      // Note: Need to periodically check the heap to see if memory is
-      //       available. Could do this during post-processing.
-      pDataEntry->length = 0;
-    }
-  }
-
-  return;
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llCheckRxBuffers
- *
- * @brief       This routine is used to check to see if any Rx buffers are
- *              missing, and if so, to replace them. This can happen when
- *              heap is unavailable after a received packet is processed.
- *
- * input parameters
- *
- * @param       connPtr - Pointer to connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llCheckRxBuffers( llConnState_t *connPtr )
-{
-  dataEntry_t   *pStart = ((dataEntryQ_t *)connPtr->pRxDataEntryQ)->pCurEntry;
-  dataEntry_t   *pNext  = pStart;
-
-  // find any missing buffers, and reallocate based on current effective Rx size
-  // Note: The CM0 can update pCurEntry, so pEnd is used to figure out where we
-  //       end checking the circular ring buffer.
-  do
-  {
-    // check if the buffer is not in use
-    if ( (pNext->length == 0) || (((dataEntryPtr_t *)pNext)->pData == NULL) )
-    {
-      MAP_llCreateRxBuffer( connPtr,
-                            pNext );
-    }
-
-    // on to next buffer in ring
-    pNext = pNext->pNextEntry;
-
-    // check if we're back to where we started
-  } while ( pNext != pStart);
-
-  return;
-}
-#endif // ADV_CONN_CFG | INIT_CFG
-
-#endif // USE_RCL
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -425,7 +200,6 @@ void llCheckRxBuffers( llConnState_t *connPtr )
  */
 void llReplaceRxBuffers( llConnState_t *connPtr )
 {
-#ifdef USE_RCL
   uint8 i;
   uint16 length = sizeof(RCL_MultiBuffer) + sizeof(RCL_Buffer_DataEntry) +
                   RCL_BUFFER_MAX_HEADER_PAD_BYTES + SUFFIX_MAX_SIZE +
@@ -466,358 +240,10 @@ void llReplaceRxBuffers( llConnState_t *connPtr )
   }
 
   llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-#else // !USE_RCL
-  dataEntry_t *pStart;
-  dataEntry_t *pNext;
 
-  // get current pointer to ring buffer
-  pStart = ((dataEntryQ_t *)connPtr->pRxDataEntryQ)->pCurEntry;
-
-  // check the shared rx buffers size
-  if (pStart->length >= (connPtr->lenInfo.connEffectiveMaxRxOctets +
-                        LL_PKT_MIC_LEN + LL_PKT_HDR_LEN            +
-                        llConfigTable.rxPktSuffixPtr->suffixSize))
-  {
-    // No need to increase the shared rx buffer
-    return;
-  }
-  // disconnect the ring buffer to prevent CM0 processing
-  ((dataEntryQ_t *)connPtr->pRxDataEntryQ)->pCurEntry = NULL;
-
-  // point to current entry
-  pNext  = pStart;
-
-  // mark all unused entries with length zero as fast as possible
-  // Note: The CM0 can update pCurEntry, so pEnd is used to figure out where we
-  //       end checking the circular ring buffer.
-  do
-  {
-    // check if the buffer is not in use
-    if ( ((dataEntryPtr_t *)pNext)->pData != NULL )
-    {
-      // free the buffer
-      MAP_osal_bm_free( (((dataEntryPtr_t *)pNext)->pData ) );
-
-      // clear pointer
-      ((dataEntryPtr_t *)pNext)->pData = NULL;
-
-      // set the length to zero
-      pNext->length = 0;
-    }
-
-    // on to next buffer in ring
-    pNext = pNext->pNextEntry;
-
-    // check if we're back to where we started
-  } while ( pNext != pStart);
-
-  // restore current pointer to ring buffer
-  ((dataEntryQ_t *)connPtr->pRxDataEntryQ)->pCurEntry = pStart;
-
-  // repopulate the Rx buffers
-  MAP_llCheckRxBuffers( connPtr );
-#endif // USE_RCL
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
-
-#ifndef USE_RCL
-/*******************************************************************************
- * @fn          llPatchCM0
- *
- * @brief       This call is used to patch CM0.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llPatchCM0( void )
-{
-  // check if there is a valid CM0 patch
-  if ( llConfigTable.patchCM0Ptr != NULL )
-  {
-    // there is, so execute to patch the CM0 FW
-    ((patchCM0_t *)llConfigTable.patchCM0Ptr)();
-  }
-
-  return;
-}
-
-/*******************************************************************************
- * @fn          llSetupRATChanCompare
- *
- * @brief       This call is used to setup a RAT channel compare that will
- *              generate a HW interrupt.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetupRATChanCompare( uint8 ratChan, uint32 compareTime )
-{
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-
-  // setup immediate command and run as a radio operation
-  // Note: This is needed as the RF driver doesn't guarantee execution when
-  //       the CM0 is powered off.
-  rfOpImmedCmd_RatChanComp_t immedCmd_RatChanCmp;
-  rfOpImmedCmd_ModRatChan_t  immedCmd_ArmRatChan;
-  rfOpCmd_runImmedCmd_t      rfRadioOpCmd;
-
-  immedCmd_RatChanCmp.cmdNum   = CMD_SET_RAT_COMPARE;
-  immedCmd_RatChanCmp.ratChan  = ratChan;
-  immedCmd_RatChanCmp.reserved = 0;
-  immedCmd_RatChanCmp.compTime = compareTime;
-  //
-  rfRadioOpCmd.rfOpCmd.cmdNum    = CMD_RUN_IMMEDIATE_COMMAND;
-  rfRadioOpCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  rfRadioOpCmd.rfOpCmd.pNextRfOp = NULL;
-  rfRadioOpCmd.rfOpCmd.startTime = 0;
-  rfRadioOpCmd.rfOpCmd.startTrig = TRIGTYPE_NOW;
-  rfRadioOpCmd.rfOpCmd.condition = CONDTYPE_NEVER_RUN_NEXT_CMD;
-  rfRadioOpCmd.reserved          = 0;
-  rfRadioOpCmd.cmdVal            = (uint32)&immedCmd_RatChanCmp;
-  rfRadioOpCmd.cmdStatVal        = 0;
-
-#ifdef RF_SINGLEMODE
-  //rfEvent = RF_runCmd( rfHandle,
-  (void)RF_runCmd( rfHandle,
-                   (RF_Op *)&rfRadioOpCmd,
-                   RF_PriorityHighest,
-                   NULL,
-                   0 );
-#else // !RF_SINGLEMODE
-  (void)RF_runScheduleCmd( rfHandle,
-                           (RF_Op *)&rfRadioOpCmd,
-                           &cmdParams,
-                           NULL,
-                           0 );
-#endif // RF_SINGLEMODE
-
-  // TEMP: RF command appears to return zero as status, before updating status.
-  {
-    volatile uint16 status;
-
-    do
-    {
-      status = rfRadioOpCmd.rfOpCmd.status;
-    } while (status == 0);
-  }
-
-  if ( (rfRadioOpCmd.rfOpCmd.status != BLESTAT_DONE_OK) &&
-       (rfRadioOpCmd.rfOpCmd.status != RFSTAT_DONE_OK) )
-  {
-    LL_ASSERT( FALSE );
-
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_RF_INIT_ERROR );
-  }
-
-  immedCmd_ArmRatChan.cmdNum   = CMD_ARM_RAT_CHANNEL;
-  immedCmd_ArmRatChan.ratChan  = ratChan;
-  //
-  rfRadioOpCmd.rfOpCmd.status = RFSTAT_IDLE;
-  rfRadioOpCmd.cmdVal         = (uint32)&immedCmd_ArmRatChan;
-
-#ifdef RF_SINGLEMODE
-  //rfEvent = RF_runCmd( rfHandle,
-  (void)RF_runCmd( rfHandle,
-                   (RF_Op *)&rfRadioOpCmd,
-                   RF_PriorityHighest,
-                   NULL,
-                   0 );
-#else // !RF_SINGLEMODE
-  (void)RF_runScheduleCmd( rfHandle,
-                           (RF_Op *)&rfRadioOpCmd,
-                           &cmdParams,
-                           NULL,
-                           0 );
-#endif // RF_SINGLEMODE
-
-  {
-    volatile uint16 status;
-
-    do
-    {
-      status = rfRadioOpCmd.rfOpCmd.status;
-    } while (status == 0);
-  }
-
-  if ( (rfRadioOpCmd.rfOpCmd.status != BLESTAT_DONE_OK) &&
-       (rfRadioOpCmd.rfOpCmd.status != RFSTAT_DONE_OK) )
-  {
-    LL_ASSERT( FALSE );
-
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_RF_INIT_ERROR );
-  }
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llRatChanCBack_A Callback
- *
- * @brief       This callback is used to carry out the processing for the HW
- *              interrupt that corresponds to an allocated RAT channel.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRatChanCBack_A( void )
-{
-  // radio start time
-  switch( llState )
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG | ADV_CONN_CFG))
-    case LL_STATE_CONN_CENTRAL:
-    case LL_STATE_CONN_PERIPHERAL:
-      switch ( llConns.llConnection[llConns.currentConn].connId )
-      {
-        case 0:
-          HAL_GPIO_SET( HAL_GPIO_1 );
-          break;
-
-        case 1:
-          HAL_GPIO_SET( HAL_GPIO_2 );
-          break;
-
-        case 2:
-          HAL_GPIO_SET( HAL_GPIO_3 );
-          break;
-
-        case 3:
-          HAL_GPIO_SET( HAL_GPIO_4 );
-          break;
-
-        case 4:
-          HAL_GPIO_SET( HAL_GPIO_5 );
-          break;
-
-        case 5:
-          HAL_GPIO_SET( HAL_GPIO_6 );
-          break;
-
-        case 6:
-          HAL_GPIO_SET( HAL_GPIO_7 );
-          break;
-
-        case 7:
-          HAL_GPIO_SET( HAL_GPIO_8 );
-          break;
-
-        default:
-          // only using eight GPIOs
-          break;
-      }
-      break;
-#endif // INIT_CFG | ADV_CONN_CFG
-
-     default: // everything else
-       break;
-   }
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llRatChanCBack_B Callback
- *
- * @brief       This callback is used to carry out the processing for the HW
- *              interrupt that corresponds to an allocated RAT channel.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRatChanCBack_B( void )
-{
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llRatChanCBack_C Callback
- *
- * @brief       This callback is used to carry out the processing for the HW
- *              interrupt that corresponds to an allocated RAT channel.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRatChanCBack_C( void )
-{
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          llRatChanCBack_D Callback
- *
- * @brief       This callback is used to carry out the processing for the HW
- *              interrupt that corresponds to an allocated RAT channel.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llRatChanCBack_D( void )
-{
-  return;
-}
-#endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************
@@ -837,7 +263,6 @@ void llRatChanCBack_D( void )
  */
 void *llSetupScanDataEntryQueue( void )
 {
-#ifdef USE_RCL
   RCL_MultiBuffer *multiBuffer;
   // set the Scan receive buffers
   for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
@@ -850,32 +275,6 @@ void *llSetupScanDataEntryQueue( void )
   List_clearList(&scanDataQueue);
 
   return (multiBuffer);
-#else
-  // init data entries
-  // ALT: Make ring buffer size configurable from ll_config.
-  for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
-  {
-    // initialize common data entry members
-    scanDataEntry[i].entry.status = DATASTAT_PENDING;
-    scanDataEntry[i].entry.config = DATA_ENTRY_TYPE_GENERAL |
-                                    DATA_ENTRY_LEN_SIZE_0;
-    scanDataEntry[i].entry.length = LL_PKT_HDR_LEN         +
-                                    MAX_BLE_ADV_PKT_SIZE   +
-                                    llConfigTable.scanPktSuffixPtr->suffixSize;
-    // point to next entry
-    // ALT: Make ring buffer size configurable from ll_config.
-    scanDataEntry[i].entry.pNextEntry =
-      (dataEntry_t *)&scanDataEntry[(i+1)%NUM_RX_SCAN_ENTRIES];
-  }
-
-  // init data queue
-  scanDataQueue.dataEntryQ.pCurEntry  = (dataEntry_t *)&scanDataEntry[0];
-  scanDataQueue.dataEntryQ.pLastEntry = NULL;
-  scanDataQueue.pNextDataEntry        = (dataEntry_t *)&scanDataEntry[0];
-  scanDataQueue.pTempDataEntry        = NULL;
-
-  return( &scanDataQueue.dataEntryQ );
-#endif
 }
 #endif // SCAN_CFG
 
@@ -899,29 +298,12 @@ void *llSetupScanDataEntryQueue( void )
  */
 void *llSetupInitDataEntryQueue( void )
 {
-#ifdef USE_RCL
   initDataQueue = (RCL_MultiBuffer *)&initDataEntry;
   // Provide buffer for storing received packet
   RCL_MultiBuffer_init(initDataQueue, sizeof(initDataEntry));
   RCL_MultiBuffer_put(&extInitParam.rxBuffers, initDataQueue);
 
   return (void *)(initDataQueue);
-#else
-  // Init data entry for Adv packet
-  // Note: Only one entry is needed, so it points to itself.
-  initDataEntry.entry.status     = DATASTAT_PENDING;
-  initDataEntry.entry.config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-  initDataEntry.entry.length     = LL_PKT_HDR_LEN + MAX_BLE_ADV_PKT_SIZE + llConfigTable.initPktSuffixPtr->suffixSize;
-  initDataEntry.entry.pNextEntry = &initDataEntry.entry;
-
-  // initialize data queue
-  initDataQueue.dataEntryQ.pCurEntry  = &initDataEntry.entry;
-  initDataQueue.dataEntryQ.pLastEntry = NULL;
-  initDataQueue.pNextDataEntry        = &initDataEntry.entry;
-  initDataQueue.pTempDataEntry        = NULL;
-
-  return( &initDataQueue.dataEntryQ );
-#endif
 }
 #endif // INIT_CFG
 
@@ -945,7 +327,6 @@ void *llSetupInitDataEntryQueue( void )
  */
 void *llSetupAdvDataEntryQueue( void )
 {
-#ifdef USE_RCL
   // Provide buffer for storing received packet
   // one is enough since we will only receive a CONNECT_IND
   if (pAdvDataEntry == NULL)
@@ -954,22 +335,6 @@ void *llSetupAdvDataEntryQueue( void )
     RCL_MultiBuffer_init(pAdvDataEntry, sizeof(advDataEntry)*RCL_NUM_ADV_RX);
   }
   return (void *)(pAdvDataEntry);
-#else
-  // Init data entry for Adv packet
-  // Note: Only one entry is needed, so it points to itself.
-  advDataEntry.entry.status     = DATASTAT_PENDING;
-  advDataEntry.entry.config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-  advDataEntry.entry.length     = LL_PKT_HDR_LEN + MAX_BLE_CONNECT_IND_SIZE + llConfigTable.advPktSuffixPtr->suffixSize;
-  advDataEntry.entry.pNextEntry = &advDataEntry.entry;
-
-  // initialize data queue
-  advDataQueue.dataEntryQ.pCurEntry  = &advDataEntry.entry;
-  advDataQueue.dataEntryQ.pLastEntry = NULL;
-  advDataQueue.pNextDataEntry        = &advDataEntry.entry;
-  advDataQueue.pTempDataEntry        = NULL;
-
-  return( (void *)&advDataQueue.dataEntryQ );
-#endif
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 
@@ -997,7 +362,6 @@ void *llSetupConnRxDataEntryQueue( uint8 connId )
   llConnState_t *connPtr = MAP_llDataGetConnPtr( connId );
   uint8 i;
 
-#ifdef USE_RCL
   // check that the shared rx queue was created
   if (rxDataQ.length > 0)
   {
@@ -1034,62 +398,6 @@ void *llSetupConnRxDataEntryQueue( uint8 connId )
   }
 
   return (&rxDataQ.multiBuffers);
-#else
-  // check that the shared rx queue was created
-  if (rxDataQ.dataEntryQ.pCurEntry != NULL)
-  {
-    connPtr->pRxDataEntryQ = &rxDataQ.dataEntryQ;
-    // check if need to increase the shared rx buffers
-    MAP_llReplaceRxBuffers( connPtr );
-    // return the shared rx queue pointer
-    return( &rxDataQ.dataEntryQ );
-  }
-  // init data entries
-  for (i=0; i<NUM_RX_DATA_ENTRIES; i++)
-  {
-    // initialize common data entry members
-    // Note: Even though the two bytes for the header are covered by the extra
-    //       bytes in the HCI packet allocated the radio only gets the length
-    //       of the payload+MIC+RSSI+Timestamp, which would be two bytes short.
-    //       So the header size needs to be added to the entry length.
-    rxRingBuf[i].dataEntry.status = DATASTAT_PENDING;
-    rxRingBuf[i].dataEntry.config = DATA_ENTRY_TYPE_POINTER |
-                                    DATA_ENTRY_LEN_SIZE_0;
-    rxRingBuf[i].dataEntry.length = LL_PKT_HDR_LEN                            +
-                                    connPtr->lenInfo.connEffectiveMaxRxOctets +
-                                    LL_PKT_MIC_LEN                            +
-                                    llConfigTable.rxPktSuffixPtr->suffixSize;
-
-    // point to next entry
-    rxRingBuf[i].dataEntry.pNextEntry =
-      (dataEntry_t *)&rxRingBuf[(i+1)%NUM_RX_DATA_ENTRIES];
-
-    // initialize additional member of pointer data entry
-    // Note: Two bytes for header are excluded as they will be covered by an
-    //       additional five bytes of transport layer.
-    rxRingBuf[i].pData =
-      MAP_LL_RX_bm_alloc( connPtr->lenInfo.connEffectiveMaxRxOctets +
-                          LL_PKT_MIC_LEN                            +
-                          llConfigTable.rxPktSuffixPtr->suffixSize );
-
-    // check if we ran out of memory
-    if ( rxRingBuf[i].pData != NULL )
-    {
-      // make room for the two byte packet header
-      // Note: These two bytes will overlap the five byte Transport Layer
-      //       header, which will overwrite them.
-      rxRingBuf[i].pData -= LL_PKT_HDR_LEN;
-    }
-  }
-
-  // init data queue
-  rxDataQ.dataEntryQ.pCurEntry  = (dataEntry_t *)&rxRingBuf[0];
-  rxDataQ.dataEntryQ.pLastEntry = NULL;
-  rxDataQ.pNextDataEntry        = (dataEntry_t *)&rxRingBuf[0];
-  rxDataQ.pTempDataEntry        = NULL;
-
-  return( &rxDataQ.dataEntryQ );
-#endif
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -1282,41 +590,25 @@ uint8 llFreeCteSamplesEntryQueue( void )
  */
 void llMoveTempTxDataEntries( llConnState_t *connPtr )
 {
-#ifdef USE_RCL
   RCL_Buffer_TxBuffer *pEntry = RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->tmpDataBuffers);
-#else
-  dataQ_t     *pDataQ = (dataQ_t *)(connPtr->pTxDataEntryQ);
-  dataEntry_t *pEntry = pDataQ->pTempDataEntry;
-#endif
+
   while( pEntry != NULL )
   {
-#ifndef USE_RCL
-      // payload length
-      uint8 dataLen = pEntry->length;
-
-      // adjust length for header
-      pEntry->length += LL_PKT_LLID_LEN;
-#endif
     // check if encryption is enabled
     if ( connPtr->encEnabled )
     {
-#ifdef USE_RCL
-        //pData = [byte 0 = LL_PKT_HDR, byte 1 = dataLen, byte 2:x = data, byte x+1:byte x+5 = LL_PKT_MIC]
-        // point to start of the packet, including header
-        uint8 *pData  = pEntry->data + RCL_BUFFER_MAX_HEADER_PAD_BYTES;
-        // get the dataLen value (remove the additional length related to the pEntry)
-        // Note: This length added by llWriteTxData()
-        uint8 dataLen = pEntry->length - (pEntry->numPad + LL_PKT_HDR_LEN + 1);
-        // save header value
-        uint8  pktHdr = *pData++;
-        // add MIC length to the data length
-        (*pData) += LL_PKT_MIC_LEN;
-        // point to payload
-        pData++;
-#else
-        uint8 *pData  = (uint8 *)(pEntry+1); // point to header
-        uint8  pktHdr = *pData++;            // save header and point to payload
-#endif
+      //pData = [byte 0 = LL_PKT_HDR, byte 1 = dataLen, byte 2:x = data, byte x+1:byte x+5 = LL_PKT_MIC]
+      // point to start of the packet, including header
+      uint8 *pData  = pEntry->data + RCL_BUFFER_MAX_HEADER_PAD_BYTES;
+      // get the dataLen value (remove the additional length related to the pEntry)
+      // Note: This length added by llWriteTxData()
+      uint8 dataLen = pEntry->length - (pEntry->numPad + LL_PKT_HDR_LEN + 1);
+      // save header value
+      uint8  pktHdr = *pData++;
+      // add MIC length to the data length
+      (*pData) += LL_PKT_MIC_LEN;
+      // point to payload
+      pData++;
       // adjust length for MIC
       pEntry->length += LL_PKT_MIC_LEN;
 
@@ -1326,26 +618,13 @@ void llMoveTempTxDataEntries( llConnState_t *connPtr )
                           dataLen,
                           pData );
     }
-#ifndef USE_RCL
-    // remove from list
-    // Note: This is necessary since the AddTxDataEntry routine NULL's
-    //       pEntry->pNextEntry, effectively breaking the temp linked list.
-    pDataQ->pTempDataEntry = pEntry->pNextEntry;
-
-    // clear next entry pointer before adding to connection Tx list
-    pEntry->pNextEntry = NULL;
-#endif
 
     // queue it on connection TX list and queue for RF
     MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
                           pEntry );
 
     // move to next entry, if any
-#ifdef USE_RCL
     pEntry = RCL_TxBuffer_get(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->tmpDataBuffers);
-#else
-    pEntry = pDataQ->pTempDataEntry;
-#endif
   }
 
   return;
@@ -1758,7 +1037,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_MAS_BV_28 )
         {
           // force what looks to the Central like a collision
-          MAP_llSetupConnParamReq( connPtr );
+          MAP_llSetupCtrlPkt( connPtr, LL_CTRL_CONNECTION_PARAM_REQ);
 
           // then continue with encryption
           MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_ENC_RSP );
@@ -1770,7 +1049,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         else if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BV_12 )
         {
           // force what looks to the Central like a collision
-          MAP_llSetupVersionIndReq( connPtr );
+          MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND);
 
           // then continue with encryption
           MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_ENC_RSP );
@@ -1783,8 +1062,17 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         else if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BV_13 )
         {
-          // force what looks to the Central like a collision
-          MAP_llSetupFeatureSetReq( connPtr );
+          // write control opcode based on connection role
+          if ( llState == LL_STATE_CONN_CENTRAL )
+          {
+            // force what looks to the Central like a collision
+            MAP_llSetupCtrlPkt( connPtr, LL_CTRL_FEATURE_REQ);
+          }
+          else // LL_STATE_CONN_PERIPHERAL
+          {
+            // force what looks to the Central like a collision
+            MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PERIPHERAL_FEATURE_REQ);
+          }
 
           // then continue with encryption
           MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_ENC_RSP );
@@ -1919,7 +1207,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         // Note: This control packet is not queued, but merely sent.
         // Note: Features to be used will be taken on the next connection
         //       event after the response is successfully transmitted.
-        if ( MAP_llSetupFeatureSetRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_FEATURE_RSP ) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2020,7 +1308,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         {
           // send peer's request for our version information
           // Note: This control packet is not queued, but merely sent.
-          if ( MAP_llSetupVersionIndReq( connPtr ) == FALSE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND) == FALSE )
           {
             // unable to malloc a packet!
             (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2056,7 +1344,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2066,7 +1354,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       {
         // setup/send a Ping Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupPingRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PING_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2102,7 +1390,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //       is still running (as we are in the context of an ISR). To
       //       prevent this, we wait until the connection ends before
       //       terminating by letting the connection event complete.
-#if defined(USE_RCL) && defined(LL_TEST_MODE)
+#if defined(LL_TEST_MODE)
       switch( llTestMode.testCase )
       {
         case LL_TEST_MODE_TP_CON_MAS_BI_02:
@@ -2180,7 +1468,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2204,7 +1492,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         status = LL_STATUS_SUCCESS;
         // check LE event mask
-        if ( (pBleEvtMask[LE_EVT_INDEX_REMOTE_CONN_PARAM_REQUEST] & LE_EVT_MASK_REMOTE_CONN_PARAM_REQUEST) == 0 )
+        if ( MAP_HCI_CheckEventMaskLe(LE_EVT_REMOTE_CONN_PARAM_REQUEST_BIT) == 0 )
         {
           status = LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
@@ -2236,7 +1524,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
             // setup/send an Unknown Response
             // Note: This control packet is not queued, but merely sent.
-            if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+            if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
             {
               // unable to malloc a packet!
               (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2401,7 +1689,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2808,24 +2096,11 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // set max Rx packet length allowed on connection in PHY
-#ifndef USE_RCL
-      linkParam[connPtr->connId].maxRxPktLen =
-        connPtr->lenInfo.connEffectiveMaxRxOctets + LL_PKT_MIC_LEN;
-#endif
       // check if the old buffers should be replaced
       if ( replaceBuffers )
       {
         // replace unused Rx buffers
-#ifdef USE_RCL
         SET_FEATURE_FLAG( connPtr->lenInfo.lenFlags, REPLACE_RX_BUFFERS );
-#else
-        MAP_llReplaceRxBuffers( connPtr );
-
-        //************************************
-        // NOTE !!!
-        // From this point the pBuf was released
-        //************************************
-#endif
       }
 
       // last actions based on opcode
@@ -2844,7 +2119,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
         // setup/send a Data Length Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupLenCtrlPkt( connPtr, LL_CTRL_LENGTH_RSP ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_LENGTH_RSP ) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -2965,7 +2240,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
       // send an Unknown Response
       // Note: This control packet is not queued, but merely sent.
-      if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+      if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
       {
         // unable to malloc a packet!
         (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3011,7 +2286,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 #ifdef LL_TEST_MODE
       if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_SLA_BI_05 )
       {
-        llSetupVersionIndReq( connPtr );
+        MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND);
       }
 #endif // LL_TEST_MODE
 
@@ -3180,7 +2455,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
         // setup/send a Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3203,7 +2478,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
           // Note: This control packet is not queued, but merely sent.
           // Note: Features to be used will be taken on the next connection
           //       event after the response is successfully transmitted.
-          if ( MAP_llSetupFeatureSetRsp( connPtr ) == FALSE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_FEATURE_RSP ) == FALSE )
           {
             // unable to malloc a packet!
             (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3319,7 +2594,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
           {
             // send peer's request for our version information
             // Note: This control packet is not queued, but merely sent.
-            if ( MAP_llSetupVersionIndReq( connPtr ) == FALSE )
+            if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND) == FALSE )
             {
               // unable to malloc a packet!
               (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3356,7 +2631,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3366,7 +2641,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       {
         // setup/send a Ping Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupPingRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PING_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3381,7 +2656,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
     // Terminate Indication
     case LL_CTRL_TERMINATE_IND:
-#if defined(USE_RCL) && defined(LL_TEST_MODE)
+#if defined(LL_TEST_MODE)
       switch( llTestMode.testCase )
       {
         case LL_TEST_MODE_TP_CON_SLA_BI_02:
@@ -3433,7 +2708,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3468,7 +2743,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
           // setup/send an Unknown Response
           // Note: This control packet is not queued, but merely sent.
-          if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
           {
             // unable to malloc a packet!
             (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3508,7 +2783,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
           // setup/send an Unknown Response
           // Note: This control packet is not queued, but merely sent.
-          if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
           {
             // unable to malloc a packet!
             (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3572,7 +2847,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
             // setup/send an Unknown Response
             // Note: This control packet is not queued, but merely sent.
-            if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+            if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
             {
               // unable to malloc a packet!
               (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3793,7 +3068,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
             // setup/send an Unknown Response
             // Note: This control packet is not queued, but merely sent.
-            if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+            if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
             {
               // unable to malloc a packet!
               (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -3904,7 +3179,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
     // Reject Indication Extended
     case LL_CTRL_REJECT_EXT_IND:
       // save rejected opcode and error code, and indicate RejectIndExt received
-      connPtr->rejectIndExt.rejectOpcode = pBuf[0];
+      connPtr->rejectIndExt.rejectOpcode = (uint8)pBuf[0];
       connPtr->rejectIndExt.errorCode    = pBuf[1];
 #ifdef RTLS_CTE
       if (connPtr->rejectIndExt.rejectOpcode == LL_CTRL_CTE_REQ)
@@ -3948,7 +3223,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
         // setup/send an Unknown Response
         // Note: This control packet is not queued, but merely sent.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
         {
           // unable to malloc a packet!
           (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -4386,24 +3661,11 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // set max Rx packet length allowed on connection in PHY
-#ifndef USE_RCL
-      linkParam[connPtr->connId].maxRxPktLen =
-        connPtr->lenInfo.connEffectiveMaxRxOctets + LL_PKT_MIC_LEN;
-#endif
       // check if the old buffers should be replaced
       if ( replaceBuffers )
       {
         // replace unused Rx buffers
-#ifdef USE_RCL
         SET_FEATURE_FLAG( connPtr->lenInfo.lenFlags, REPLACE_RX_BUFFERS );
-#else
-        MAP_llReplaceRxBuffers( connPtr );
-
-        //************************************
-        // NOTE !!!
-        // From this point the pBuf was released
-        //************************************
-#endif
       }
 
       // last actions based on opcode
@@ -4430,7 +3692,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
         {
           // setup/send a Data Length Response
           // Note: This control packet is not queued, but merely sent.
-          if ( MAP_llSetupLenCtrlPkt( connPtr, LL_CTRL_LENGTH_RSP ) == FALSE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_LENGTH_RSP ) == FALSE )
           {
             // unable to malloc a packet!
             (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -4544,7 +3806,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
       // send an Unknown Response
       // Note: This control packet is not queued, but merely sent.
-      if ( MAP_llSetupUnknownRsp( connPtr ) == FALSE )
+      if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == FALSE )
       {
         // unable to malloc a packet!
         (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
@@ -4601,7 +3863,6 @@ void llAddTxDataEntry( void *pDataEntryQ,
                        void *pDataEntry )
 {
   halIntState_t cs;
-#ifdef USE_RCL
   HAL_ENTER_CRITICAL_SECTION(cs);
   // add the buffer to the RF
   RCL_TxBuffer_put(((txDataQ_t *)pDataEntryQ)->rfDataBuffers, pDataEntry);
@@ -4611,64 +3872,6 @@ void llAddTxDataEntry( void *pDataEntryQ,
   List_put(&(((txDataQ_t *)pDataEntryQ)->llDataBuffers), pDataEntry);
   HAL_EXIT_CRITICAL_SECTION(cs);
 
-#else
-  dataEntry_t                        *pEntry;
-  rfOpImmedCmd_AddRemoveFlushQueue_t  rfCmd;
-
-  HAL_ENTER_CRITICAL_SECTION(cs);
-
-  // get head of internal queue, or NULL
-  pEntry = ((dataQ_t *)pDataEntryQ)->pNextDataEntry;
-
-  // check if internal queue is empty
-  if ( pEntry == NULL )
-  {
-    // it is, so just add this entry
-    ((dataQ_t *)pDataEntryQ)->pNextDataEntry = (dataEntry_t *)pDataEntry;
-  }
-  else // at least one entry on queue
-  {
-    // find last entry on internal queue
-    while( pEntry->pNextEntry != NULL ) pEntry = pEntry->pNextEntry;
-
-    // and add this packet
-    pEntry->pNextEntry = (dataEntry_t *)pDataEntry;
-  }
-
-  // clear entries next pointer
-  ((dataEntry_t *)pDataEntry)->pNextEntry = NULL;
-
-  // setup a radio command to add to Tx RF queue
-  rfCmd.cmdNum = CMD_ADD_DATA_ENTRY;
-  rfCmd.pQueue = (dataEntryQ_t *)pDataEntryQ;
-  rfCmd.pEntry = (uint8 *)pDataEntry;
-
-  // issue immediate command to add the data entry to the Tx RF queue
-  // Note: The immediate command does not execute if the radio is inactive, so
-  // take advantage by only performing the queuing operation manually if the
-  // command fails; possible failures include: RF_StatCmdDoneError (which
-  // should never occur), or RF_StatRadioInactiveError.
-  // Note: For dual mode, if the radio is running but for another stack, what
-  //       error status is returned then? Hopefully RF_StatRadioInactiveError.
-  if ( RF_runImmediateCmd( rfHandle, (uint32_t *)&rfCmd ) != RF_StatCmdDoneSuccess )
-  {
-    // it is, so data entry has to be queued manually
-    if ( ((dataEntryQ_t *)pDataEntryQ)->pCurEntry == NULL )
-    {
-      // queue is empty
-      ((dataEntryQ_t *)pDataEntryQ)->pCurEntry = (dataEntry_t *)pDataEntry;
-    }
-    else // queue not empty
-    {
-      ((dataEntryQ_t *)pDataEntryQ)->pLastEntry->pNextEntry = (dataEntry_t *)pDataEntry;
-    }
-
-    ((dataEntryQ_t *)pDataEntryQ)->pLastEntry = (dataEntry_t *)pDataEntry;
-  }
-
-  HAL_EXIT_CRITICAL_SECTION(cs);
-#endif
-
   return;
 }
 
@@ -4677,7 +3880,6 @@ void llAddTxDataEntry( void *pDataEntryQ,
 ** RF Hardware Abstraction Layer Application Programming Interface
 */
 
-#ifdef USE_RCL
 /*******************************************************************************
  * @fn          llClearRxDataEntry API
  *
@@ -4744,774 +3946,6 @@ void llClearScanDataQueue( uint8 clearAll )
   }
 }
 #endif
-
-#else //USE_RCL
-/*******************************************************************************
- * @fn          RFHAL_InitDataQueue API
- *
- * @brief       This function is used to clear the pointers of the data entry
- *              queue, as well as the internal next data entry pointer. This
- *              routine is primarily intended for statically allocated data
- *              entry queues, but can also be used with dynamically allocated
- *              data entry queues.
- *
- *              Note: It is assumed the data entry queue is really based on a
- *                    data queue.
- *
- * input parameters
- *
- * @param       pDataEntryQ - Pointer to data entry queue.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void RFHAL_InitDataQueue( dataEntryQ_t *pDataEntryQ )
-{
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntryQ != NULL );
-#endif // DEBUG
-
-  // clear Data Entry Queue pointers
-  ((dataQ_t *)pDataEntryQ)->dataEntryQ.pCurEntry  = NULL;
-  ((dataQ_t *)pDataEntryQ)->dataEntryQ.pLastEntry = NULL;
-
-  // clear internal Data Entry pointer
-  ((dataQ_t *)pDataEntryQ)->pNextDataEntry = NULL;
-
-  // clear internal temp Data Entry pointer
-  ((dataQ_t *)pDataEntryQ)->pTempDataEntry = NULL;
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_FreeNextTxDataEntry API
- *
- * @brief       This function is used to free the next TX data entry based on
- *              the internal data entry queue pointer. This routine should be
- *              used after the radio FW indicates a TX Entry Done interrupt.
- *              Once freed, the internal data entry queue is updated to the
- *              next entry.
- *
- *              Note: It is assumed the data entry queue is really based on a
- *                    data queue.
- *
- * input parameters
- *
- * @param       pDataEntryQ - Pointer to data entry queue.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void RFHAL_FreeNextTxDataEntry( dataEntryQ_t *pDataEntryQ )
-{
-  halIntState_t cs;
-  dataEntry_t   *pNextEntry;
-
-  HAL_ENTER_CRITICAL_SECTION(cs);
-
-  // get next data entry to free (i.e. head of internal queue)
-  pNextEntry = ((dataQ_t *)pDataEntryQ)->pNextDataEntry;
-
-  // update the internal next data entry pointer based on pCurEntry
-  // Note: If this was the last data entry on the queue, then pCurEntry would
-  //       be NULL, and so would pNextDataEntry. If this was not the last data
-  //       entry on the queue, then pNextDataEntry should point to the current
-  //       entry. So pNextEntry in either case.
-  ((dataQ_t *)pDataEntryQ)->pNextDataEntry = pNextEntry->pNextEntry;
-
-  // free the TX data entry given by the internal next data entry
-  MAP_osal_bm_free( (void *)pNextEntry );
-  pNextEntry = NULL;
-
-  HAL_EXIT_CRITICAL_SECTION(cs);
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_AllocDataEntryQueue API
- *
- * @brief       This function is used to dynamically allocate a Data Entry
- *              Queue, and initializes the first and last data entry pointers.
- *              If a ring buffer is used, then the last data entry pointer
- *              should be NULL. This routine also initializes an System internal
- *              pointer to the first entry. This pointer is used by System
- *              software to process the next entry in the data entry queue
- *              as the data entry queue pointers are used by the radio software.
- *
- * input parameters
- *
- * @param       pFirstDataEntry - Pointer to the first data entry in queue.
- * @param       pLastDataEntry  - Pointer to the last data entry in queue, or
- *                                NULL (for example, for ring buffers).
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to a Data Queue, or NULL.
- */
-dataEntryQ_t *RFHAL_AllocDataEntryQueue( dataEntry_t *pFirstDataEntry,
-                                         dataEntry_t *pLastDataEntry )
-{
-  dataQ_t *pDataQueue;
-
-#ifdef DEBUG
-  RFHAL_ASSERT( pFirstDataEntry != NULL );
-#endif // DEBUG
-
-  // allocate a data queue
-  if ( (pDataQueue = (dataQ_t *)MAP_osal_mem_alloc( sizeof(dataQ_t) )) != NULL )
-  {
-    // set current and last entry
-    pDataQueue->dataEntryQ.pCurEntry  = pFirstDataEntry;
-    pDataQueue->dataEntryQ.pLastEntry = pLastDataEntry;
-
-    // set the internal pointer to next data entry
-    pDataQueue->pNextDataEntry = pFirstDataEntry;
-
-    // return pointer to just the data entry queue
-    return( (dataEntryQ_t *)&pDataQueue->dataEntryQ );
-  }
-  else // not enough memory left
-  {
-    return( NULL );
-  }
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_FreeDataEntryQueue API
- *
- * @brief       This function is used to free a dynamically allocated Data
- *              Queue.
- *
- * input parameters
- *
- * @param
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to a Data Queue, or NULL.
- */
-void RFHAL_FreeDataEntryQueue( dataEntryQ_t *pDataEntryQ )
-{
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntryQ != NULL );
-#endif // DEBUG
-
-  MAP_osal_mem_free( pDataEntryQ );
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_GetNextDataEntry API
- *
- * @brief       This function is used to return a pointer to the next data
- *              entry in the data entry queue that is available for System
- *              processing. Note that this does not necessarily mean the data
- *              entry has be Finished by the radio - to determine this, the
- *              data entry status would have to be first checked. This is only
- *              the data entry to would be processed next by System software.
- *
- * input parameters
- *
- * @param       dataEntryQueue_t - Pointer to data entry queue.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to next data entry of a data queue to be processed.
- */
-dataEntry_t *RFHAL_GetNextDataEntry( dataEntryQ_t *pDataEntryQ )
-{
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntryQ != NULL );
-#endif // DEBUG
-
-  // return next data entry to may be processed by System software
-  return( (dataEntry_t *)((dataQ_t *)pDataEntryQ)->pNextDataEntry );
-}
-
-
-
-/*******************************************************************************
- * @fn          RFHAL_GetTempDataEntry API
- *
- * @brief       This function is used to return a pointer to the next data
- *              entry in the temporary data entry queue that is available for System
- *              processing. Note that this does not necessarily mean the data
- *              entry has be Finished by the radio - to determine this, the
- *              data entry status would have to be first checked. This is only
- *              the data entry to would be processed next by System software.
- *
- * input parameters
- *
- * @param       dataEntryQueue_t - Pointer to data entry queue.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to next data entry of a data queue to be processed.
- */
-dataEntry_t *RFHAL_GetTempDataEntry( dataEntryQ_t *pDataEntryQ )
-{
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntryQ != NULL );
-#endif // DEBUG
-
-  // return next data entry to may be processed by System software
-  return( (dataEntry_t *)((dataQ_t *)pDataEntryQ)->pTempDataEntry );
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_NextDataEntryDone API
- *
- * @brief       This function is used to mark the next System data entry on a
- *              data entry queue as Pending so that the radio can once again
- *              use it. It should be called after the user has processed the
- *              data entry.
- *
- * input parameters
- *
- * @param       dataEntryQueue_t - Pointer to data entry queue.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void RFHAL_NextDataEntryDone( dataEntryQ_t *pDataEntryQ )
-{
-  halIntState_t  cs;
-  dataQ_t       *pDataQueue;
-
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntryQ != NULL );
-#endif // DEBUG
-
-  // point to data queue
-  pDataQueue = (dataQ_t *)pDataEntryQ;
-
-  if ( pDataQueue->pNextDataEntry != NULL )
-  {
-    HAL_ENTER_CRITICAL_SECTION(cs);
-
-    // mark the next System data entry as Pending
-    pDataQueue->pNextDataEntry->status = DATASTAT_PENDING;
-
-    // advance to the next data entry in the data entry queue
-    pDataQueue->pNextDataEntry = pDataQueue->pNextDataEntry->pNextEntry;
-
-    HAL_EXIT_CRITICAL_SECTION(cs);
-
-    // return pointer to next entry, or NULL if there isn't one
-    // Note: For a ring buffer, there is always another.
-    return; //( pDataQueue->pNextDataEntry );
-  }
-  else // we are at the end of a linked list
-  {
-    // ALT: Could set pNextDataEntry to first entry, but could be problematic
-    //       if the radio data queue commands are being used to add/remove
-    //       data entries.
-  }
-
-  // return next data entry to may be processed by System software
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_AllocDataEntry API
- *
- * @brief       This function is used to allocate and initialize a data entry
- *              header and associated buffer.
- *
- * input parameters
- *
- * @param       entryType - DATA_ENTRY_TYPE_GENERAL, DATA_ENTRY_TYPE_EXTENDED,
- *                          DATA_ENTRY_TYPE_POINTER.
- * @param       lenSize   - Specifies the number of bytes of the length added
- *                          to the start of each entry element:
- *                          DATA_ENTRY_LEN_SIZE_0, DATA_ENTRY_LEN_SIZE_1,
- *                          DATA_ENTRY_LEN_SIZE_2.
- * @param       dataSize  - Number of bytes in data buffer.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to first data entry in linked list, or NULL if there
- *              are any errors with the parameters, or if the amount of needed
- *              heap memory is not available.
- */
-uint8 *RFHAL_AllocDataEntry( uint8  entryType,
-                             uint8  lenSize,
-                             uint16 dataSize )
-{
-  dataEntry_t *pEntry;
-  uint8        size;
-
-  // verify data entry length size is valid
-  if ( (lenSize != DATA_ENTRY_LEN_SIZE_0) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_1) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_2) )
-  {
-    return( NULL ); // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // check what type of data entry header is needed
-  if ( entryType == DATA_ENTRY_TYPE_GENERAL )
-  {
-    // Entry Header Type: Normal
-    size = sizeof( dataEntry_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-  {
-    // Entry Header Type: Extended
-    size = sizeof( dataEntryExt_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_POINTER )
-  {
-    // Entry Header Type: Pointer
-    size = sizeof( dataEntryPtr_t ) + dataSize;
-  }
-  else  // unknown data entry type
-  {
-    return( NULL );  // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // Note: General and Extended data entry headers have common init fields.
-  if ( (pEntry = (dataEntry_t *)MAP_osal_mem_alloc( size )) != NULL )
-  {
-    // initialize data entry header
-    pEntry->pNextEntry  = NULL;
-    pEntry->status      = DATASTAT_PENDING;
-    pEntry->config      = entryType | lenSize;
-    pEntry->length      = dataSize;
-
-    // check and init Extended header fields
-    if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-    {
-      ((dataEntryExt_t *)pEntry)->numElements = 0;
-      ((dataEntryExt_t *)pEntry)->nextIndex   = 0;
-    }
-  }
-
-  return( (uint8 *)pEntry );
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_FreeDataEntry API
- *
- * @brief       This function is used to free a dynamically allocated data
- *              entry.
- *
- * input parameters
- *
- * @param       pDataEntry - Pointer to data entry.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void RFHAL_FreeDataEntry( uint8 *pDataEntry )
-{
-#ifdef DEBUG
-  RFHAL_ASSERT( pDataEntry != NULL );
-#endif // DEBUG
-
-  MAP_osal_mem_free( pDataEntry );
-
-  return;
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_BuildRingBuffer API
- *
- * @brief       This function is used to build a ring buffer of arbitrary size,
- *              using fixed sized queue entries. When done, a pointer to an
- *              arbitrary data entry is returned.
- *
- *              Note: Might be easier to just create an array of data entries
- *                    so if the malloc fails, it is easier to just free them.
- *                    And if the memory is there, connecting them could be
- *                    faster too.
- *              Note: Might be easier to have separate routines for Normal
- *                    and Extended data entry headers.
- *
- * input parameters
- *
- * @param       entryType  - DATA_ENTRY_TYPE_GENERAL, DATA_ENTRY_TYPE_EXTENDED,
- *                           DATA_ENTRY_TYPE_POINTER
- * @param       lenSize    - Specifies the number of bytes of the length added
- *                           to the start of each entry element:
- *                           DATA_ENTRY_LEN_SIZE_0, DATA_ENTRY_LEN_SIZE_1,
- *                           DATA_ENTRY_LEN_SIZE_2.
- * @param       numEntries - Number of data entries in ring buffer.
- * @param       dataSize   - Number of bytes in data buffer.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to a data entry in ring buffer, or NULL if there
- *              are any errors with the parameters, or if the amount of needed
- *              heap memory is not available.
- */
-uint8 *RFHAL_BuildRingBuffer( uint8  entryType,
-                              uint8  lenSize,  // how about addLenSize?
-                              uint8  numEntries,
-                              uint16 dataSize )
-{
-  uint8 i;
-  uint8 *nHdr;
-  uint16 size;
-  uint8 *pHdr = NULL;
-
-  // verify data entry length size is valid
-  if ( (lenSize != DATA_ENTRY_LEN_SIZE_0) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_1) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_2) )
-  {
-    return( NULL ); // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // check what type of data entry header is needed
-  if ( entryType == DATA_ENTRY_TYPE_GENERAL )
-  {
-    // Entry Header Type: Normal
-    size = sizeof( dataEntry_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-  {
-    // Entry Header Type: Extended
-    size = sizeof( dataEntryExt_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_POINTER )
-  {
-    // Entry Header Type: Pointer
-    size = sizeof( dataEntryPtr_t ) + dataSize;
-  }
-  else  // unknown data entry type
-  {
-    return( NULL );  // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // build ring buffer of entry headers
-  // Note: General and Extended Data Headers both use pNextEntry.
-  for( i=0; i<numEntries; i++)
-  {
-    // allocate memory for data entry with buffer
-    if ( (nHdr = (uint8 *)MAP_osal_mem_alloc( size )) == NULL )
-    {
-      // check if any data entries have already been allocated
-      if ( pHdr != NULL )
-      {
-        // there's at least one previously allocated data entry and buffer, and
-        // since we are unable to complete the ring buffer, we will unwind and
-        // free all previously allocated data entries
-
-        // first, make it look like a linked list
-        nHdr = (uint8 *)(((dataEntry_t *)pHdr)->pNextEntry);
-        ((dataEntry_t *)pHdr)->pNextEntry = NULL;
-
-        // now free up each buffer
-        do
-        {
-          pHdr = nHdr;
-          nHdr = (uint8 *)(((dataEntry_t *)pHdr)->pNextEntry);
-          MAP_osal_mem_free( (void *)pHdr );
-        } while ( nHdr != NULL );
-
-        // and indicate we can't create the ring buffer
-        pHdr = NULL;
-      }
-
-      break;
-    }
-
-    // initialize data entry header
-    ((dataEntry_t *)nHdr)->pNextEntry = NULL;
-    ((dataEntry_t *)nHdr)->status     = DATASTAT_PENDING;
-    ((dataEntry_t *)nHdr)->config     = entryType | lenSize;
-    ((dataEntry_t *)nHdr)->length     = dataSize;
-
-    // check and init Extended header fields
-    if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-    {
-      ((dataEntryExt_t *)nHdr)->numElements = 0;
-      ((dataEntryExt_t *)nHdr)->nextIndex   = 0;
-    }
-
-    // check if this is the first data entry
-    if ( pHdr == NULL )
-    {
-      // it is, so point to self
-      pHdr = nHdr;
-      ((dataEntry_t *)pHdr)->pNextEntry = (dataEntry_t *)nHdr;
-    }
-    else // there's at least one previously allocated data entry
-    {
-      // so
-      ((dataEntry_t *)nHdr)->pNextEntry = ((dataEntry_t *)pHdr)->pNextEntry;
-      ((dataEntry_t *)pHdr)->pNextEntry = (dataEntry_t *)nHdr;
-      pHdr = nHdr;
-    }
-  }
-
-  // use pHdr so if the numEntries is zero, NULL will be returned
-  // Note: Since it is a ring buffer, the head of the ring can be any data
-  //       header entry. If the first allocated data header entry has to be
-  //       returned, then pHdr has to be checked for NULL; if so, return NULL,
-  //       otherwise, return (uint8 *)((dataEntry_t *)nHdr)->pNextEntry.
-  return( pHdr );
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_BuildDataEntryRingBuffer API
- *
- * @brief       This function is used to build a ring buffer of arbitrary size,
- *              using fixed sized queue entries. When done, a pointer to an
- *              arbitrary data entry is returned.
- *
- *              Note: Might be easier to just create an array of data entries
- *                    so if the malloc fails, it is easier to just free them.
- *                    And if the memory is there, connecting them could be
- *                    faster too.
- *
- * input parameters
- *
- * @param       numEntries - Number of data entries in ring buffer.
- * @param       prefixSize - Number of bytes before the header.
- * @param       dataSize   - Number of bytes in data buffer.
- * @param       suffixSize - Number of bytes after the payload.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to a data entry in ring buffer, or NULL if there
- *              are any errors with the parameters, or if the amount of needed
- *              heap memory is not available.
- */
-dataEntry_t *RFHAL_BuildDataEntryRingBuffer( uint8  numEntries,
-                                             uint8  prefixSize,
-                                             uint16 dataSize,
-                                             uint8  suffixSize )
-{
-  uint8  i;
-  uint16  totalEntrySize;
-  uint8  *nHdr;
-  uint8  *pHdr = NULL;
-
-  // determine total size of data entry, including headers, prefix, and suffix
-  totalEntrySize = sizeof( dataEntry_t ) + prefixSize + suffixSize + dataSize;
-
-  // round data entry size to a multiple of four bytes
-  totalEntrySize += (totalEntrySize % 4)?(4 - (totalEntrySize % 4)):0;
-
-  // build ring buffer of general entry headers
-  for( i=0; i<numEntries; i++)
-  {
-    // allocate memory for data entry with buffer
-    if ( (nHdr = (uint8 *)MAP_osal_mem_alloc( totalEntrySize )) == NULL )
-    {
-      // check if any data entries have already been allocated
-      if ( pHdr != NULL )
-      {
-        // there's at least one previously allocated data entry and buffer, and
-        // since we are unable to complete the ring buffer, we will unwind and
-        // free all previously allocated data entries
-
-        // first, make it look like a linked list
-        nHdr = (uint8 *)(((dataEntry_t *)pHdr)->pNextEntry);
-        ((dataEntry_t *)pHdr)->pNextEntry = NULL;
-
-        // now free up each buffer
-        do
-        {
-          pHdr = nHdr;
-          nHdr = (uint8 *)(((dataEntry_t *)pHdr)->pNextEntry);
-          MAP_osal_mem_free( (void *)pHdr );
-        } while ( nHdr != NULL );
-
-        // and indicate we can't create the ring buffer
-        pHdr = NULL;
-      }
-
-      break;
-    }
-
-    // initialize data entry header
-    ((dataEntry_t *)nHdr)->pNextEntry = NULL;
-    ((dataEntry_t *)nHdr)->status     = DATASTAT_PENDING;
-    ((dataEntry_t *)nHdr)->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    ((dataEntry_t *)nHdr)->length     = dataSize + suffixSize;
-
-    // check if this is the first data entry
-    if ( pHdr == NULL )
-    {
-      // it is, so point to self
-      pHdr = nHdr;
-      ((dataEntry_t *)pHdr)->pNextEntry = (dataEntry_t *)nHdr;
-    }
-    else // there's at least one previously allocated data entry
-    {
-      // so
-      ((dataEntry_t *)nHdr)->pNextEntry = ((dataEntry_t *)pHdr)->pNextEntry;
-      ((dataEntry_t *)pHdr)->pNextEntry = (dataEntry_t *)nHdr;
-      pHdr = nHdr;
-    }
-  }
-
-  // use pHdr so if the numEntries is zero, NULL will be returned
-  // Note: Since it is a ring buffer, the head of the ring can be any data
-  //       header entry. If the first allocated data header entry has to be
-  //       returned, then pHdr has to be checked for NULL; if so, return NULL,
-  //       otherwise, return (uint8 *)((dataEntry_t *)nHdr)->pNextEntry.
-  return( (dataEntry_t *)pHdr );
-}
-
-
-/*******************************************************************************
- * @fn          RFHAL_BuildLinkedBuffer API
- *
- * @brief       This function is used to build a linked list buffer of arbitrary
- *              size, using fixed sized queue entries. When done, a pointer to
- *              the first data entry is returned, and the last data entry
- *              points to NULL.
- *
- * input parameters
- *
- * @param       entryType  - DATA_ENTRY_TYPE_GENERAL, DATA_ENTRY_TYPE_EXTENDED,
- *                           DATA_ENTRY_TYPE_POINTER
- * @param       lenSize    - Specifies the number of bytes of the length added
- *                           to the start of each entry element:
- *                           DATA_ENTRY_LEN_SIZE_0, DATA_ENTRY_LEN_SIZE_1,
- *                           DATA_ENTRY_LEN_SIZE_2.
- * @param       numEntries - Number of data entries in ring buffer.
- * @param       dataSize   - Number of bytes in data buffer.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to first data entry in linked list, or NULL if there
- *              are any errors with the parameters, or if the amount of needed
- *              heap memory is not available.
- */
-uint8 *RFHAL_BuildLinkedBuffer( uint8  entryType,
-                                uint8  lenSize,
-                                uint8  numEntries,
-                                uint16 dataSize )
-{
-  uint8 *pHdr = NULL;
-  uint8 *nHdr;
-  uint8  size;
-  uint8  i;
-
-  // verify data entry length size is valid
-  if ( (lenSize != DATA_ENTRY_LEN_SIZE_0) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_1) &&
-       (lenSize != DATA_ENTRY_LEN_SIZE_2) )
-  {
-    return( NULL ); // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // check what type of data entry header is needed
-  if ( entryType == DATA_ENTRY_TYPE_GENERAL )
-  {
-    // Entry Header Type: Normal
-    size = sizeof( dataEntry_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-  {
-    // Entry Header Type: Extended
-    size = sizeof( dataEntryExt_t ) + dataSize;
-  }
-  else if ( entryType == DATA_ENTRY_TYPE_POINTER )
-  {
-    // Entry Header Type: Pointer
-    size = sizeof( dataEntryPtr_t ) + dataSize;
-  }
-  else  // unknown data entry type
-  {
-    return( NULL );  // RFHAL_ERROR_INVALID_PARAM
-  }
-
-  // build linked list of entry headers
-  // Note: General and Extended Data Headers both use pNextEntry.
-  for( i=0; i<numEntries; i++)
-  {
-    // allocate memory for data entry with buffer
-    if ( (nHdr = (uint8 *)MAP_osal_mem_alloc( size )) == NULL )
-    {
-      // check if any data entries have already been allocated
-      if ( pHdr != NULL )
-      {
-        // there's at least one previously allocated data entry and buffer, and
-        // since we are unable to complete the ring buffer, we will unwind and
-        // free all previously allocated data entries
-
-        // free up each buffer
-        do
-        {
-          pHdr = nHdr;
-          nHdr = (uint8 *)(((dataEntry_t *)pHdr)->pNextEntry);
-          MAP_osal_mem_free( (void *)pHdr );
-        } while ( nHdr != NULL );
-
-        // and indicate we can't create the ring buffer
-        pHdr = NULL;
-      }
-
-      break;
-    }
-
-    // initialize data entry header
-    ((dataEntry_t *)nHdr)->pNextEntry = NULL;
-    ((dataEntry_t *)nHdr)->status     = DATASTAT_PENDING;
-    ((dataEntry_t *)nHdr)->config     = entryType | lenSize;
-    ((dataEntry_t *)nHdr)->length     = dataSize;
-
-    // check and init Extended header fields
-    if ( entryType == DATA_ENTRY_TYPE_EXTENDED )
-    {
-      ((dataEntryExt_t *)nHdr)->numElements = 0;
-      ((dataEntryExt_t *)nHdr)->nextIndex   = 0;
-    }
-
-    // work backwards, hooking in next data entry
-    ((dataEntry_t *)nHdr)->pNextEntry = (dataEntry_t *)pHdr;
-    pHdr = nHdr;
-  }
-
-  // use pHdr so if the numEntries is zero, NULL will be returned
-  return( pHdr );
-}
-#endif //USE_RCL
 
 /*******************************************************************************
  */

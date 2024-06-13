@@ -2,7 +2,7 @@
 
  @file  ll_scheduler.c
 
- @brief This file contains the Link Layer (LL) Tasl Scheduler routines routines
+ @brief This file contains the Link Layer (LL) Task Scheduler routines routines
         routines.
 
  Group: WCS, BTS
@@ -25,10 +25,10 @@
 #include "ll_privacy.h"
 #include "ll_rat.h"
 #include "ll_ae.h"
-#include <ti/bleapp/health_toolkit/inc/debugInfo_errno.h>
-#ifdef USE_RCL
+#ifdef BLE_HEALTH
+#include <health_toolkit/inc/debugInfo_errno.h>
+#endif //BLE_HEALTH
 #include <ti/drivers/rcl/RCL.h>
-#endif //USE_RCL
 //
 #include "rom_jt.h"
 
@@ -56,12 +56,14 @@
  * EXTERNS
  */
 
-#ifdef USE_RCL
 extern void LL_rclRescheduleCommand(RCL_Command *cmd);
-#endif
 
 /*******************************************************************************
  * LOCAL VARIABLES
+ */
+
+/*******************************************************************************
+ * GLOBAL VARIABLES
  */
 
 // BLE Tasks
@@ -69,43 +71,15 @@ taskList_t llTaskList;
 // sdaa task
 taskInfo_t *pRXWindowTask = NULL;
 
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG | SCAN_CFG))
-
-#ifndef USE_RCL
-// RAT Compare Command
-rfc_CMD_SET_RAT_CMP_t rfOp_SetRatCmp;
-#endif
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG | SCAN_CFG
-
-/*******************************************************************************
- * GLOBAL VARIABLES
- */
-
 // pointer to next AE set to be scheduled
 extern sortedAdv_t *pNextAdvSet;
 
 // number of enabled adv sets
 extern uint8 numActiveAdvSets;
 
-#ifdef USE_RCL
 // handle to radio driver for BLE client
 extern RCL_Handle    rfHandle;
-#else
-// handle to radio driver for BLE client
-extern RF_Handle    rfHandle;
 
-// command handle for radio driver calls
-extern RF_CmdHandle rfCmdHandle;
-
-// callback for radio driver events
-extern void         rfCallback( RF_Handle, RF_CmdHandle, RF_EventMask );
-
-// callback for handling abort/stop/cancel/preempt
-extern uint32_t LL_AbortedCback( uint8 );
-
-// handle to radio timer channel
-RF_RatHandle rfRatHandle = RF_ALLOC_ERROR;
-#endif
 /*******************************************************************************
  * Functions
  */
@@ -885,19 +859,11 @@ void llSetTaskAdv( uint8 startType, void *nextSecCmd )
   // Note: If not immediate, then task will start at Start Time.
   if ((startType == LL_SCHED_START_IMMED) ||
      ((startType == LL_SCHED_START_UNDEF) &&
-#ifdef USE_RCL
      (MAP_llTimeCompare( ((RCL_Command *)nextSecCmd)->timing.absStartTime,
-#else
-     (MAP_llTimeCompare( ((ble5OpCmd_t *)nextSecCmd)->rfOpCmd.startTime,
-#endif
       MAP_llGetCurrentTime() + LL_SCHED_PRE_CUTOFF ) == FALSE )))
   {
     // it is, so base it on the current time
-#ifdef USE_RCL
     ((RCL_Command *)nextSecCmd)->timing.absStartTime =
-#else
-    ((ble5OpCmd_t *)nextSecCmd)->rfOpCmd.startTime =
-#endif
       MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
   }
 
@@ -950,11 +916,7 @@ void llSetTaskPeriodicAdv( void )
  */
 void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecCommand, void *nextConnCmd )
 {
-#ifdef USE_RCL
   RCL_Command *nextSecCmd = (RCL_Command *)nextSecCommand;
-#else
-  ble5OpCmd_t *nextSecCmd = (ble5OpCmd_t *)nextSecCommand;
-#endif
   // The secondary task end time calculation varaible.
   uint32 secTaskEndTimeCalc = 0;
 
@@ -966,7 +928,6 @@ void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
   // - because the Scan is Continuous (already set in scanCmd)
   // Note: If not immediate, then task will start at Start Time (if
   //       not Continuous), or Now (if Continuous).
-#ifdef USE_RCL
   if (((nextConnCmd != NULL) && (startType == LL_SCHED_START_IMMED)) ||
       ((nextConnCmd == NULL) && (MAP_llTimeCompare(nextSecCmd->timing.absStartTime,
                                  MAP_llGetCurrentTime() + LL_SCHED_PRE_CUTOFF) == FALSE)))
@@ -974,30 +935,14 @@ void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     // it is, so base it on the current time
     nextSecCmd->timing.absStartTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
 
+    // to make sure it is not run over
     // set window
-    nextSecCmd->timing.relGracefulStopTime =
-      (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
+       nextSecCmd->timing.relGracefulStopTime =
+         (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
 
     // update event start time
     extScanInfo->scanStartTime = nextSecCmd->timing.absStartTime;
   }
-#else // !USE_RCL
-  if (((nextConnCmd != NULL) && (startType == LL_SCHED_START_IMMED)) ||
-      ((nextConnCmd == NULL) && (MAP_llTimeCompare( nextSecCmd->rfOpCmd.startTime,
-                                 MAP_llGetCurrentTime() + LL_SCHED_PRE_CUTOFF) == FALSE)))
-  {
-    // it is, so base it on the current time
-    nextSecCmd->rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-
-    // set window
-    ((extScanParam_t *)nextSecCmd->pParams)->timeoutTime =
-      nextSecCmd->rfOpCmd.startTime +
-      (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
-
-    // update event start time
-    extScanInfo->scanStartTime = nextSecCmd->rfOpCmd.startTime;
-  }
-#endif // USE_RCL
 
   // In case there is a connection.
   if (nextConnCmd != NULL)
@@ -1017,24 +962,11 @@ void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     //       either case, just set the End Trigger to the next
     //       connection's cutoff.
     // Note: Post processing will always disable the End Trigger.
-#ifdef USE_RCL
     nextSecCmd->timing.relHardStopTime = (secTaskEndTimeCalc == 0) ? 0 : MAP_llTimeDelta( secTaskEndTimeCalc, nextSecCmd->timing.absStartTime );
-#else
-    CLR_RFOP_ALT_TRIG_CMD( ((extScanParam_t *)nextSecCmd->pParams)->endTrig );
-    SET_RFOP_PAST_TRIG( ((extScanParam_t *)nextSecCmd->pParams)->endTrig );
-    SET_RFOP_TRIG_TYPE( ((extScanParam_t *)nextSecCmd->pParams)->endTrig, ((secTaskEndTimeCalc == 0) ? TRIGTYPE_NEVER : TRIGTYPE_AT_ABS_TIME) ); // Trigger type is NEVER in case the endTime is 0.
-    ((extScanParam_t *)nextSecCmd->pParams)->endTime = secTaskEndTimeCalc;                                                                       // The endTime of the secondary task will not always be the next start time of the connection.
-#endif
   }
   else
   {
-#ifdef USE_RCL
     nextSecCmd->timing.relHardStopTime = 0;
-#else
-    // Change the end trig type from absolute time to never and set the end trig time to 0
-    SET_RFOP_TRIG_TYPE( ((extScanParam_t *)nextSecCmd->pParams)->endTrig, TRIGTYPE_NEVER );
-    ((extScanParam_t *)nextSecCmd->pParams)->endTime = 0;
-#endif
   }
 
   // start Scan
@@ -1086,11 +1018,7 @@ void llSetTaskPeriodicScan( void )
  */
 void llSetTaskInit( uint8 startType, taskInfo_t *nextSecTask, void *nextSecCommand, void *nextConnCmd )
 {
-#ifdef USE_RCL
   RCL_Command *nextSecCmd = (RCL_Command *)nextSecCommand;
-#else
-  ble5OpCmd_t *nextSecCmd = (ble5OpCmd_t *)nextSecCommand;
-#endif
 
   // The secondary task end time calculation varaible.
   uint32 secTaskEndTimeCalc = 0;
@@ -1103,7 +1031,6 @@ void llSetTaskInit( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
   // - because the Scan is Continuous (already set in initCmd)
   // Note: If not immediate, then task will start at Start Time (if
   //       not Continuous), or Now (if Continuous).
-#ifdef USE_RCL
   if ((( nextConnCmd != NULL ) && ( startType == LL_SCHED_START_IMMED )) ||
       (( nextConnCmd == NULL ) && ( MAP_llTimeCompare( nextSecCmd->timing.absStartTime,
                                     MAP_llGetCurrentTime() + LL_SCHED_PRE_CUTOFF ) == FALSE )))
@@ -1112,30 +1039,13 @@ void llSetTaskInit( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     nextSecCmd->timing.absStartTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
 
     // set window
-    nextSecCmd->timing.relGracefulStopTime =
-      (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US);
+        nextSecCmd->timing.relGracefulStopTime =
+          (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US);
+
 
     // update event start time
     extInitInfo->initStartTime = nextSecCmd->timing.absStartTime;
   }
-#else
-  if ((( nextConnCmd != NULL ) && ( startType == LL_SCHED_START_IMMED )) ||
-      (( nextConnCmd == NULL ) &&
-      ( MAP_llTimeCompare( nextSecCmd->rfOpCmd.startTime,
-                          MAP_llGetCurrentTime() + LL_SCHED_PRE_CUTOFF ) == FALSE )))
-  {
-    // it is, so base it on the current time
-    nextSecCmd->rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-
-    // set window
-    ((extInitParam_t *)nextSecCmd->pParams)->timeoutTime =
-      nextSecCmd->rfOpCmd.startTime +
-      (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US);
-
-    // update event start time
-    extInitInfo->initStartTime = nextSecCmd->rfOpCmd.startTime;
-  }
-#endif
 
   // setup the connection start time
   MAP_llSetupConn( extInitInfo->connId );
@@ -1158,24 +1068,12 @@ void llSetTaskInit( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     //       either case, just set the End Trigger to the next
     //       connection's cutoff.
     // Note: Post processing will always disable the End Trigger.
-#ifdef USE_RCL
     nextSecCmd->timing.relHardStopTime = (secTaskEndTimeCalc == 0) ? 0 : MAP_llTimeDelta( secTaskEndTimeCalc, ((RCL_Command *)nextSecCmd)->timing.absStartTime );
-#else
-    CLR_RFOP_ALT_TRIG_CMD( ((extInitParam_t *)nextSecCmd->pParams)->endTrig );
-    SET_RFOP_PAST_TRIG( ((extInitParam_t *)nextSecCmd->pParams)->endTrig );
-    SET_RFOP_TRIG_TYPE( ((extInitParam_t *)nextSecCmd->pParams)->endTrig, ((secTaskEndTimeCalc == 0) ? TRIGTYPE_NEVER : TRIGTYPE_AT_ABS_TIME) ); // Trigger type is NEVER in case the endTime is 0.
-    ((extInitParam_t *)nextSecCmd->pParams)->endTime = secTaskEndTimeCalc;                                                                       // The endTime of the secondary task will not always be the next start time of the connection.
-#endif
   }
   else
   {
     // Change the end trig type from absolute time to never and set the end trig time to 0
-#ifdef USE_RCL
     nextSecCmd->timing.relHardStopTime = 0;
-#else
-    SET_RFOP_TRIG_TYPE( ((extInitParam_t *)nextSecCmd->pParams)->endTrig, TRIGTYPE_NEVER );
-    ((extInitParam_t *)nextSecCmd->pParams)->endTime = 0;
-#endif
   }
 
   // start Init
@@ -1305,13 +1203,8 @@ uint8 llCheckIsSecTaskCollideWithPrimTaskInLsto( taskInfo_t    *secTask,
     return FALSE;
   }
 
-#ifdef USE_RCL
   uint32 secStartTime  = ((RCL_Command *)(secTask->command))->timing.absStartTime;
   uint32 primStartTime = ((RCL_Command *)(currConnPtr->llTask->command))->timing.absStartTime;
-#else
-  uint32 secStartTime  = ((ble5OpCmd_t *)secTask->command)->rfOpCmd.startTime;
-  uint32 primStartTime = ((ble5OpCmd_t *)(currConnPtr->llTask->command))->rfOpCmd.startTime;
-#endif
   /********************************************/
   /********* Check Single Connection **********/
   /********************************************/
@@ -1340,11 +1233,7 @@ uint8 llCheckIsSecTaskCollideWithPrimTaskInLsto( taskInfo_t    *secTask,
     // Get the info ptr for the next connection.
     nextConnPtr = MAP_llDataGetConnPtr( nextConnId );
 
-#ifdef USE_RCL
     primStartTime = ((RCL_Command *)(currConnPtr->llTask->command))->timing.absStartTime;
-#else
-    primStartTime = ((ble5OpCmd_t *)(currConnPtr->llTask->command))->rfOpCmd.startTime;
-#endif
 
     /** Check Collision **/
     // Check for a collision between the secondary task and the connection id.
@@ -1408,14 +1297,8 @@ uint8 llFindStartType( taskInfo_t *secTask,
 {
   uint32      timeGap = LL_SCHED_OVERHEAD;
   uint32      curTime;
-#ifdef USE_RCL
   RCL_Command *primCmd = NULL;
   RCL_Command *secCmd = NULL;
-#else
-  ble5OpCmd_t *primCmd = NULL;
-  ble5OpCmd_t *secCmd = NULL;
-#endif
-
   // Check Valid input
   if ( primTask == NULL )
   {
@@ -1429,13 +1312,8 @@ uint8 llFindStartType( taskInfo_t *secTask,
     return( LL_SCHED_START_PRIMARY );
   }
 
-#ifdef USE_RCL
   primCmd = (RCL_Command *)primTask->command;
   secCmd = (RCL_Command *)secTask->command;
-#else
-  primCmd = ((ble5OpCmd_t *)primTask->command);
-  secCmd   = ((ble5OpCmd_t *)secTask->command);
-#endif
 
   // take a snapshot of the current time
   // Note: Add one tick of pad.
@@ -1463,11 +1341,7 @@ uint8 llFindStartType( taskInfo_t *secTask,
     // Note: This is done to ensure the rest of the algorithm will flag this
     //       secondary task to start immediately, assuming it is able to start
     //       at all.
-#ifdef USE_RCL
     secCmd->timing.absStartTime = curTime;
-#else
-    secCmd->rfOpCmd.startTime = curTime;
-#endif
   }
 #endif  // SCAN_CFG
 
@@ -1490,11 +1364,7 @@ uint8 llFindStartType( taskInfo_t *secTask,
     // Note: This is done to ensure the rest of the algorithm will flag this
     //       secondary task to start immediately, assuming it is able to start
     //       at all.
-#ifdef USE_RCL
     secCmd->timing.absStartTime = curTime;
-#else
-    secCmd->rfOpCmd.startTime = curTime;
-#endif
   }
 #endif  // INIT_CFG
 
@@ -1534,13 +1404,8 @@ uint8 llFindStartType( taskInfo_t *secTask,
   // Note: While it is assumed the primary task's start time is before the
   //       current time (otherwise the task would hang), we still have to handle
   //       counter wrap.
-#ifdef USE_RCL
   if ( ((MAP_llTimeDelta( primCmd->timing.absStartTime, curTime ) > timeGap) &&
        (MAP_llTimeCompare( secCmd->timing.absStartTime, primCmd->timing.absStartTime - timeGap ) == FALSE)) )
-#else
-  if ( ((MAP_llTimeDelta( primCmd->rfOpCmd.startTime, curTime ) > timeGap) &&
-       (MAP_llTimeCompare( secCmd->rfOpCmd.startTime, primCmd->rfOpCmd.startTime - timeGap ) == FALSE)) )
-#endif
   {
     // the secondary task has enough time to start relative to the primary
     // task's cutoff, but check if there's enough time relative to current time
@@ -1549,13 +1414,8 @@ uint8 llFindStartType( taskInfo_t *secTask,
     //       the secondary task may have not been scheduled because of a
     //       conflict with the primary task. In this case, the secondary task's
     //       start time is long since expired.
-#ifdef USE_RCL
     if ( MAP_llTimeCompare( secCmd->timing.absStartTime,
                             curTime + LL_SCHED_PRE_CUTOFF - LL_SCHED_START_IMMED_PAD ) == FALSE )
-#else
-    if ( MAP_llTimeCompare( secCmd->rfOpCmd.startTime,
-                            curTime + LL_SCHED_PRE_CUTOFF - LL_SCHED_START_IMMED_PAD ) == FALSE )
-#endif
     {
       // the secondary task is either in the past, or not far enough into the
       // future, so start it immediately
@@ -1585,13 +1445,8 @@ uint8 llFindStartType( taskInfo_t *secTask,
       {
         // the secondary task has enough time to start relative to the primary
         // task's cutoff, but check if there's enough time relative to current time.
-#ifdef USE_RCL
         if ( MAP_llTimeCompare( secCmd->timing.absStartTime,
                                curTime + LL_SCHED_PRE_CUTOFF - LL_SCHED_START_IMMED_PAD ) == FALSE )
-#else
-        if ( MAP_llTimeCompare( secCmd->rfOpCmd.startTime,
-                               curTime + LL_SCHED_PRE_CUTOFF - LL_SCHED_START_IMMED_PAD ) == FALSE )
-#endif
         {
           // Update that we need to schedule the secondary task (immediately) instead of the
           // the primary task.
@@ -1914,33 +1769,16 @@ taskInfo_t *llSelectTaskAdv( uint8 secTaskID, uint32 timeGap )
   taskInfo_t *curSecTask = MAP_llGetTask( secTaskID );
   taskInfo_t *nextSecTask = MAP_llGetTask( LL_TASK_ID_ADVERTISER );
 
-#ifdef USE_RCL
   RCL_Command *curSecCmd  = (curSecTask != NULL)?(RCL_Command *)curSecTask->command:NULL;
   RCL_Command *nextSecCmd = (nextSecTask != NULL)?(RCL_Command *)nextSecTask->command:NULL;
-#else
-  ble5OpCmd_t *curSecCmd  = (curSecTask != NULL)?(ble5OpCmd_t *)curSecTask->command:NULL;
-  ble5OpCmd_t *nextSecCmd = (nextSecTask != NULL)?(ble5OpCmd_t *)nextSecTask->command:NULL;
-#endif
 
   // make sure current task is still active
   if ((curSecCmd != NULL) && (MAP_llActiveTask(secTaskID)))
   {
- #ifdef USE_RCL
      // check if current task has enough time before next Scan
     if ( (nextSecCmd != NULL) &&
          (MAP_llTimeCompare( curSecCmd->timing.absStartTime,
                              nextSecCmd->timing.absStartTime-timeGap ) == FALSE ) )
-#else
-   // in case the current task is periodic adv
-    if (secTaskID == LL_TASK_ID_PERIODIC_ADVERTISER)
-    {
-      return( curSecTask );
-    }
-    // check if current task has enough time before next Scan
-    if ( (nextSecCmd != NULL) &&
-         (MAP_llTimeCompare( curSecCmd->rfOpCmd.startTime,
-                             nextSecCmd->rfOpCmd.startTime-timeGap ) == FALSE ) )
-#endif
     {
       // there is, so current task is next
       return( curSecTask );
@@ -1976,27 +1814,16 @@ taskInfo_t *llSelectTaskInit( uint8 secTaskID, uint32 timeGap )
   taskInfo_t *curSecTask = MAP_llGetTask( secTaskID );
   taskInfo_t *nextSecTask = MAP_llGetTask( LL_TASK_ID_INITIATOR );
 
-#ifdef USE_RCL
   RCL_Command *curSecCmd  = (curSecTask != NULL)?(RCL_Command *)curSecTask->command:NULL;
   RCL_Command *nextSecCmd = (nextSecTask != NULL)?(RCL_Command *)nextSecTask->command:NULL;
-#else
-  ble5OpCmd_t *curSecCmd  = (curSecTask != NULL)?(ble5OpCmd_t *)curSecTask->command:NULL;
-  ble5OpCmd_t *nextSecCmd = (nextSecTask != NULL)?(ble5OpCmd_t *)nextSecTask->command:NULL;
-#endif
 
   // make sure current task is still active
   if ((curSecCmd != NULL) && (MAP_llActiveTask(secTaskID)))
   {
     // check if current task has enough time before next Scan
-#ifdef USE_RCL
     if ( (nextSecCmd != NULL) &&
          (MAP_llTimeCompare( curSecCmd->timing.absStartTime,
                              nextSecCmd->timing.absStartTime-timeGap ) == FALSE ) )
-#else
-    if ( (nextSecCmd != NULL) &&
-         (MAP_llTimeCompare( curSecCmd->rfOpCmd.startTime,
-                             nextSecCmd->rfOpCmd.startTime-timeGap ) == FALSE ) )
-#endif
     {
       // there is, so current task is next
       return( curSecTask );
@@ -2032,33 +1859,15 @@ taskInfo_t *llSelectTaskScan( uint8 secTaskID, uint32 timeGap )
   taskInfo_t *curSecTask = MAP_llGetTask( secTaskID );
   taskInfo_t *nextSecTask = MAP_llGetTask( LL_TASK_ID_SCANNER );
 
-#ifdef USE_RCL
   RCL_Command *curSecCmd  = (curSecTask != NULL)?(RCL_Command *)curSecTask->command:NULL;
   RCL_Command *nextSecCmd = (nextSecTask != NULL)?(RCL_Command *)nextSecTask->command:NULL;
-#else
-  ble5OpCmd_t *curSecCmd  = (curSecTask != NULL)?(ble5OpCmd_t *)curSecTask->command:NULL;
-  ble5OpCmd_t *nextSecCmd = (nextSecTask != NULL)?(ble5OpCmd_t *)nextSecTask->command:NULL;
-#endif
 
   // make sure current task is still active
   if ((curSecCmd != NULL) && (MAP_llActiveTask(secTaskID)))
   {
-#ifdef USE_RCL
     if ( (nextSecCmd != NULL) &&
          (MAP_llTimeCompare( curSecCmd->timing.absStartTime,
                              nextSecCmd->timing.absStartTime- timeGap ) == FALSE ) )
-#else
-    // in case the current task is periodic scan
-    if (secTaskID == LL_TASK_ID_PERIODIC_SCANNER)
-    {
-      return( curSecTask );
-    }
-    // check if current task has enough time to run again before next Scan
-    // TRUE when first parameter is GT the second parameter
-    if ( (nextSecCmd != NULL) &&
-         (MAP_llTimeCompare( curSecCmd->rfOpCmd.startTime,
-                            nextSecCmd->rfOpCmd.startTime- timeGap ) == FALSE ) )
-#endif
     {
       // there is, so current task is next
       return( curSecTask );
@@ -2644,7 +2453,6 @@ void llExtAdvSchedSetup( taskInfo_t *llTask )
 
   if (( pAdvSet != NULL ) && ( llTask->taskID == LL_TASK_ID_ADVERTISER ))
   {
-#ifdef USE_RCL
     if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
       // check if the start time is already in the past
@@ -2660,7 +2468,7 @@ void llExtAdvSchedSetup( taskInfo_t *llTask )
       {
         pAdvSet->txPowerIndex = curTxPowerVal;
       }
-      aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
+      aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
       pRf->advCmd.txPower = pAdvSet->txPowerIndex;
     }
 
@@ -2708,189 +2516,6 @@ void llExtAdvSchedSetup( taskInfo_t *llTask )
 	    ((RCL_Command *)pAdvSet->pRfCmds)->runtime.lrfCallbackMask.value |= LRF_EventRxOk.value;
       }
     }
-#else // USE_RCL
-    // clear the output
-    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      // get pointer to RF command
-      aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-
-      pRf->advOutput.nTxAdv     = 0;
-      pRf->advOutput.nTxScanRsp = 0;
-      pRf->advOutput.nRxScanReq = 0;
-      pRf->advOutput.nRxConnReq = 0;
-      pRf->advOutput.reserved   = 0;
-      pRf->advOutput.nRxNok     = 0;
-      pRf->advOutput.nRxIgn     = 0;
-      pRf->advOutput.nRxBufFull = 0;
-      pRf->advOutput.lastRssi   = 0;
-      pRf->advOutput.timeStamp  = 0;
-
-      // check if the start time is already in the past
-      // TRUE when first param is greater than second.
-      if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
-                              pRf->advCmd[0].rfOpCmd.startTime ) )
-      {
-        pRf->advCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-        pAdvSet->advStartTime = pRf->advCmd[0].rfOpCmd.startTime;
-      }
-
-      if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
-      {
-        pAdvSet->txPowerIndex = curTxPowerVal;
-      }
-
-#if defined(CC13X2P)
-
-      // Set the Type of the RF Command in the MSB of the tx Power index variable.
-      // This is a Legacy Cmd therfore we would set the MSB of the Tx index variable to 1.
-      // For all other cases of BLE5 the MSB of the tx index variable would be set to zero (unchanged).
-      MAP_llTxPwrSetRfCmdType(&(pAdvSet->txPowerIndex), TX_PWR_CMD_LEGACY);
-
-      // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-      MAP_llTxPwrSwitchPA( pAdvSet->txPowerIndex, (uint32 *)&(pRf->advCmd[pAdvSet->firstPrimChan - LL_ADV_BASE_CHAN]) );
-
-#else // NOT CC13X2P
-
-      // Set the Tx power according to Tx Power index
-      MAP_llSetTxPwrLegacy ( pAdvSet->txPowerIndex );
-
-#endif // CC13X2P
-
-    }
-#ifdef USE_AE
-    else // !legacy
-    {
-      // get pointer to RF command
-      aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
-
-      // Clear the Output Parameters
-      pRf->comOutput.nTxAdv     = 0;
-      pRf->comOutput.nTxScanRsp = 0;
-      pRf->comOutput.nRxScanReq = 0;
-      pRf->comOutput.nRxConnReq = 0;
-      pRf->comOutput.nTxConnRsp = 0;
-      pRf->comOutput.nRxNok     = 0;
-      pRf->comOutput.nRxIgn     = 0;
-      pRf->comOutput.nRxBufFull = 0;
-      pRf->comOutput.lastRssi   = 0;
-      pRf->comOutput.timeStamp  = 0;
-
-      // check if the start time is already in the past
-      // TRUE when first param is greater than second.
-      if ( MAP_llTimeCompare( MAP_llGetCurrentTime()+LL_SCHED_START_IMMED_PAD,
-                              pRf->extRfCmd[0].rfOpCmd.startTime ) )
-      {
-        pRf->extRfCmd[0].rfOpCmd.startTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
-        pAdvSet->advStartTime = pRf->extRfCmd[0].rfOpCmd.startTime;
-      }
-
-      // determine if an auxPtr is needed
-      if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
-      {
-        pRf->auxRfCmd.rfOpCmd.startTime = pRf->extRfCmd[0].rfOpCmd.startTime + US_TO_RAT_TICKS(pAdvSet->otaTimeExtAdv);
-        //Check if the secondary PHY is 2M
-        if (pRf->auxRfCmd.phyMode == BLE5_2M_PHY)
-        {
-          // In case the primary PHY is 1M or coded and the secondary PHY is 2M, the packet is being transmitted too early due to a PHY issue.
-          // Increase the start time to compensate that.
-          pRf->auxRfCmd.rfOpCmd.startTime += AE_1M_OR_CODED_TO_2M_TIME_COMPENSATION_IN_TICKS;
-        }
-      }
-#ifdef USE_PERIODIC_ADV
-      // determine if sync info is present
-      if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO) )
-      {
-        llPeriodicAdvSet_t *pPeriodicAdv = MAP_llGetPeriodicAdv(aeCurHandle);
-
-        // check that the periodic is active
-        if ((pPeriodicAdv != NULL) &&
-            (pPeriodicAdv->state != PERIODIC_ADV_STATE_DISABLE) &&
-            (pPeriodicAdv->intPriority == LL_QOS_LOW_PRIORITY))
-        {
-          // increase the periodic priority
-          pPeriodicAdv->intPriority = LL_QOS_HIGH_PRIORITY;
-        }
-      }
-#endif // USE_PERIODIC_ADV
-    }
-#endif // USE_AE
-    // pointer to first radio operation command
-    pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
-
-    // set RF events
-    pAdvSet->llTask->rfEvents = RF_EventLastCmdDone   |
-                                RF_EventInternalError;
-
-    // only use interrupts for AE advertisements
-#ifdef USE_AE
-    if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      pAdvSet->llTask->rfEvents = RF_EventTxDone;
-    }
-#endif
-
-#if defined(CC13X2P)
-    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      // enable TxDone interrupt in order to
-      // set the tx power per primary channel
-      pAdvSet->llTask->rfEvents |= RF_EventTxDone;
-    }
-#endif
-
-    // check if this is a Scannable advertisement
-    if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-    {
-      pAdvSet->llTask->rfEvents |= RF_EventRxEmpty;
-    }
-
-    // enable RxEntryDone for directed adv
-    if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-    {
-      pAdvSet->llTask->rfEvents |= RF_EventRxEntryDone;
-    }
-
-    // only if address resolution is enabled
-    if ( privInfo.addrResolution )
-    {
-      // check type of advertisement
-      // Note: No Scan/Init response when advertising non-connectable.
-      if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) ||
-           TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-      {
-        // enable Rx Ignore interrupt
-        pAdvSet->llTask->rfEvents |= RF_EventRxIgnored;
-      }
-    }
-
-    // clear Tx Done interrupt counter
-    pAdvSet->txCount = 0;
-
-#ifdef DEBUG_GPIO_CONN
-    MAP_llSetupRatCompare( llTask );
-#else // !DEBUG_GPIO_CONN
-    // check if any start event is requried
-    if ( (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_SET_START) ||
-         (pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_ADV_START) )
-    {
-      // setup RAT compare for radio command start time, needed for callbacks
-      MAP_llSetupRatCompare( llTask );
-    }
-#endif // DEBUG_GPIO_CONN
-
-#ifdef RTLS_CTE
-    // check that the CTE sampling is enable
-    if (llCteSamples.pAutoCopyBuffers != NULL)
-    {
-      // disable the antenna switch
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-      // disable the auto copy
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-    }
-#endif // RTLS_CTE
-
-#endif
 
     // save the the last schedule time for calculate number of missed packets
     pNextAdvSet->timeScheduled = pAdvSet->advStartTime;
@@ -2965,30 +2590,10 @@ void llExtScanSchedSetup( taskInfo_t *llTask )
 {
   // Sanity Check
   LL_ASSERT( (llTask->taskID == LL_TASK_ID_SCANNER) );
-#ifndef USE_RCL
-  // clear the output
-  extScanOutput.nTxReq            = 0;
-  extScanOutput.nBoffScanReq      = 0;
-  extScanOutput.nRxAdvOk          = 0;
-  extScanOutput.nRxAdvIgn         = 0;
-  extScanOutput.nRxAdvNok         = 0;
-  extScanOutput.nRxScanRspOk      = 0;
-  extScanOutput.nRxScanRspIgn     = 0;
-  extScanOutput.nRxScanRspNok     = 0;
-  extScanOutput.nRxAdvBufFull     = 0;
-  extScanOutput.nRxScanRspBufFull = 0;
-  extScanOutput.lastRssi          = 0;
-  extScanOutput.reserved          = 0;
-  extScanOutput.timeStamp         = 0;
-
-  // setup RAT compare for radio command start time, needed for callbacks
-  MAP_llSetupRatCompare( llTask );
-#endif
 
   // only if address resolution is enabled
   if ( privInfo.addrResolution )
   {
-#ifdef USE_RCL
       // check if RPA has changed, and if so, update Scan address
       // Note: Assumes if the local IRK is valid, then the local RPA exists.
       if ( LL_IS_ADDR_TYPE_RPA(extScanInfo->ownAddrType) &&
@@ -3015,10 +2620,6 @@ void llExtScanSchedSetup( taskInfo_t *llTask )
                          resolvingList[LOCAL_RL_INDEX].RPA,
                          B_ADDR_LEN );
       }
-#else
-        // enable Rx Ignore interrupt
-        llTask->rfEvents |= RF_EventRxIgnored;
-#endif
   }
 
 #if defined(CC13X2P)
@@ -3139,43 +2740,14 @@ void llPeriodicScanSchedSetup( taskInfo_t *llTask )
  */
 void llExtInitSchedSetup( taskInfo_t *llTask )
 {
-#ifndef USE_RCL
-  // Sanity Check
-  LL_ASSERT( (llTask->taskID == LL_TASK_ID_INITIATOR) );
-
-  // clear the output
-  extInitOutput.nTxReq            = 0;
-  extInitOutput.nBoffScanReq      = 0;
-  extInitOutput.nRxAdvOk          = 0;
-  extInitOutput.nRxAdvIgn         = 0;
-  extInitOutput.nRxAdvNok         = 0;
-  extInitOutput.nRxScanRspOk      = 0;
-  extInitOutput.nRxScanRspIgn     = 0;
-  extInitOutput.nRxScanRspNok     = 0;
-  extInitOutput.nRxAdvBufFull     = 0;
-  extInitOutput.nRxScanRspBufFull = 0;
-  extInitOutput.lastRssi          = 0;
-  extInitOutput.reserved          = 0;
-  extInitOutput.timeStamp         = 0;
-
-#ifdef DEBUG_GPIO_CONN
-  MAP_llSetupRatCompare( llTask );
-#endif // DEBUG_GPIO_CONN
-#endif
-
   // only if address resolution is enabled
   if ( privInfo.addrResolution )
   {
-#ifndef USE_RCL
-	// enable Rx Ignore interrupt
-    llTask->rfEvents |= RF_EventRxIgnored;
-#else
     if ( !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK ) )
     {
       // Update the own address in the command - needed if the own address might have changed
       MAP_osal_memcpy(extInitParam.ownA, resolvingList[LOCAL_RL_INDEX].RPA, B_ADDR_LEN);
     }
-#endif
   }
 
 
@@ -3198,107 +2770,7 @@ void llExtInitSchedSetup( taskInfo_t *llTask )
   return;
 }
 #endif // INIT_CFG
-
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-#ifndef USE_RCL
-/*******************************************************************************
- * @fn          rfLinkRatCompareCBack
- *
- * @brief       This routine is used perform the actions after the link timer
- *              is expired (radio halt).
- *
- * @design      /ref did_361975877
- *
- * input parameters
- *
- * @param       connId - Connection id.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void rfLinkRatCompareCBack( RF_Handle    rfHandle,
-                            RF_RatHandle ratHandle,
-                            RF_EventMask events,
-                            uint32       compareTime)
-{
-  halIntState_t cs;
-
-  // Clear the RAT handle
-  MAP_llClearRatCompare();
-
-  // Start Critical Section.
-  HAL_ENTER_CRITICAL_SECTION(cs);
-
-  uint32 currTime = MAP_llGetCurrentTime();
-  taskInfo_t *curTask = MAP_llGetCurrentTask();
-
-  // halt the radio in case this is a central or peripheral connection id event.
-  // halt only in case the current task already started.
-  if ((curTask != NULL) &&
-     ((curTask->taskID == LL_TASK_ID_CENTRAL) || (curTask->taskID == LL_TASK_ID_PERIPHERAL)) &&
-      (MAP_llTimeCompare(currTime,curTask->startTime)))
-  {
-
-      MAP_llHaltRadio( CMD_ABORT );
-  }
-
-  // End Critical Section.
-  HAL_EXIT_CRITICAL_SECTION(cs);
-
-}
-/*******************************************************************************
- * @fn          llSetupLinkRatCompare
- *
- * @brief       This routine is used to setup the RAT compare for the connection radio
- *              command max time length
- *
- * @design      /ref did_361975877
- *
- * input parameters
- *
- * @param       connId - Connection id.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetupLinkRatCompare( uint16 connId )
-{
-  // Get the Connection's Info
-  llConnState_t *connPtr = MAP_llDataGetConnPtr( connId );
-
-  // Setup the configuration for the rat ticks timer
-  RF_RatConfigCompare config = { .callback = (RF_RatCallback)rfLinkRatCompareCBack,
-                                 .channel  = RF_RatChannelAny,
-                                 .timeout  = connPtr->connMaxTimeLength };
-
-  // Disable the RAT channel in case somehow the channel still enable
-  // Issue was reproduce only with DMM
-  if ( rfRatHandle != RF_ALLOC_ERROR )
-  {
-    MAP_llClearRatCompare();
-  }
-
-  // Setup the timer.
-  rfRatHandle = RF_ratCompare(rfHandle, &config, NULL);
-
-  if ( rfRatHandle == RF_ALLOC_ERROR )
-  {
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_NO_RAT_COMPARE_AVAILABLE );
-
-    LL_ASSERT( FALSE );
-  }
-
-  return;
-}
-#endif //!USE_RCL
 /*******************************************************************************
  * @fn          llLinkSchedSetup
  *
@@ -3320,49 +2792,10 @@ void llLinkSchedSetup( taskInfo_t *llTask )
   // get connection information
   llConnState_t *connPtr        = MAP_llDataGetConnPtr( llConns.currentConn );
   uint32 startTime = 0;
-#ifdef USE_RCL
   RCL_Command *connCmd = (RCL_Command *)connPtr->llTask->command;
 
   // clear the output parameters
   connOutput = RCL_StatsConnection_DefaultRuntime();
-#else
-  // Use the currently selected next connection as the reference
-  ble5OpCmd_t *connCmd = (ble5OpCmd_t *)connPtr->llTask->command;
-
-  startTime = connCmd->rfOpCmd.startTime;
-  // Sanity Check
-  LL_ASSERT( (llTask->taskID == LL_TASK_ID_CENTRAL) ||
-             (llTask->taskID == LL_TASK_ID_PERIPHERAL) );
-
-  // clear the output parameters
-  // Note: connOutput.lastRssi will continue to hold previous last RSSI.
-  // Note: Clear output registers here because when multiple connections are
-  //       being used, it is possible a connection can terminate, and never
-  //       call the setup routine that would normally clear these registers.
-  //       So instead of putting this at the end of Adv/Init/Central/Peripheral,
-  //       will place before posting the command.
-  connOutput.nTx            = 0;
-  connOutput.nTxAck         = 0;
-  connOutput.nTxCtrl        = 0;
-  connOutput.nTxCtrlAck     = 0;
-  connOutput.nTxCtrlAckAck  = 0;
-  connOutput.nTxRetrans     = 0;
-  connOutput.nTxEntryDone   = 0;
-  connOutput.nRxOk          = 0;
-  connOutput.nRxCtrl        = 0;
-  connOutput.nRxCtrlAck     = 0;
-  connOutput.nRxNok         = 0;
-  connOutput.nRxIgn         = 0;
-  connOutput.nRxEmpty       = 0;
-  connOutput.nRxBufFull     = 0;
-  connOutput.pktStatus      = 0;
-  connOutput.timeStamp      = 0;
-  connOutput.lastRssi       = LL_RF_RSSI_UNDEFINED;
-
-#ifdef DEBUG_GPIO_CONN
-  MAP_llSetupRatCompare( llTask );
-#endif // DEBUG_GPIO_CONN
-#endif //USE_RCL
 
 #if defined(CC13X2P)
   // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
@@ -3385,15 +2818,9 @@ void llLinkSchedSetup( taskInfo_t *llTask )
     // Check the connection id is valid before activating the timer.
     if (connPtr->connId < llConns.numActiveConns)
     {
-#ifndef USE_RCL
-      // Start the timer of the max connection length.
-      // This timer would halt the connection event in case it reaches it's max connection's length.
-      llSetupLinkRatCompare( connPtr->connId );
-#else
       // calculate connPtr->connMaxTimeLength while start time is 0
       // in order to set the stop time relative to the start time
       connCmd->timing.relHardStopTime = connPtr->connMaxTimeLength;
-#endif
     }
   }
 
@@ -3433,19 +2860,8 @@ void llLinkSchedSetup( taskInfo_t *llTask )
 // RAT Compare Callback
 // Note: This properly belongs in ll_isr.c
 ////////////////////////////////////////////////////////////////////////////////
-#ifdef USE_RCL
 void llCmdStartedEventHandle( void )
-#else
-void rfRatCompareCBack( RF_Handle    rfHandle,
-                        RF_RatHandle ratHandle,
-                        RF_EventMask events,
-                        uint32       compareTime)
-#endif
 {
-#ifndef USE_RCL
-  /* clear the RAT handle */
-  MAP_llClearRatCompare();
-#endif
   // check if Advertiser or Scanner
   switch( llState )
   {
@@ -3561,84 +2977,6 @@ void rfRatCompareCBack( RF_Handle    rfHandle,
   return;
 }
 
-#ifndef USE_RCL
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG | SCAN_CFG))
-/*******************************************************************************
- * @fn          llSetupRatCompare
- *
- * @brief       This routine is used to setup the RAT compare for the radio
- *              command start time.
- *
- * input parameters
- *
- * @param       llTask - Pointer to task information.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetupRatCompare( taskInfo_t *llTask )
-{
-  // overhead of the time duration until the rx window open
-  uint16 sdaaoverhead = 0;
-  if( llTask->taskID == LL_TASK_ID_RX_WINDOW )
-  {
-    sdaaoverhead = RAT_TICKS_IN_166US;
-  }
-  RF_RatConfigCompare config = { .callback = (RF_RatCallback)rfRatCompareCBack,
-                                 .channel  = RF_RatChannelAny,
-                                 .timeout  = sdaaoverhead +
-                                   ((rfOpCmd_t *)llTask->command)->startTime};
-
-  // Disable the RAT channel in case somehow the channel still enable
-  // Issue was reproduce only with DMM
-  if ( rfRatHandle != RF_ALLOC_ERROR )
-  {
-    MAP_llClearRatCompare();
-  }
-  rfRatHandle = RF_ratCompare(rfHandle, &config, NULL);
-
-  if ( rfRatHandle == RF_ALLOC_ERROR )
-  {
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_NO_RAT_COMPARE_AVAILABLE );
-
-    LL_ASSERT( FALSE );
-  }
-
-  return;
-}
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG | SCAN_CFG
-
-/*******************************************************************************
- * @fn          llClearRatCompare
- *
- * @brief       This routine is used to clear the RAT compare.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llClearRatCompare( void )
-{
-  // disable the RAT channel that might be going
-  if ( rfRatHandle != RF_ALLOC_ERROR )
-  {
-    // disable RAT channel
-    (void)RF_ratDisableChannel( rfHandle, rfRatHandle );
-    rfRatHandle = RF_ALLOC_ERROR;
-  }
-}
-#endif
-
 /*******************************************************************************
  * @fn          llScheduleTask
  *
@@ -3660,7 +2998,6 @@ void llClearRatCompare( void )
  */
 void llScheduleTask( taskInfo_t *llTask )
 {
-#ifdef USE_RCL
   RCL_CommandStatus status;
 
   LL_ASSERT( llTask != NULL );
@@ -3718,100 +3055,6 @@ void llScheduleTask( taskInfo_t *llTask )
     (void)MAP_llDbgInf_addSchedRec(llTask);
   }
   return;
-#else
-#ifndef RF_SINGLEMODE
-  RF_ScheduleCmdParams cmdParams = {
-    0,
-    RF_StartNotSpecified,
-    RF_AllowDelayAny,
-    0,
-    RF_EndNotSpecified,
-    0,
-    0,
-    RF_PriorityCoexDefault,
-    RF_RequestCoexDefault
-  };
-#endif // !RF_SINGLEMODE
-
-  LL_ASSERT( llTask != NULL );
-  if(MAP_LL_Is_SDAA_Enable())
-  {
-      //Add RF_EventTxDone event for Tx usage record
-      llTask->rfEvents = llTask->rfEvents | RF_EventTxDone;
-  }
-  // TEMP
-  if ( llTask == NULL ) return;
-
-  // set this task as the current task
-  llTaskList.curTask = llTask;
-
-  // restore user defined radio inactivity timeout, in case it was changed
-  // by the Scheduler
-  (void)RF_control( rfHandle,
-                    RF_CTRL_SET_INACTIVITY_TIMEOUT,
-                    (void *)&llUserConfig.inactivityTimeout );
-
-  // check if the start trigger is based on an absolute start time
-  if ( CHK_RFOP_TRIG_TYPE( ((rfOpCmd_t *)llTask->command)->startTrig,
-                           TRIGTYPE_AT_ABS_TIME) )
-  {
-    // set the tasks initial start time
-    // Note: This information is needed for PM.
-    llTask->startTime = ((rfOpCmd_t *)llTask->command)->startTime;
-  }
-  else // either TRIGTYPE_NOW or TRIGTYPE_REL_PREV_CMD_START
-  {
-    // base start time relative to current time (doesn't really matter)
-    llTask->startTime = MAP_llGetCurrentTime();
-  }
-
-  // task start function used to execute task specific operations
-  // Note: This must be executed before any functions that use values that
-  //       could be changed (i.e. overrode) by the setup function.
-  if ( llTask->setup )
-  {
-    (*llTask->setup)(llTask);
-  }
-
-  BLE_LOG_INT_INT(0, BLE_LOG_MODULE_RF_CMD, "RF  : schedule cmd=0x%x, status=%d\n", ((ble5OpCmd_t *)(llTask->command))->rfOpCmd.cmdNum, 0);
-#ifdef RF_SINGLEMODE
-  // post AE command
-  rfCmdHandle = RF_postCmd( rfHandle,
-                            (RF_Op *)llTask->command,
-                            RF_PriorityHighest,
-                            (RF_Callback)MAP_rfCallback,
-                            llTask->rfEvents );
-#else // !RF_SINGLEMODE
-  // Get the DMM priority for this command
-  cmdParams.activityInfo = MAP_llDmmGetActivityIndex(((ble5OpCmd_t *)(llTask->command))->rfOpCmd.cmdNum);
-
-  // Set the Coex params only for 3 wire and 1 wire request
-  MAP_llCoexSetParams(((ble5OpCmd_t *)(llTask->command))->rfOpCmd.cmdNum,&cmdParams);
-
-  // set the start time for the preemption mechanism
-  llSetRfCmdPreemptionParams(((ble5OpCmd_t *)(llTask->command))->rfOpCmd.startTime);
-
-  // update health check
-  MAP_llHealthUpdate(llState);
-  // post AE command
-  rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                (RF_Op *)llTask->command,
-                                &cmdParams,
-                                (RF_Callback)MAP_rfCallback,
-                                (RF_EventMask)llTask->rfEvents |
-                                RF_EventCmdCancelled  |
-                                RF_EventCmdAborted    |
-                                RF_EventCmdStopped    |
-                                RF_EventCmdPreempted );
-#endif // RF_SINGLEMODE
-
-  if ( rfCmdHandle == RF_ALLOC_ERROR || rfCmdHandle == RF_SCHEDULE_CMD_ERROR )
-  {
-    LL_AbortedCback( TRUE );
-  }
-
-  return;
-#endif
 }
 
 /*******************************************************************************

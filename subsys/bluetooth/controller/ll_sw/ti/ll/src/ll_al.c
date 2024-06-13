@@ -95,11 +95,8 @@ void AL_Init( alTable_t *pAlTable )
   pAlTable->numAlEntries = BLE_MAX_NUM_AL_ENTRIES;
 
   // set the number of accept list entries in the first entry (used by radio)
-#ifdef USE_RCL
   pAlTable->numEntries = pAlTable->numAlEntries;
-#else
-  pAlTable->pAlEntries[0].numEntries = pAlTable->numAlEntries;
-#endif
+
   // clear the accept list table
   (void)MAP_AL_Clear( pAlTable );
 
@@ -594,11 +591,7 @@ llStatus_t AL_ClearIgnoreList( alTable_t *pAlTable )
   LL_ASSERT( pAlTable->numAlEntries != 0 );
 
   // clear all entries
-#ifdef USE_RCL
   for (uint8 i=0; i<pAlTable->numEntries; i++)
-#else
-  for (uint8 i=0; i<pAlTable->pAlEntries[0].numEntries; i++)
-#endif
   {
     // clear ignore bit in accept list entry
     CLR_AL_ENTRY_IGNORE( pAlTable->pAlEntries[i].alFlags );
@@ -646,11 +639,8 @@ void AL_Scan_Init ( alTable_t *pAlTable )
   pAlTable->numAlEntries = BLE_MAX_NUM_AL_SCAN_ENTRIES;
 
   // set the number of accept list entries in the first entry (used by radio)
-#ifdef USE_RCL
   pAlTable->numEntries = pAlTable->numAlEntries;
-#else
-  pAlTable->pAlEntries[0].numEntries = pAlTable->numAlEntries;
-#endif
+
   // clear the accept list table
   (void)MAP_AL_Clear( pAlTable );
 

@@ -216,7 +216,7 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define HCI_LE_SetExtAdvData(...)                         (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_SetExtAdvData , ##__VA_ARGS__))
 #define HCI_LE_SetAdvStatus(...)                          (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_SetAdvStatus , ##__VA_ARGS__))
 
-/* HCI Extented API */
+/* HCI Extended API */
 /********************/
 #define HCI_EXT_SetFastTxResponseTimeCmd(...)                      (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetFastTxResponseTimeCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetPeripheralLatencyOverrideCmd(...)               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetPeripheralLatencyOverrideCmd , ##__VA_ARGS__))
@@ -372,6 +372,7 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define GAP_SendSlaveSecurityRequest(...)                                               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_GAP_SendPeripheralSecurityRequest , ##__VA_ARGS__))
 #define GAP_Signable(...)                                                               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_GAP_Signable , ##__VA_ARGS__))
 #define GAP_Bond(...)                                                                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_GAP_Bond , ##__VA_ARGS__))
+#define Gap_ReplyToLTKReq(...)                                                          (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_Gap_ReplyToLTKReq , ##__VA_ARGS__))
 /* the following API are not available for now */
 #define GAP_PasscodeUpdate(...)                                                         (AssertHandler(0,0))
 

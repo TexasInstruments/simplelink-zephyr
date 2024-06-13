@@ -90,14 +90,11 @@ extern "C"
 
 #ifdef ICALL_JT
 #include "icall_user_config.h"
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#include "rf_hal.h"
-#endif
 #endif /* ICALL_JT */
 
 #include "ble_dispatch.h"
 #include "hal_assert.h"
+#include "bcomdef.h"
 
 /*******************************************************************************
  * MACROS
@@ -138,11 +135,10 @@ extern "C"
 //       is only defined for the Application project
 #if defined(ICALL_STACK0_ADDR)
 
-#ifndef CONFIG_SOC_CC2340R5
 #ifndef CC33xx
 #include <ti_drivers_config.h>
 #endif // CC33xx
-#endif
+
 // RF Front End Settings
 // Note: The use of these values completely depends on how the PCB is laid out.
 //       Please see Device Package and Evaluation Module (EM) Board below.
@@ -225,6 +221,13 @@ extern "C"
 #endif //SDAA_ENABLE
 /************************************/
 
+// Specifies whether LFOSC (RCOSC) was configured in CCFG module by the user
+#define SRC_CLK_IS_LFOSC                0
+
+// User configurable extra PPM for peripheral RX window widening
+// This only applies if SRC_CLK_IS_LFOSC is set to 1, default value will be 1500PPM
+#define USER_CFG_LFOSC_EXTRA_PPM        1500
+
 // bitmask of extended stack settings
 #ifndef EXTENDED_STACK_SETTINGS
 #define EXTENDED_STACK_SETTINGS         0x00
@@ -256,13 +259,17 @@ extern "C"
   #define L2CAP_NUM_CO_CHANNELS         8
 #endif
 
-#ifndef MAX_NUM_AL_ENTRIES
-#ifdef CC23X0
+#ifndef MAX_NUM_AL_ENTRIES // MAX_NUM_AL_ENTRIES
+#ifdef CC23X0 // CC23X0
+#if defined(USE_DFL) && defined(GAP_BOND_MGR) // (Radio core using dynamic filter list)
+#define MAX_NUM_AL_ENTRIES             GAP_BONDINGS_MAX
+#else // !(Radio core using dynamic filter list)
 #define MAX_NUM_AL_ENTRIES             5
+#endif // (Radio core using dynamic filter list)
 #else
 #define MAX_NUM_AL_ENTRIES             16  // at 8 bytes per AL entry
 #endif // CC23X0
-#endif
+#endif// MAX_NUM_AL_ENTRIES
 
 #ifndef CFG_MAX_NUM_RL_ENTRIES
 #ifdef GAP_BOND_MGR
@@ -313,7 +320,7 @@ extern "C"
 #ifndef RF_ERR_CB
   #define RF_ERR_CB                      pRfErrCb
 #endif
-/*
+
 //
 // Device Package and Evaluation Module (EM) Board
 //
@@ -362,7 +369,7 @@ extern "C"
 // For additional details and examples, please see the Software Developer's
 // Guide.
 //
-*/
+
 #ifndef CC23X0
 // RF Front End Mode and Bias Configuration
 #ifndef SYSCFG
@@ -545,9 +552,7 @@ typedef struct
 #ifndef CC23X0
   userConfigRfDriverParams_t  rfDriverParams;
 #endif
-#ifndef CONFIG_SOC_CC2340R5
   ECCParams_CurveParams       *eccParams;
-#endif
   pfnFastStateUpdate_t        fastStateUpdateCb;
   uint32_t                    bleStackType;
   uint32_t                    extStackSettings; // | reserved | use CC2652RB | MasterGuard |
@@ -556,6 +561,7 @@ typedef struct
   uint8                       maxNumCteBuffers;
 #endif
   uint8                       advReportIncChannel;
+  uint8                       useDFL;
 } stackSpecific_t;
 
 #else /* !(ICALL_JT) */
@@ -692,6 +698,9 @@ extern uint16_t bleUserCfg_maxPduSize;
 extern uint16_t llUserConfig_maxPduSize;
 
 extern sdaaUsrCfg_t sdaaCfgTable;
+
+extern uint8  userCfgClockType;
+extern uint16 userCfgAdditionalPPM;
 
 #ifdef ICALL_JT
 #ifndef CC23X0

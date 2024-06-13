@@ -115,8 +115,6 @@ void LL_RxDataCompleteCback( uint16 connHandle,
   // unused input parameter; PC-Lint error 715.
   (void)rssi;
 
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
-
   // check if Controller to Host flow control is enabled
   if ( ctrlToHostEnable == TRUE )
   {
@@ -186,8 +184,8 @@ void LL_RxDataCompleteCback( uint16 connHandle,
       msg->pData[3] = LO_UINT16(len);
       msg->pData[4] = HI_UINT16(len);
 
-      // send message
-      (void)MAP_osal_msg_send( hciTaskID, (uint8 *)msg );
+      // Send message
+      MAP_HCI_SendEventToHost ( (uint8 *)msg );
     }
     else // can't send this packet
     {

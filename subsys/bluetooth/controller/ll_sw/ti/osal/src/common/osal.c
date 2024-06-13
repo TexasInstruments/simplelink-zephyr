@@ -23,13 +23,14 @@
 #include "osal_memory.h"
 #include "osal_timers.h"
 #include <string.h>
-#include <stdlib.h>
 #include "comdef.h"
 #include "hal_board.h"
 #include "osal.h"
 #include "osal_tasks.h"
 #include "osal_pwrmgr.h"
 #include "osal_clock.h"
+
+#include "onboard.h"
 
 /* HAL */
 #include "hal_drivers.h"
@@ -91,7 +92,7 @@ osal_icallMsg_hook_t osal_icallMsg_hook = NULL;
 /*********************************************************************
  * EXTERNAL FUNCTIONS
  */
-extern uint8 LL_Rand( uint8 *, uint8 );
+
 /*********************************************************************
  * LOCAL VARIABLES
  */
@@ -379,7 +380,6 @@ uint32 osal_build_uint32( uint8 *swapped, uint8 len )
  *
  * @return  pointer to buffer
  */
-/*
 unsigned char * _ltoa(unsigned long l, unsigned char *buf, unsigned char radix)
 {
 #if defined (__TI_COMPILER_VERSION) || defined (__TI_COMPILER_VERSION__)
@@ -451,7 +451,6 @@ unsigned char * _ltoa(unsigned long l, unsigned char *buf, unsigned char radix)
   return buf;
 #endif
 }
-*/
 #endif // !defined(ZBIT) && !defined(ZBIT2) && !defined (UBIT) && !defined (CC33xx)
 
 /*********************************************************************
@@ -465,11 +464,7 @@ unsigned char * _ltoa(unsigned long l, unsigned char *buf, unsigned char radix)
  */
 uint16 osal_rand( void )
 {
-  uint16 randNum;
-
-  LL_Rand( (uint8 *)&randNum, 2 );
-
-  return ( randNum );
+  return ( Onboard_rand() );
 }
 
 /*********************************************************************

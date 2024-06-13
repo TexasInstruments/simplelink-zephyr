@@ -28,10 +28,6 @@ extern "C"
  */
 #include "hci_tl.h"
 
-extern uint8 pBleEvtMask[];
-extern uint8 pHciEvtMask[];
-extern uint8 pHciEvtMask2[];
-
 /*******************************************************************************
  * MACROS
  */
@@ -131,6 +127,21 @@ extern uint8 pHciEvtMask2[];
 #define BT_EVT_INDEX_KEY_REFRESH_COMPLETE                              5
 #define BT_EVT_INDEX_LE_META_EVENT                                     7
 
+
+/*
+ ** Bluetooth Event bit
+ ** Core Specification 5.3, Vol. 4, Part E, Section 7.3.1
+*/
+
+#define BT_EVT_DISCONNECT_COMPLETE_BIT                               4
+#define BT_EVT_ENCRYPTION_CHANGE_BIT                                 7
+#define BT_EVT_READ_REMOTE_VERSION_INFO_BIT                          11
+#define BT_EVT_HARDWARE_ERROR_BIT                                    15
+#define BT_EVT_FLUSH_OCCURRED_BIT                                    16
+#define BT_EVT_BUFFER_OVERFLOW_BIT                                   25
+#define BT_EVT_KEY_REFRESH_COMPLETE_BIT                              47
+#define BT_EVT_LE_META_EVENT_BIT                                     61
+
 // Event Mask Default Values
 #define BT_EVT_MASK_BYTE0   (BT_EVT_MASK_ENCRYPTION_CHANGE | BT_EVT_MASK_DISCONNECTION_COMPLETE)
 #define BT_EVT_MASK_BYTE1   (BT_EVT_MASK_HARDWARE_ERROR | BT_EVT_MASK_READ_REMOTE_VERSION_INFORMATION_COMPLETE)
@@ -141,11 +152,12 @@ extern uint8 pHciEvtMask2[];
 #define BT_EVT_MASK_BYTE6   (BT_EVT_MASK_NONE)
 #define BT_EVT_MASK_BYTE7   (BT_EVT_MASK_LE_META_EVENT)
 
+
 /*
 ** Bluetooth Event Mask 2
 ** Core Specification, Vol. 2, Part E, Section 7.3.69
 */
-
+#define BT_EVT_AUTHENTICATED_PAYLOAD_TIMEOUT_EXPIRED_BIT               23
 // Byte 0
 #define BT_EVT_MASK2_PHYSICAL_LINK_COMPLETE                            0x01
 #define BT_EVT_MASK2_CHANNEL_SELECTED                                  0x02
@@ -271,6 +283,37 @@ extern uint8 pHciEvtMask2[];
 #define LE_EVT_INDEX_CONNECTION_IQ_REPORT                              2
 #define LE_EVT_INDEX_CTE_REQUEST_FAILED                                2
 
+/*
+ ** Bluetooth LE Event Bit
+ ** Core Specification 5.3, Vol. 4, Part E, Section 7.8.1
+*/
+#define LE_EVT_CONN_COMPLETE_BIT                                     0
+#define LE_EVT_ADV_REPORT_BIT                                        1
+#define LE_EVT_CONN_UPDATE_COMPLETE_BIT                              2
+#define LE_EVT_READ_REMOTE_FEATURE_BIT                               3
+#define LE_EVT_LTK_REQUEST_BIT                                       4
+#define LE_EVT_REMOTE_CONN_PARAM_REQUEST_BIT                         5
+#define LE_EVT_DATA_LENGTH_CHANGE_BIT                                6
+#define LE_EVT_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE_BIT               7
+//
+#define LE_EVT_GENERATE_DHKEY_COMPLETE_BIT                           8
+#define LE_EVT_ENH_CONN_COMPLETE_BIT                                 9
+#define LE_EVT_DIRECT_ADVERTISING_REPORT_BIT                         10
+#define LE_EVT_PHY_UPDATE_COMPLETE_BIT                               11
+#define LE_EVT_EXTENDED_ADV_REPORT_BIT                               12
+#define LE_EVT_PERIODIC_ADV_SYNC_ESTABLISHED_BIT                     13
+#define LE_EVT_PERIODIC_ADV_REPORT_BIT                               14
+#define LE_EVT_PERIODIC_ADV_SYNC_LOST_BIT                            15
+//
+#define LE_EVT_EXTENDED_SCAN_TIMEOUT_BIT                             16
+#define LE_EVT_EXTENDED_ADV_SET_TERIMINATED_BIT                      17
+#define LE_EVT_SCAN_REQUEST_RECEIVED_BIT                             18
+#define LE_EVT_CHANNEL_SELECTION_ALGORITHM_BIT                       19
+#define LE_EVT_CONNECTIONLESS_IQ_REPORT_BIT                          20
+#define LE_EVT_CONNECTION_IQ_REPORT_BIT                              21
+#define LE_EVT_CTE_REQUEST_FAILED_BIT                                22
+
+
 // Bluetooth LE Event Mask Default Values
 #define LE_EVT_MASK_BYTE0   (LE_EVT_MASK_CONN_COMPLETE             |     \
                              LE_EVT_MASK_ADV_REPORT                |     \
@@ -301,6 +344,7 @@ extern uint8 pHciEvtMask2[];
 // LE Event Lengths
 #define HCI_CMD_COMPLETE_EVENT_LEN                                     3
 #define HCI_CMD_VS_COMPLETE_EVENT_LEN                                  2
+#define HCI_VS_SYSTEM_REPORT_LEN                                       6
 #define HCI_CMD_STATUS_EVENT_LEN                                       4
 #define HCI_NUM_COMPLETED_PACKET_EVENT_LEN                             5
 #define HCI_FLUSH_OCCURRED_EVENT_LEN                                   2
@@ -331,6 +375,8 @@ extern uint8 pHciEvtMask2[];
 #define HCI_PERIODIC_ADV_SYNCH_ESTABLISHED_EVENT_LEN                   16
 #define HCI_PERIODIC_ADV_REPORT_EVENT_LEN                              8
 #define HCI_PERIODIC_ADV_SYNCH_LOST_EVENT_LEN                          3
+#define HCI_HARDWARE_ERROR_EVENT_LEN                                   1
+#define HCI_DIRECT_TEST_END_LEN                                        3
 // LE Synchronous Event Lengths
 #define HCI_LE_READ_ANTENNA_INFORMATION_LEN                            5
 // Vendor Specific LE Events
@@ -338,29 +384,240 @@ extern uint8 pHciEvtMask2[];
 #define HCI_EXT_CONNECTION_IQ_REPORT_EVENT_LEN                         20
 #define HCI_BLE_CHANNEL_MAP_UPDATE_EVENT_LEN                           9
 #define HCI_EXT_CONNECTIONLESS_IQ_REPORT_EVENT_LEN                     19
-
+#define HCI_EXT_ADV_EVENT_LEN                                          4
+#define HCI_EXT_ADV_DATA_TRUNCATED_EVENT_LEN                           7
+#define HCI_EXT_SCAN_EVENT_LEN                                         3
 
 /*******************************************************************************
  * TYPEDEFS
  */
+
+typedef struct hci_c2h_cbs_t
+{
+  int (*send)(uint8 *pHciPkt, uint16 pktLen);
+}hci_c2h_cbs_t;
 
 /*******************************************************************************
  * LOCAL VARIABLES
  */
 
 /*******************************************************************************
- * GLOBAL VARIABLES
+ * API FUNCTIONS
  */
 
-/*
-** Internal Functions
-*/
+/*******************************************************************************
+ * @fn          HCI_ControllerToHostRegisterCb
+ *
+ * @brief       This function register callback function to HCI events
+ *
+ * input parameters
+ *
+ * @param       hci_c2h_cbs_t cb - callback function.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      SUCCESS / FAILURE.
+ */
+uint8 HCI_ControllerToHostRegisterCb( hci_c2h_cbs_t cbs );
 
-extern void hciInitEventMasks( void );
+/*******************************************************************************
+ * @fn          HCI_SendEventToHost
+ *
+ * @brief       This function is responsible for sending the prepared event
+ *              packet to the host. If a callback function is registered, the
+ *              message will be sent to the callback function,
+ *              otherwise, it will be sent to hci_task.
+ *
+ * input parameters
+ *
+ * @param       *pEvt -Pointer to prepared HCI event packet
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_SendEventToHost( uint8 *pEvt );
+
+/*******************************************************************************
+ * Event masks API functions Init/Setters/Checkers
+ */
+
+/*******************************************************************************
+ * @fn          HCI_InitEventMasks
+ *
+ * @brief       This routine initializes Bluetooth and BLE event masks to their
+ *              default values.
+ *
+ * input parameters
+ *
+ * @param       None.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_InitEventMasks( void );
+
+/*******************************************************************************
+ * @fn          HCI_SetEventMaskPage1
+ *
+ * @brief       This API is used to set the HCI event mask page 1, which is
+ *              used to determine which events are supported.
+ *
+ * input parameters
+ *
+ * @param      *pEventMask          - Event mask to be copy
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      SUCCESS/FAILURE
+ */
+uint8 HCI_SetEventMaskPage1( uint8 *pEventMask );
+
+/*******************************************************************************
+ * @fn          HCI_SetEventMaskPage2
+ *
+ * @brief       This API is used to set the HCI event mask page 2, which is
+ *              used to determine which events are supported.
+ *
+ * input parameters
+ *
+ * @param      *pEventMask          - Event mask to be copy
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      SUCCESS/FAILURE
+ */
+uint8 HCI_SetEventMaskPage2( uint8 *pEventMask );
+
+/*******************************************************************************
+ * @fn          HCI_SetEventMaskLe
+ *
+ * @brief       This API is used to set the LE HCI event mask, which is
+ *              used to determine which LE events are supported.
+ *
+ * input parameters
+ *
+ * @param      *pEventMask          - Event mask to be copy
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      SUCCESS/FAILURE
+ */
+uint8 HCI_SetEventMaskLe( uint8 *pEventMask );
+
+/*******************************************************************************
+ * @fn          HCI_CheckEventMaskPage1
+ *
+ * @brief       This API is used to check if input event bit is enable (page1)
+ *
+ * input parameters
+ *
+ * @param       eventBit            - Which bit to check
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      TRUE/FALSE.
+ */
+uint8 HCI_CheckEventMaskPage1(uint8 eventBit);
+
+/*******************************************************************************
+ * @fn          HCI_CheckEventMaskPage2
+ *
+ * @brief       This API is used to check if input event bit is enable (page2)
+ *
+ * input parameters
+ *
+ * @param       eventBit            - Which bit to check
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      TRUE/FALSE.
+ */
+uint8 HCI_CheckEventMaskPage2( uint8 eventBit );
+
+/*******************************************************************************
+ * @fn          HCI_CheckEventMaskLe
+ *
+ * @brief       This API is used to check if input LE event bit is enable
+ *
+ * input parameters
+ *
+ * @param       eventBit            - Which bit to check
+ *              eventMaskTableIndex - Which table to search in
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      TRUE/FALSE.
+ */
+uint8 HCI_CheckEventMaskLe( uint8 eventBit );
 
 /*
 ** HCI Controller Events
 */
+
+/*******************************************************************************
+ * @fn          HCI_SendCommandStatusEvent
+ *
+ * @brief       This generic function sends a Command Status event to the Host.
+ *              It is provided as a direct call so the Host can use it directly.
+ *
+ * input parameters
+ *
+ * @param       eventCode - The event code.
+ * @param       status    - The resulting status of the command.
+ * @param       opcode    - The opcode of the command that generated this event.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_SendCommandStatusEvent( uint8 eventCode, uint16 status, uint16 opcode );
+
+/*******************************************************************************
+ * @fn          HCI_SendControllerToHostEvent
+ *
+ * @brief       This generic function sends a Controller to Host Event.
+ *
+ * input parameters
+ *
+ * @param       eventCode - Bluetooth event code.
+ * @param       dataLen   - Length of dataField.
+ * @param       pData     - Pointer to data.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_SendControllerToHostEvent( uint8 eventCode, uint8 dataLen,
+                                    uint8 *pPayload );
 
 /*******************************************************************************
  * @fn          HCI_DataBufferOverflowEvent
@@ -378,8 +635,117 @@ extern void hciInitEventMasks( void );
  *
  * @return      None.
  */
-extern void HCI_DataBufferOverflowEvent( uint8 linkType );
+void HCI_DataBufferOverflowEvent( uint8 linkType );
 
+/*******************************************************************************
+ * @fn          HCI_HardwareErrorEvent
+ *
+ * @brief       This function sends a Hardware Error Event to the Host.
+ *
+ * input parameters
+ *
+ * @param       hwErrorCode - The hardware error code.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_HardwareErrorEvent( uint8 hwErrorCode );
+
+/*******************************************************************************
+ * @fn          HCI_HardwareErrorEvent_raw
+ *
+ * @brief       This function sends a Hardware Error Event to the Host.
+ *
+ * input parameters
+ *
+ * @param       hwErrorCode - The hardware error code.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_HardwareErrorEvent_raw( uint8 hwErrorCode );
+
+/*********************************************************************
+ * @fn          HCI_AeAdvCback
+ *
+ * @brief       Callback for the AE advertising event send by LL.
+ *              This function will send an event to the host
+ *
+ * @param       event  - event trigging the callback.
+ * @param       pData  - Pointer to the data that comes with the event
+ *                      (this is an union).
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+*/
+void HCI_AeAdvCback( uint8 event, void *pData );
+
+/*********************************************************************
+ * @fn          HCI_AeAdvCback
+ *
+ * @brief       Callback for the AE scan event send by LL.
+ *              This function will send an event to the host
+ *
+ * @param       event  - event trigging the callback.
+ * @param       pData  - Pointer to the data that comes with the event
+ *                       (this is an union).
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+*/
+void HCI_AeScanCback( uint8 event, void *pData );
+
+/*******************************************************************************
+ * @fn          HCI_CommandCompleteEvent
+ *
+ * @brief       This function sends a Command Complete Event to the Host.
+ *
+ * input parameters
+ *
+ * @param       opcode   - The opcode of the command that generated this event.
+ * @param       numParam - The number of parameters in the event.
+ * @param       param    - The event parameters associated with the command.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_CommandCompleteEvent( uint16 opcode, uint8 numParam, uint8 *param );
+
+/*******************************************************************************
+ * @fn          HCI_VendorSpecifcCommandCompleteEvent
+ *
+ * @brief       This function sends a Vendor Specific Command Complete Event to
+ *              the Host.
+ *
+ * input parameters
+ *
+ * @param       opcode   - The opcode of the command that generated this event.
+ * @param       numParam - The number of parameters in the event.
+ * @param       param    - The event parameters associated with the command.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_VendorSpecifcCommandCompleteEvent( uint16 opcode, uint8 numParam,
+                                            uint8 *param );
 
 /*******************************************************************************
  * @fn          HCI_NumOfCompletedPacketsEvent
@@ -402,55 +768,8 @@ extern void HCI_DataBufferOverflowEvent( uint8 linkType );
  *
  * @return      None.
  */
-extern void HCI_NumOfCompletedPacketsEvent( uint8 numHandles,
-                                            uint16 *handlers,
-                                            uint16 *numCompletedPackets );
-
-
-/*******************************************************************************
- * @fn          HCI_CommandCompleteEvent
- *
- * @brief       This function sends a Command Complete Event to the Host.
- *
- * input parameters
- *
- * @param       opcode   - The opcode of the command that generated this event.
- * @param       numParam - The number of parameters in the event.
- * @param       param    - The event parameters associated with the command.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_CommandCompleteEvent( uint16 opcode,
-                                      uint8  numParam,
-                                      uint8  *param );
-
-
-/*******************************************************************************
- * @fn          HCI_VendorSpecifcCommandCompleteEvent
- *
- * @brief       This function sends a Vendor Specific Command Complete Event to
- *              the Host.
- *
- * input parameters
- *
- * @param       opcode   - The opcode of the command that generated this event.
- * @param       numParam - The number of parameters in the event.
- * @param       param    - The event parameters associated with the command.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_VendorSpecifcCommandCompleteEvent( uint16 opcode,
-                                                   uint8 len,
-                                                   uint8 *param );
-
+void HCI_NumOfCompletedPacketsEvent( uint8 numHandles, uint16 *handles,
+                                     uint16 *numCompletedPkts );
 
 /*******************************************************************************
  * @fn          HCI_CommandStatusEvent
@@ -468,50 +787,7 @@ extern void HCI_VendorSpecifcCommandCompleteEvent( uint16 opcode,
  *
  * @return      None.
  */
-extern void HCI_CommandStatusEvent( uint8 status,
-                                    uint16 opcode );
-
-
-/*******************************************************************************
- * @fn          HCI_HardwareErrorEvent
- *
- * @brief       This function sends a Hardware Error Event to the Host.
- *
- * input parameters
- *
- * @param       hwErrorCode - The hardware error code.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_HardwareErrorEvent( uint8 hwErrorCode );
-
-
-/*******************************************************************************
- * @fn          HCI_SendCommandStatusEvent
- *
- * @brief       This generic function sends a Command Status event to the Host.
- *              It is provided as a direct call so the Host can use it directly.
- *
- * input parameters
- *
- * @param       eventCode - The event code.
- * @param       status    - The resulting status of the command.
- * @param       opcode    - The opcode of the command that generated this event.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_SendCommandStatusEvent ( uint8  eventCode,
-                                         uint16 status,
-                                         uint16 opcode );
-
+void HCI_CommandStatusEvent( hciStatus_t status, uint16 opcode );
 
 /*******************************************************************************
  * @fn          HCI_SendCommandCompleteEvent
@@ -532,33 +808,8 @@ extern void HCI_SendCommandStatusEvent ( uint8  eventCode,
  *
  * @return      None.
  */
-extern void HCI_SendCommandCompleteEvent ( uint8  eventCode,
-                                           uint16 opcode,
-                                           uint8  numParam,
-                                           uint8  *param );
-
-
-/*******************************************************************************
- * @fn          HCI_SendControllerToHostEvent
- *
- * @brief       This generic function sends a Controller to Host Event.
- *
- * input parameters
- *
- * @param       eventCode - Bluetooth event code.
- * @param       dataLen   - Length of dataField.
- * @param       pData     - Pointer to data.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_SendControllerToHostEvent( uint8 eventCode,
-                                           uint8 dataLen,
-                                           uint8 *pData );
-
+void HCI_SendCommandCompleteEvent( uint8 eventCode, uint16 opcode,
+                                   uint8 numParam, uint8 *param );
 
 #ifdef __cplusplus
 }

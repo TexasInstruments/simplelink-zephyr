@@ -98,6 +98,7 @@ extern "C"
 
 /// @endcond // NODOC
 
+
 //! Default Public and Random Address Length
 #define B_ADDR_LEN                                6
 
@@ -176,6 +177,7 @@ extern "C"
 #define INVALID_TASK_ID                 0xFF  //!< Task ID isn't setup properly
 
 // Note: Maximum NVID index is 0x03FF (10 bits) - this is a NV driver limitation
+#define MAX_NUM_NV_RECORDS              50
 
 // Device NV Items -    Range 0 - 0x1F
 #define BLE_NVID_IRK                    0x02   //!< The Device's IRK
@@ -184,17 +186,18 @@ extern "C"
 #define BLE_LRU_BOND_LIST               0x05   //!< The Device's order of bond indexes in least recently used order
 #define BLE_NVID_RANDOM_ADDR            0x06   //!< The Device's random address if set by the current @ref GAP_DeviceInit
 
-// Bonding NV Items -   Range  0x20 - 0xDF    - This allows for 32 bonds
-#define BLE_NVID_GAP_BOND_START         0x20   //!< Start of the GAP Bond Manager's NV IDs
-#define BLE_NVID_GAP_BOND_END           0xDF   //!< End of the GAP Bond Manager's NV IDs Range
+// Bonding NV Items -   Range  0x20 - ( (GAP_BONDINGS_MAX * GAP_BOND_REC_IDS) - 1 )
+#define BLE_NVID_GAP_BOND_START         0x20                                                                  //!< Start of the GAP Bond Manager's NV IDs
+#define BLE_NVID_GAP_BOND_END           (BLE_NVID_GAP_BOND_START + (MAX_NUM_NV_RECORDS * GAP_BOND_REC_IDS) - 1) //!< End of the GAP Bond Manager's NV IDs Range
+                                                                                                              //!< 50 Bonds * 6 Rec IDs
 
-// GATT Configuration NV Items - Range  0xE0 - 0xFF - This must match the number of Bonding entries
-#define BLE_NVID_GATT_CFG_START         0xE0   //!< Start of the GATT Configuration NV IDs
-#define BLE_NVID_GATT_CFG_END           0xFF   //!< End of the GATT Configuration NV IDs
+// GATT Configuration NV Items - Range  (BLE_NVID_GAP_BOND_END + 1) - (BLE_NVID_GATT_CFG_START + GAP_BONDINGS_MAX - 1) - This must match the number of Bonding entries
+#define BLE_NVID_GATT_CFG_START         (BLE_NVID_GAP_BOND_END + 1)                                           //!< Start of the GATT Configuration NV IDs
+#define BLE_NVID_GATT_CFG_END           (BLE_NVID_GATT_CFG_START + MAX_NUM_NV_RECORDS - 1)                      //!< End of the GATT Configuration NV IDs
 
-// Customer NV Items - Range  0x100 - 0x11F - This must match the number of Bonding entries
-#define BLE_NVID_CUST_START             0x100  //!< Start of the Customer's NV IDs
-#define BLE_NVID_CUST_END               0x11F  //!< End of the Customer's NV IDs
+// Customer NV Items - Range  (BLE_NVID_GATT_CFG_END + 1) - (BLE_NVID_CUST_START + GAP_BONDINGS_MAX - 1) - This must match the number of Bonding entries
+#define BLE_NVID_CUST_START             (BLE_NVID_GATT_CFG_END + 1)                                           //!< Start of the Customer's NV IDs
+#define BLE_NVID_CUST_END               (BLE_NVID_CUST_START + MAX_NUM_NV_RECORDS - 1)                          //!< End of the Customer's NV IDs
 
 // BLE Mesh NV IDs Start
 #define BLE_NVID_MESH_START            BLE_NVID_CUST_END + 1

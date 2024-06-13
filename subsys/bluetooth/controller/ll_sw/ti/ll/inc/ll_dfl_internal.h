@@ -44,27 +44,27 @@
 // Dynamic filter list flags
 // Note: Assumes dflFlags = dynamic filter list entry's flags.
 #define CLR_DFL_ENTRY( dflFlags )               \
-  (dflFlags) = 0;
+  ((dflFlags) = 0)
 #define IS_DFL_ENTRY_FREE( dflFlags )           \
-  ((dflFlags) & BV(0)) == 0
+  (((dflFlags) & BV(0)) == 0)
 #define SET_DFL_ENTRY_BUSY( dflFlags )          \
-  (dflFlags) |= BV(0)
+  ((dflFlags) |= BV(0))
 #define SET_DFL_ENTRY_FREE( dflFlags )          \
-  (dflFlags) &= ~BV(0)
+  ((dflFlags) &= ~BV(0))
 #define GET_DFL_ENTRY_ADDR_TYPE( dflFlags )     \
   (((dflFlags) & BV(1)) >> 1)
 #define SET_DFL_ENTRY_PUBLIC( dflFlags )        \
-  (dflFlags) &= ~BV(1)
+  ((dflFlags) &= ~BV(1))
 #define SET_DFL_ENTRY_RANDOM( dflFlags )        \
-  (dflFlags) |= BV(1)
+  ((dflFlags) |= BV(1))
 #define CLR_DFL_ENTRY_DUP_IGNORE( dflFlags )    \
-  (dflFlags) &= ~BV(2)
+  ((dflFlags) &= ~BV(2))
 #define SET_DFL_ENTRY_DUP_IGNORE( dflFlags )    \
-  (dflFlags) |= BV(2)
+  ((dflFlags) |= BV(2))
 #define SET_DFL_ENTRY_PRIV_IGNORE( dflFlags )   \
-  (dflFlags) |= BV(3)
+  ((dflFlags) |= BV(3))
 #define CLR_DFL_ENTRY_PRIV_IGNORE( dflFlags )   \
-  (dflFlags) &= ~BV(3)
+  ((dflFlags) &= ~BV(3))
 
 /*******************************************************************************
  * EXTERNS
@@ -91,7 +91,7 @@ PACKED_TYPEDEF_STRUCT
 // Note: see RCL filter list struct (RCL_FilterList).
 PACKED_TYPEDEF_STRUCT
 {
-  uint8            numEntries;
+  uint8             numEntries;
   dynamicFLEntry_t  entries[DFL_SIZE];
 } dynamicFL_t;
 

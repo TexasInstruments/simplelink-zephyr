@@ -20,10 +20,6 @@
 
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#include "rf_hal.h"
-#endif
 #include <ti/drivers/ECDH.h>
 #include "ll_config.h"
 #include "ll.h"
@@ -148,25 +144,12 @@ llUserCfg_t llUserConfig            =
   .numTxEntries       = MAX_NUM_TX_ENTRIES,      // Max Tx Entries
   .maxPduSize         = 0,                       // Max Data Size - Unused, replaced by llUserConfig_maxPduSize
   .rfFeModeBias       = DEFAULT_RFE_BIAS,        // RFE Bias
-#ifndef USE_RCL
-  .rfRegPtr           = NULL,                    // Common Overrides
-  .rfReg1MPtr         = NULL,                    // 1M Overrides
-  .rfReg2MPtr         = NULL,                    // 2M Overrides
-  .rfRegCodedPtr      = NULL,                    // Coded Overrides
-  .txPwrTblPtr        = &txPwrTbl,               // Tx Power Table
-#endif
 #ifndef CC23X0
   .rfDrvTblPtr        = NULL,                    // RF API Table
   .eccDrvTblPtr       = NULL,                    // ECC API Table
   .cryptoDrvTblPtr    = NULL,                    // Crypto API Table
   .trngDrvTblPtr      = NULL,                    // TRNG API Table
   .rtosApiTblPtr      = NULL,                    // RTOS API Table
-#endif
-#ifndef USE_RCL
-  .startupMarginUsecs = LL_STARTUP_MARGIN,       // Sleep Margin
-  .inactivityTimeout  = 0,                       // Inactivity timeout in us
-  .powerUpDuration    = 0,                       // Powerup time in us
-  .pErrCb             = NULL,                    // RF Driver Error Callback
 #endif
   .maxAlElems         = MAX_NUM_AL_ENTRIES,      // Max number of elements in the accept list
   .maxRlElems         = MAX_NUM_RL_ENTRIES,      // Max number of elements in the resolving list
@@ -190,7 +173,6 @@ llUserCfg_t llUserConfig            =
   .maxNumCteBufs         = MAX_NUM_CTE_BUFS,     // Max CTE data Buffers
 #endif // CC23X0
   .advReportIncChannel   = ADV_RPT_INC_CHANNEL,  // include channel index in advertising report
-#ifdef USE_RCL
   .lrfTxPowerTablePtr     = NULL,
   .lrfConfigPtr           = NULL,
   .defaultTxPowerDbm      = 0,
@@ -200,8 +182,7 @@ llUserCfg_t llUserConfig            =
   .rclPhyFeatureCoded     = 0,
   .rclPhyFeatureCodedS8   = 0,
   .rclPhyFeatureCodedS2   = 0,
-#endif
-  .sdaaCfgPtr            = NULL                  // SDAA module user's parameters
+  .sdaaCfgPtr             = NULL                  // SDAA module user's parameters
 };
 
 uint16  llUserConfig_maxPduSize         =  MAX_DATA_SIZE;    // Max Data Size - Used to replace llUserConfig.maxPduSize
@@ -227,16 +208,6 @@ uint16  llUserConfig_maxPduSize         =  MAX_DATA_SIZE;    // Max Data Size - 
 #else // unknown device
     #error "ERROR: Unknown device!"
 #endif // <device>
-#ifndef USE_RCL
-    .rfOpPtr                = &rfOpLoc,
-    .rfCfgValPtr            = &rfCfgVal,
-    .placeHolder1           = NULL,
-    .rxPktSuffixPtr         = &rxPktSuffix,
-    .advPktSuffixPtr        = &advPktSuffix,
-    .scanPktSuffixPtr       = &scanPktSuffix,
-    .initPktSuffixPtr       = &initPktSuffix,
-    .maxPktsPerEvtPtr       = &maxPktsPerEvt,
-#endif
     .cryptoMode             = &cryptoMode,
     .ecdhMode               = &ecdhMode,
     .connEvtCutoff          = &connEvtCutoff,
@@ -245,12 +216,6 @@ uint16  llUserConfig_maxPduSize         =  MAX_DATA_SIZE;    // Max Data Size - 
     .userCfgPtr             = &llUserConfig
 };
 
-// Global flag for using dynamic filter list module
-#ifdef USE_DFL
-uint8 useDFL = TRUE;
-#else
-uint8 useDFL = FALSE;
-#endif
 
 /*******************************************************************************
  */

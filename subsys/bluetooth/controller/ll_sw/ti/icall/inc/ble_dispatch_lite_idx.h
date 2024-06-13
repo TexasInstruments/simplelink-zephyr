@@ -521,7 +521,8 @@
 #define IDX_GAP_PasskeyUpdate                            JT_INDEX(222)
 #define IDX_GAP_Signable                                 JT_INDEX(223)
 #define IDX_GAP_Bond                                     JT_INDEX(224)
-#define IDX_GAP_SetPrivacyMode                           JT_INDEX(225)
+#define IDX_Gap_ReplyToLTKReq                            JT_INDEX(225)
+#define IDX_GAP_SetPrivacyMode                           JT_INDEX(226)
 // <<END_COUNT>>
 // <<INSERT:#else // !(defined(HOST_CONFIG))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -529,33 +530,33 @@
 
 // <<INSERT:#if (HOST_CONFIG & PERIPHERAL_CFG)>>
 // <<BEGIN_COUNT>>
-#define IDX_GAP_SendPeripheralSecurityRequest           JT_INDEX(226)
+#define IDX_GAP_SendPeripheralSecurityRequest           JT_INDEX(227)
 // <<END_COUNT>>
 // <<INSERT:#else // !(HOST_CONFIG & PERIPHERAL_CFG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
 // <<INSERT:#endif // (HOST_CONFIG & PERIPHERAL_CFG)>>
 
 /* RTLS Services API */
-#define IDX_RTLSSrv_init                                JT_INDEX(227)
-#define IDX_RTLSSrv_register                            JT_INDEX(228)
-#define IDX_RTLSSrv_setConnCteReceiveParams             JT_INDEX(229)
-#define IDX_RTLSSrv_setConnCteTransmitParams            JT_INDEX(230)
-#define IDX_RTLSSrv_setConnCteRequestEnableCmd          JT_INDEX(231)
-#define IDX_RTLSSrv_setConnCteResponseEnableCmd         JT_INDEX(232)
-#define IDX_RTLSSrv_readAntennaInformationCmd           JT_INDEX(233)
-#define IDX_RTLSSrv_setCteSampleAccuracy                JT_INDEX(234)
-#define IDX_RTLSSrv_initAntArray                        JT_INDEX(235)
-#define IDX_RTLSSrv_SetCLCteTransmitParams              JT_INDEX(236)
-#define IDX_RTLSSrv_CLCteTransmitEnable                 JT_INDEX(237)
-#define IDX_RTLSSrv_setCLCteSamplingEnableCmd           JT_INDEX(238)
+#define IDX_RTLSSrv_init                                JT_INDEX(228)
+#define IDX_RTLSSrv_register                            JT_INDEX(229)
+#define IDX_RTLSSrv_setConnCteReceiveParams             JT_INDEX(230)
+#define IDX_RTLSSrv_setConnCteTransmitParams            JT_INDEX(231)
+#define IDX_RTLSSrv_setConnCteRequestEnableCmd          JT_INDEX(232)
+#define IDX_RTLSSrv_setConnCteResponseEnableCmd         JT_INDEX(233)
+#define IDX_RTLSSrv_readAntennaInformationCmd           JT_INDEX(234)
+#define IDX_RTLSSrv_setCteSampleAccuracy                JT_INDEX(235)
+#define IDX_RTLSSrv_initAntArray                        JT_INDEX(236)
+#define IDX_RTLSSrv_SetCLCteTransmitParams              JT_INDEX(237)
+#define IDX_RTLSSrv_CLCteTransmitEnable                 JT_INDEX(238)
+#define IDX_RTLSSrv_setCLCteSamplingEnableCmd           JT_INDEX(239)
 
 /* L2CAP API */
 /*************/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_L2CAP_ConnParamUpdateReq                     JT_INDEX(239)
-#define IDX_L2CAP_ParseParamUpdateReq                    JT_INDEX(240)
-#define IDX_L2CAP_ParseInfoReq                           JT_INDEX(241)
+#define IDX_L2CAP_ConnParamUpdateReq                     JT_INDEX(240)
+#define IDX_L2CAP_ParseParamUpdateReq                    JT_INDEX(241)
+#define IDX_L2CAP_ParseInfoReq                           JT_INDEX(242)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -563,16 +564,16 @@
 
 // <<INSERT:#if defined(BLE_V41_FEATURES) && (BLE_V41_FEATURES & L2CAP_COC_CFG)>>
 // <<BEGIN_COUNT>>
-#define IDX_L2CAP_RegisterPsm                            JT_INDEX(242)
-#define IDX_L2CAP_DeregisterPsm                          JT_INDEX(243)
-#define IDX_L2CAP_PsmInfo                                JT_INDEX(244)
-#define IDX_L2CAP_PsmChannels                            JT_INDEX(245)
-#define IDX_L2CAP_ChannelInfo                            JT_INDEX(246)
-#define IDX_L2CAP_SendSDU                                JT_INDEX(247)
-#define IDX_L2CAP_ConnectReq                             JT_INDEX(248)
-#define IDX_L2CAP_ConnectRsp                             JT_INDEX(249)
-#define IDX_L2CAP_DisconnectReq                          JT_INDEX(250)
-#define IDX_L2CAP_FlowCtrlCredit                         JT_INDEX(251)
+#define IDX_L2CAP_RegisterPsm                            JT_INDEX(243)
+#define IDX_L2CAP_DeregisterPsm                          JT_INDEX(244)
+#define IDX_L2CAP_PsmInfo                                JT_INDEX(245)
+#define IDX_L2CAP_PsmChannels                            JT_INDEX(246)
+#define IDX_L2CAP_ChannelInfo                            JT_INDEX(247)
+#define IDX_L2CAP_SendSDU                                JT_INDEX(248)
+#define IDX_L2CAP_ConnectReq                             JT_INDEX(249)
+#define IDX_L2CAP_ConnectRsp                             JT_INDEX(250)
+#define IDX_L2CAP_DisconnectReq                          JT_INDEX(251)
+#define IDX_L2CAP_FlowCtrlCredit                         JT_INDEX(252)
 // <<END_COUNT>>
 // <<INSERT:#else // !( (BLE_V41_FEATURES) && (BLE_V41_FEATURES & L2CAP_COC_CFG) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -580,7 +581,7 @@
 
 // <<INSERT:#if ( HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG ))>>
 // <<BEGIN_COUNT>>
-#define IDX_L2CAP_RegisterFlowCtrlTask                   JT_INDEX(252)
+#define IDX_L2CAP_RegisterFlowCtrlTask                   JT_INDEX(253)
 // <<END_COUNT>>
 // <<INSERT:#else // !( HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG ) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -588,8 +589,8 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES) )))>>
 // <<BEGIN_COUNT>>
-#define IDX_L2CAP_SetParamValue                          JT_INDEX(253)
-#define IDX_L2CAP_GetParamValue                          JT_INDEX(254)
+#define IDX_L2CAP_SetParamValue                          JT_INDEX(254)
+#define IDX_L2CAP_GetParamValue                          JT_INDEX(255)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES))  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -597,7 +598,7 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL)  ))>>
 // <<BEGIN_COUNT>>
-#define IDX_L2CAP_InfoReq                                JT_INDEX(255)
+#define IDX_L2CAP_InfoReq                                JT_INDEX(256)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL)  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -607,8 +608,8 @@
 /************/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_Indication                              JT_INDEX(256)
-#define IDX_GATT_Notification                            JT_INDEX(257)
+#define IDX_GATT_Indication                              JT_INDEX(257)
+#define IDX_GATT_Notification                            JT_INDEX(258)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -616,12 +617,12 @@
 
 // <<INSERT:#if ( HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG ))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_RegisterForMsgs                         JT_INDEX(258)
-#define IDX_GATT_RegisterClientSecurityCBs               JT_INDEX(259)
-#define IDX_GATT_UpdateMTU                               JT_INDEX(260)
-#define IDX_GATT_SendRsp                                 JT_INDEX(261)
-#define IDX_GATT_SetHostToAppFlowCtrl                    JT_INDEX(262)
-#define IDX_GATT_AppCompletedMsg                         JT_INDEX(263)
+#define IDX_GATT_RegisterForMsgs                         JT_INDEX(259)
+#define IDX_GATT_RegisterClientSecurityCBs               JT_INDEX(260)
+#define IDX_GATT_UpdateMTU                               JT_INDEX(261)
+#define IDX_GATT_SendRsp                                 JT_INDEX(262)
+#define IDX_GATT_SetHostToAppFlowCtrl                    JT_INDEX(263)
+#define IDX_GATT_AppCompletedMsg                         JT_INDEX(264)
 // <<END_COUNT>>
 // <<INSERT:#else // !( HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG ) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -629,8 +630,8 @@
 
 // <<INSERT:#if ( (HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG )) && (!defined(GATT_NO_CLIENT)))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_InitClient                              JT_INDEX(264)
-#define IDX_GATT_RegisterForInd                          JT_INDEX(265)
+#define IDX_GATT_InitClient                              JT_INDEX(265)
+#define IDX_GATT_RegisterForInd                          JT_INDEX(266)
 // <<END_COUNT>>
 // <<INSERT:#else // !( (HOST_CONFIG & ( CENTRAL_CFG | PERIPHERAL_CFG )) && (!defined(GATT_NO_CLIENT)) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -638,25 +639,25 @@
 
 // <<INSERT:#if defined(HOST_CONFIG) && !defined(GATT_NO_CLIENT)>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_ExchangeMTU                             JT_INDEX(266)
-#define IDX_GATT_DiscAllPrimaryServices                  JT_INDEX(267)
-#define IDX_GATT_DiscPrimaryServiceByUUID                JT_INDEX(268)
-#define IDX_GATT_DiscAllChars                            JT_INDEX(269)
-#define IDX_GATT_DiscCharsByUUID                         JT_INDEX(270)
-#define IDX_GATT_DiscAllCharDescs                        JT_INDEX(271)
-#define IDX_GATT_ReadCharValue                           JT_INDEX(272)
-#define IDX_GATT_ReadUsingCharUUID                       JT_INDEX(273)
-#define IDX_GATT_ReadLongCharValue                       JT_INDEX(274)
-#define IDX_GATT_ReadMultiCharValues                     JT_INDEX(275)
-#define IDX_GATT_WriteNoRsp                              JT_INDEX(276)
-#define IDX_GATT_SignedWriteNoRsp                        JT_INDEX(277)
-#define IDX_GATT_WriteCharValue                          JT_INDEX(278)
-#define IDX_GATT_WriteLongCharValue                      JT_INDEX(279)
-#define IDX_GATT_WriteLongCharDesc                       JT_INDEX(280)
-#define IDX_GATT_ReliableWrites                          JT_INDEX(281)
-#define IDX_GATT_ReadCharDesc                            JT_INDEX(282)
-#define IDX_GATT_ReadLongCharDesc                        JT_INDEX(283)
-#define IDX_GATT_WriteCharDesc                           JT_INDEX(284)
+#define IDX_GATT_ExchangeMTU                             JT_INDEX(267)
+#define IDX_GATT_DiscAllPrimaryServices                  JT_INDEX(268)
+#define IDX_GATT_DiscPrimaryServiceByUUID                JT_INDEX(269)
+#define IDX_GATT_DiscAllChars                            JT_INDEX(270)
+#define IDX_GATT_DiscCharsByUUID                         JT_INDEX(271)
+#define IDX_GATT_DiscAllCharDescs                        JT_INDEX(272)
+#define IDX_GATT_ReadCharValue                           JT_INDEX(273)
+#define IDX_GATT_ReadUsingCharUUID                       JT_INDEX(274)
+#define IDX_GATT_ReadLongCharValue                       JT_INDEX(275)
+#define IDX_GATT_ReadMultiCharValues                     JT_INDEX(276)
+#define IDX_GATT_WriteNoRsp                              JT_INDEX(277)
+#define IDX_GATT_SignedWriteNoRsp                        JT_INDEX(278)
+#define IDX_GATT_WriteCharValue                          JT_INDEX(279)
+#define IDX_GATT_WriteLongCharValue                      JT_INDEX(280)
+#define IDX_GATT_WriteLongCharDesc                       JT_INDEX(281)
+#define IDX_GATT_ReliableWrites                          JT_INDEX(282)
+#define IDX_GATT_ReadCharDesc                            JT_INDEX(283)
+#define IDX_GATT_ReadLongCharDesc                        JT_INDEX(284)
+#define IDX_GATT_WriteCharDesc                           JT_INDEX(285)
 // <<END_COUNT>>
 // <<INSERT:#else // !(defined(HOST_CONFIG) !defined(GATT_NO_CLIENT) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -664,7 +665,7 @@
 
 // <<INSERT:#if ( HOST_CONFIG & ( PERIPHERAL_CFG ))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_GetNextHandle                           JT_INDEX(285)
+#define IDX_GATT_GetNextHandle                           JT_INDEX(286)
 // <<END_COUNT>>
 // <<INSERT:#else // !( HOST_CONFIG & ( PERIPHERAL_CFG ) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -672,12 +673,12 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES) )))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_PrepareWriteReq                         JT_INDEX(286)
-#define IDX_GATT_ExecuteWriteReq                         JT_INDEX(287)
-#define IDX_GATT_FindUUIDRec                             JT_INDEX(288)
-#define IDX_GATT_RegisterService                         JT_INDEX(289)
-#define IDX_GATT_DeregisterService                       JT_INDEX(290)
-#define IDX_GATT_FindIncludedServices                    JT_INDEX(291)
+#define IDX_GATT_PrepareWriteReq                         JT_INDEX(287)
+#define IDX_GATT_ExecuteWriteReq                         JT_INDEX(288)
+#define IDX_GATT_FindUUIDRec                             JT_INDEX(289)
+#define IDX_GATT_RegisterService                         JT_INDEX(290)
+#define IDX_GATT_DeregisterService                       JT_INDEX(291)
+#define IDX_GATT_FindIncludedServices                    JT_INDEX(292)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES))  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -685,7 +686,7 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) ))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATT_RegisterForReq                          JT_INDEX(292)
+#define IDX_GATT_RegisterForReq                          JT_INDEX(293)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -695,12 +696,12 @@
 /*******************************/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTServApp_RegisterService                  JT_INDEX(293)
-#define IDX_GATTServApp_AddService                       JT_INDEX(294)
-#define IDX_GATTServApp_DeregisterService                JT_INDEX(295)
-#define IDX_GATTServApp_SetParameter                     JT_INDEX(296)
-#define IDX_GATTServApp_GetParameter                     JT_INDEX(297)
-#define IDX_GATTServApp_SendCCCUpdatedEvent              JT_INDEX(298)
+#define IDX_GATTServApp_RegisterService                  JT_INDEX(294)
+#define IDX_GATTServApp_AddService                       JT_INDEX(295)
+#define IDX_GATTServApp_DeregisterService                JT_INDEX(296)
+#define IDX_GATTServApp_SetParameter                     JT_INDEX(297)
+#define IDX_GATTServApp_GetParameter                     JT_INDEX(298)
+#define IDX_GATTServApp_SendCCCUpdatedEvent              JT_INDEX(299)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -708,7 +709,7 @@
 
 // <<INSERT:#if !defined(GATT_NO_SERVICE_CHANGED)>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTServApp_SendServiceChangedInd            JT_INDEX(299)
+#define IDX_GATTServApp_SendServiceChangedInd            JT_INDEX(300)
 // <<END_COUNT>>
 // <<INSERT:#else // !( !defined(GATT_NO_SERVICE_CHANGED) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -716,7 +717,7 @@
 
 // <<INSERT:#ifdef ATT_DELAYED_REQ>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTServApp_ReadRsp                          JT_INDEX(300)
+#define IDX_GATTServApp_ReadRsp                          JT_INDEX(301)
 // <<END_COUNT>>
 // <<INSERT:#else // !( ATT_DELAYED_REQ )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -724,7 +725,7 @@
 
 // <<INSERT:#ifdef GATT_QUAL>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTQual_AddService                          JT_INDEX(301)
+#define IDX_GATTQual_AddService                          JT_INDEX(302)
 // <<END_COUNT>>
 // <<INSERT:#else // !( GATT_QUAL )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -732,7 +733,7 @@
 
 // <<INSERT:#ifdef GATT_TEST>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTTest_AddService                          JT_INDEX(302)
+#define IDX_GATTTest_AddService                          JT_INDEX(303)
 // <<END_COUNT>>
 // <<INSERT:#else // !( GATT_TEST )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -740,8 +741,8 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES) )))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTServApp_GetParamValue                    JT_INDEX(303)
-#define IDX_GATTServApp_SetParamValue                    JT_INDEX(304)
+#define IDX_GATTServApp_GetParamValue                    JT_INDEX(304)
+#define IDX_GATTServApp_SetParamValue                    JT_INDEX(305)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES))  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -749,7 +750,7 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) ))>>
 // <<BEGIN_COUNT>>
-#define IDX_GATTServApp_RegisterForMsg                   JT_INDEX(305)
+#define IDX_GATTServApp_RegisterForMsg                   JT_INDEX(306)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL)  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -760,10 +761,10 @@
 /***************/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_linkDB_NumActive                             JT_INDEX(306)
-#define IDX_linkDB_GetInfo                               JT_INDEX(307)
-#define IDX_linkDB_State                                 JT_INDEX(308)
-#define IDX_linkDB_NumConns                              JT_INDEX(309)
+#define IDX_linkDB_NumActive                             JT_INDEX(307)
+#define IDX_linkDB_GetInfo                               JT_INDEX(308)
+#define IDX_linkDB_State                                 JT_INDEX(309)
+#define IDX_linkDB_NumConns                              JT_INDEX(310)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -773,9 +774,9 @@
 /*************************/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_SM_GetScConfirmOob                           JT_INDEX(310)
-#define IDX_SM_GenerateRandBuf                           JT_INDEX(311)
-#define IDX_SM_AuthenticatedPairingOnlyMode              JT_INDEX(312)
+#define IDX_SM_GetScConfirmOob                           JT_INDEX(311)
+#define IDX_SM_GenerateRandBuf                           JT_INDEX(312)
+#define IDX_SM_AuthenticatedPairingOnlyMode              JT_INDEX(313)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -783,9 +784,9 @@
 
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_SM_GetEccKeys                                JT_INDEX(313)
-#define IDX_SM_GetDHKey                                  JT_INDEX(314)
-#define IDX_SM_RegisterTask                              JT_INDEX(315)
+#define IDX_SM_GetEccKeys                                JT_INDEX(314)
+#define IDX_SM_GetDHKey                                  JT_INDEX(315)
+#define IDX_SM_RegisterTask                              JT_INDEX(316)
 // <<END_COUNT>>
 // <<INSERT:#else // !(defined(HOST_CONFIG))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -795,11 +796,11 @@
 /***********/
 // <<INSERT:#if defined(HOST_CONFIG)>>
 // <<BEGIN_COUNT>>
-#define IDX_ATT_ErrorRsp                                 JT_INDEX(316)
-#define IDX_ATT_ReadBlobRsp                              JT_INDEX(317)
-#define IDX_ATT_ExecuteWriteRsp                          JT_INDEX(318)
-#define IDX_ATT_WriteRsp                                 JT_INDEX(319)
-#define IDX_ATT_ReadRsp                                  JT_INDEX(320)
+#define IDX_ATT_ErrorRsp                                 JT_INDEX(317)
+#define IDX_ATT_ReadBlobRsp                              JT_INDEX(318)
+#define IDX_ATT_ExecuteWriteRsp                          JT_INDEX(319)
+#define IDX_ATT_WriteRsp                                 JT_INDEX(320)
+#define IDX_ATT_ReadRsp                                  JT_INDEX(321)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -807,14 +808,14 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && defined(HCI_TL_FULL))>>
 // <<BEGIN_COUNT>>
-#define IDX_ATT_ParseExchangeMTUReq                      JT_INDEX(321)
-#define IDX_ATT_ExchangeMTURsp                           JT_INDEX(322)
-#define IDX_ATT_FindInfoRsp                              JT_INDEX(323)
-#define IDX_ATT_FindByTypeValueRsp                       JT_INDEX(324)
-#define IDX_ATT_ReadByTypeRsp                            JT_INDEX(325)
-#define IDX_ATT_ReadMultiRsp                             JT_INDEX(326)
-#define IDX_ATT_ReadByGrpTypeRsp                         JT_INDEX(327)
-#define IDX_ATT_PrepareWriteRsp                          JT_INDEX(328)
+#define IDX_ATT_ParseExchangeMTUReq                      JT_INDEX(322)
+#define IDX_ATT_ExchangeMTURsp                           JT_INDEX(323)
+#define IDX_ATT_FindInfoRsp                              JT_INDEX(324)
+#define IDX_ATT_FindByTypeValueRsp                       JT_INDEX(325)
+#define IDX_ATT_ReadByTypeRsp                            JT_INDEX(326)
+#define IDX_ATT_ReadMultiRsp                             JT_INDEX(327)
+#define IDX_ATT_ReadByGrpTypeRsp                         JT_INDEX(328)
+#define IDX_ATT_PrepareWriteRsp                          JT_INDEX(329)
 // <<END_COUNT>>
 // <<INSERT:#else // !defined(HOST_CONFIG)>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -822,7 +823,7 @@
 
 // <<INSERT:#if defined(HOST_CONFIG) && !defined(GATT_NO_CLIENT)>>
 // <<BEGIN_COUNT>>
-#define IDX_ATT_HandleValueCfm                           JT_INDEX(329)
+#define IDX_ATT_HandleValueCfm                           JT_INDEX(330)
 // <<END_COUNT>>
 // <<INSERT:#else // !(defined(HOST_CONFIG) && !defined(GATT_NO_CLIENT) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -830,8 +831,8 @@
 
 // <<INSERT:#if ( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES) )))>>
 // <<BEGIN_COUNT>>
-#define IDX_ATT_SetParamValue                            JT_INDEX(330)
-#define IDX_ATT_GetParamValue                            JT_INDEX(331)
+#define IDX_ATT_SetParamValue                            JT_INDEX(331)
+#define IDX_ATT_GetParamValue                            JT_INDEX(332)
 // <<END_COUNT>>
 // <<INSERT:#else // !( defined(HOST_CONFIG) && ( defined(HCI_TL_FULL) && ( !defined(GATT_DB_OFF_CHIP) && defined(TESTMODES))  ))>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -840,18 +841,18 @@
 
 /* SNV API */
 /***********/
-#define IDX_osal_snv_read                                JT_INDEX(332)
-#define IDX_osal_snv_write                               JT_INDEX(333)
+#define IDX_osal_snv_read                                JT_INDEX(333)
+#define IDX_osal_snv_write                               JT_INDEX(334)
 
 /* Osal Bufmgr API */
 /***********/
-#define IDX_osal_bm_reg_callback                         JT_INDEX(334)
+#define IDX_osal_bm_reg_callback                         JT_INDEX(335)
 
 /* UTIL API */
 /************/
 // <<INSERT:#if !defined(HCI_TL_NONE)>>
 // <<BEGIN_COUNT>>
-#define IDX_NPI_RegisterTask                             JT_INDEX(335)
+#define IDX_NPI_RegisterTask                             JT_INDEX(336)
 // <<END_COUNT>>
 // <<INSERT:#else // !( !defined(HCI_TL_NONE) )>>
 // <<INSERT_LOOP:(uint32)icall_liteErrorFunction,>>
@@ -860,7 +861,7 @@
 // <<INSERT:/* this should remain last, so that for any configuration, >>
 // <<INSERT:the revision needs to be read. this enable quick detection of bad alignement >>
 // <<INSERT:in the table */>>
-#define IDX_buildRevision                                JT_INDEX(336)
+#define IDX_buildRevision                                JT_INDEX(337)
 // <END TABLE - DO NOT REMOVE!>
 
 #endif /* BLE_DISPATCH_LITE_IDX_H */

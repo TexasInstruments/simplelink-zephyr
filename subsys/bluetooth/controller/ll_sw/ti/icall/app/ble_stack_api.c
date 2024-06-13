@@ -48,7 +48,7 @@ static bleStk_pfnGapScanCB_t remote_bleApp_ScanCb = NULL;
  * @param   selfEntity - return self entity id from the ICALL
  * @param   appCallback- The callback
  *
- * @return  SUCCESS ot FAILURE.
+ * @return  SUCCESS or FAILURE.
  */
 bleStack_errno_t bleStack_register(uint8_t *selfEntity, appCallback_t appCallback)
 {

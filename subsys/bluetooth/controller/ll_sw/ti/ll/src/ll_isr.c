@@ -28,13 +28,7 @@
 
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#ifndef USE_RCL
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#include "rf_hal.h"
-#else
 #include <ti/drivers/rcl/commands/ble5.h>
-#endif
 #include "ble.h"
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
@@ -80,17 +74,10 @@ uint8 llUnhandleNextIntFlag_Init = FALSE;
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
-#ifndef USE_RCL
-// handle to radio driver for BLE client
-extern RF_Handle    rfHandle;
-
-// command handle for radio driver calls
-extern RF_CmdHandle rfCmdHandle;
-
-extern rfOpCmd_runImmedCmd_t fwParDtmCmd;
-#endif
 
 extern sortedAdv_t *pNextAdvSet;
+
+extern const uint8 ctrlPktLenTable[NUM_OF_CTRL_PKT];
 
 void LL_TxDoneCback( void );
 void LL_TxEntryDoneCback( void );
@@ -105,7 +92,6 @@ void llCmdStartedEventHandle( void );
 void llRecordTxUsage( void );
 void llHandleSDAALastCmdDone( void );
 
-#ifdef USE_RCL
 void LL_rclAdvRxEntryDone( void );
 void LL_rclScanRxEntryDone( void );
 void LL_rclAdvTxFinished( void);
@@ -122,44 +108,10 @@ static void llCheckPeerAddrTypeAndUpdate( llConnState_t *connPtr,
                                    uint8 rlIndex );
 
 #endif // CTRL_CONFIG & INIT_CFG
-#endif // USE_RCL
 
 #define STATE_CASE_NOT_HANDLED  0
 #define STATE_CASE_HANDLED      1
 
-const uint8 ctrlPktLenTable[] =
-  {
-    LL_CONN_UPDATE_IND_PAYLOAD_LEN,
-    LL_CHAN_MAP_IND_PAYLOAD_LEN,
-    LL_TERM_IND_PAYLOAD_LEN,
-    LL_ENC_REQ_PAYLOAD_LEN,
-    LL_ENC_RSP_PAYLOAD_LEN,
-    LL_START_ENC_REQ_PAYLOAD_LEN,
-    LL_START_ENC_RSP_PAYLOAD_LEN,
-    LL_UNKNOWN_RSP_PAYLOAD_LEN,
-    LL_FEATURE_REQ_PAYLOAD_LEN,
-    LL_FEATURE_RSP_PAYLOAD_LEN,
-    LL_PAUSE_ENC_REQ_PAYLOAD_LEN,
-    LL_PAUSE_ENC_RSP_PAYLOAD_LEN,
-    LL_VERSION_IND_PAYLOAD_LEN,
-    LL_REJECT_IND_PAYLOAD_LEN,
-    LL_PERIPHERAL_FEATURE_REQ_PAYLOAD_LEN,
-    LL_CONN_PARAM_REQ_PAYLOAD_LEN,
-    LL_CONN_PARAM_RSP_PAYLOAD_LEN,
-    LL_REJECT_EXT_IND_PAYLOAD_LEN,
-    LL_PING_REQ_PAYLOAD_LEN,
-    LL_PING_RSP_PAYLOAD_LEN,
-    LL_LENGTH_REQ_PAYLOAD_LEN,
-    LL_LENGTH_RSP_PAYLOAD_LEN,
-    LL_PHY_REQ_PAYLOAD_LEN,
-    LL_PHY_RSP_PAYLOAD_LEN,
-    LL_PHY_UPDATE_REQ_PAYLOAD_LEN,
-    LL_MIN_USED_CHANNELS_IND_LEN,
-    LL_CTE_REQ_PAYLOAD_LEN,
-    LL_CTE_RSP_PAYLOAD_LEN
-  };
-
-#ifdef USE_RCL
 /*
 ** CC23X0 BLE RF Driver Callback
 */
@@ -244,16 +196,7 @@ void LL_rclAdvRxEntryDone( void )
   uint8    sendReq = TRUE;
 
   // Get MultiBuffer
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    RCL_MultiBuffer_ListInfo_init(&listInfo,&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
-  }
-  else
-  {
-#ifdef USE_AE
-    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
-#endif
-  }
+  RCL_MultiBuffer_ListInfo_init(&listInfo,&((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
 
   if( rxEntry != NULL )
@@ -350,7 +293,7 @@ void LL_rclAdvRxEntryDone( void )
       }
 
       // We are finished with handling the scan request. Remove it from the RX queue
-      rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
+      rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
     }
   }
 }
@@ -379,7 +322,7 @@ void LL_rclAdvRxEntryDoneDFL( void )
   uint8    rlIndex = INVALID_RESOLVE_LIST_INDEX;
 
   // Get MultiBuffer
-  RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+  RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
 
   // Get the LL PDU header
@@ -391,7 +334,7 @@ void LL_rclAdvRxEntryDoneDFL( void )
     peerAddrType = LL_ADV_HDR_GET_TX_ADD(*pPkt);
 
     // check if the InitA is an RPA address type
-    if ( (MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr )) != TRUE )
+    if ( (MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr )) == TRUE )
     {
       rpaTypeAddr = TRUE;
 
@@ -409,7 +352,7 @@ void LL_rclAdvRxEntryDoneDFL( void )
       // set test flag of privacy mode and IRK validation
       SET_DPM_OR_INVALID_IRK_TEST( policyTests );
     }
-    // Check advetiser filter policy
+    // Check advertiser filter policy
     if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
          (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
     {
@@ -494,6 +437,9 @@ void LL_rclAdvRxEntryDoneDFL( void )
         MAP_llExtAdvCBack( LL_CBACK_OUT_OF_MEMORY, NULL );
       }
     }
+
+    // We are finished with handling the scan request. Remove it from the RX queue
+    rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
   }
 }
 
@@ -758,6 +704,8 @@ void LL_rclInitRxEntryDone( void )
   RCL_MultiBuffer_ListInfo_init(&listInfo, &extInitParam.rxBuffers);
   rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
   pAdvPkt = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
+
+  // if its an ADV_EXT_IND packet, just extract it from the buffer
   if(LL_AUX_PDU( *pAdvPkt) && !TST_EXTHDR_FLAG(pAdvPkt[LL_PKT_HDR_LEN +
                                                        AE_EXT_HDR_LEN_SIZE],
                                                          EXTHDR_FLAG_ADVA))
@@ -790,8 +738,10 @@ void LL_rclInitRxEntryDone( void )
     // Checks if it's an AE packet
     else if(LL_AUX_PDU( *pAdvPkt))
     {
+      // extract advA
       MAP_osal_memcpy( peerAddr, &pAdvPkt[AE_AUX_ADVA_INDEX], B_ADDR_LEN );
-      if ( LL_ADV_DIRECT_IND_PDU( *pAdvPkt ) )
+      // Check if Adv Pkt is Directed
+      if ( TST_EXTHDR_FLAG(pAdvPkt[LL_PKT_HDR_LEN+AE_EXT_HDR_LEN_SIZE], EXTHDR_FLAG_TARGETA) )
       {
         // copy addresses so there's no race condition or overwrite
         MAP_osal_memcpy( ownAddr, &pAdvPkt[AE_AUX_TARGETA_INDEX ],
@@ -1208,7 +1158,7 @@ static void llCheckPeerAddrTypeAndUpdate(llConnState_t *connPtr, uint8 *cmdDevAd
           SET_AL_ENTRY_BUSY( flags );
 
           // Prepare and update the RPA in the RCL Accept List
-          MAP_llRclPrepareAndUpdateAlEntry(extInitParam.filterList, flags, resolvingList[rlIndex].RPA, RCL_PEER_ADDR_INDEX);
+          MAP_llPrepareAndUpdateAlEntry(extInitParam.filterList, flags, resolvingList[rlIndex].RPA, RCL_PEER_ADDR_INDEX);
 #endif // RCL_329
         }
       }
@@ -1261,732 +1211,12 @@ void LL_rclUpdateExtAl( RCL_FilterList *filterList, uint16 flags, uint8* rpaAddr
     if( alIndex != INVALID_EXT_ACCEPT_LIST_INDEX )
     {
       // Prepare and update the RPA in the RCL Extended Accept List
-      MAP_llRclPrepareAndUpdateAlEntry(filterList, flags, resolvingList[rlIndex].RPA, alIndex);
+      MAP_llPrepareAndUpdateAlEntry(filterList, flags, resolvingList[rlIndex].RPA, alIndex);
     }
   }
 }
 #endif // CTRL_CONFIG & INIT_CFG
 
-#else // USE_RCL
-/*
-** CC26xx BLE RF Driver Callback
-*/
-
-/*******************************************************************************
- * This is the common RF Power Up callback used whenever the device wakes.
- *
- * Public function defined in RF.h.
- */
-void rfPUpCallback( RF_Handle    rfHandle,
-                    RF_CmdHandle cmdHandle,
-                    RF_EventMask events )
-{
-
-
-#ifdef CC33xx
-    GTRACE(GRP_BLE_DBG,"rfPUpCallback")
-    if ( rfHandle != NULL )
-    {
-#define CMD_ENABLE_DBG_CONFIG   (  (0<<14) /* Prescaler (0 -> divide by 1 -> 24 Mhz)                */\
-                                 | (1<<12) /* Timestamp enable                                      */\
-                                 | (1<<11) /* Channel 3 mode (1: enabled, 0: disabled)              */\
-                                 | (2<<9)  /* Channel 2 mode (2: backdoor, 1: enabled, 0: disabled) */\
-                                 | (1<<8)  /* Channel 1 mode (1: enabled, 0: disabled)              */\
-                                 | (1<<6)) /* Systick channel (0: disabled, 1-3: channel)           */
-      RF_Stat rfStat = RF_runDirectCmd( rfHandle, BUILD_DIRECT_PARAM_EXT_CMD( CMD_ENABLE_DEBUG, CMD_ENABLE_DBG_CONFIG ) );
-
-      if ( (rfStat != RF_StatSuccess) && (rfStat != RF_StatCmdDoneSuccess) )
-      {
-          GTRACE(GRP_BLE_ERROR,"unable to enable debug")
-          ASSERT_GENERAL(0);
-
-      }
-    }
-
-    // Override the pRpaCfg address after power cycle
-    HWREG(CM0_RAM_RPA_CFG_ADDR) = pRpaCfg;
-#else
-#ifdef DEBUG_SW_TRACE
-  // enable RF trace output for FPGA
-  // Note: While doing this here saves the trouble of hacking the RF Driver to
-  //       do it, if the CM0 is allowed to power off, a fault is still likely
-  //       to occur when a CM3 only operation tries to touch the Tracer HW. The
-  //       only way to prevent this is to keep the CM0 always powered on. But
-  //       presently, there's no way to do this without another hack to the
-  //       RF Driver.
-  if ( rfHandle != NULL )
-  {
-    RF_Stat rfStat = RF_runDirectCmd( rfHandle, BUILD_DIRECT_PARAM_EXT_CMD( CMD_ENABLE_DEBUG, 0x1D40 ) );
-
-    if ( (rfStat != RF_StatSuccess) && (rfStat != RF_StatCmdDoneSuccess) )
-    {
-      volatile uint8 i = 1;
-      while(i);
-    }
-  }
-
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "Power Up RAT = 0x%08X", MAP_llGetCurrentTime() );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-  // Note: This is a temporary workaround for CC26xxR2, which has values backwards.
-  *((volatile uint16 *)CM0_RAM_CA0_CA1_OFFSET_ADDR) = LL_AUX_PTR_CA0_CA1;
-#endif // !CC33xx
-  return;
-}
-
-
-/*******************************************************************************
- * This is the common RF Error callback used whenever the RF Driver raises
- * this error. Note that this callback is first trapped by the Controller,
- * and then passed on to the user's callback function, as defined in llConfig.
- *
- * Public function defined in RF.h.
- */
-void rfErrorCallback( RF_Handle    rfHandle,
-                      RF_CmdHandle cmdHandle,
-                      RF_EventMask events )
-{
-  // check if this is an RF Error Callback that the Controller needs to first
-  // handle
-  // ...
-  // report failure to Host
-  //MAP_llHardwareError( HW_FAIL_RF_DRIVER_ERROR );
-
-  // invoke the user's Error Callback
-  (*(llUserConfig.pErrCb))(rfHandle, cmdHandle, events);
-
-  return;
-}
-
-/*******************************************************************************
- * This is the common RF callback used for all RF driver commands. Currently,
- * it will be used for all CPE0 and CPE1 interrupts.
- *
- * Public function defined in RF.h.
- */
-void rfCallback( RF_Handle    rfHandle,
-                 RF_CmdHandle cmdHandle,
-                 RF_EventMask events )
-{
-  //////////////////////////////////////////////////////////////////////////////
-  // Tx_Entry_Done
-  // Note: Assumed to only be for Connection state.
-  //////////////////////////////////////////////////////////////////////////////
-  if ( events & RF_EventTxDone )
-  {
-    //Record Tx Usage if needed by specific module
-    llRecordTxUsage();
-    LL_TxDoneCback();
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Tx_Entry_Done
-  // Note: Assumed to only be for Connection state.
-  //////////////////////////////////////////////////////////////////////////////
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  if ( events & (uint64_t)RF_EventTxEntryDone )
-  {
-    MAP_LL_TxEntryDoneCback();
-  }
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Rx Ignored
-  // Note: Assumes only be for Adv, Scan, and Init state.
-  // Note: Assumes only generated if Address Resolution is enabled.
-  //////////////////////////////////////////////////////////////////////////////
-  if ( events & RF_EventRxIgnored )
-  {
-    LL_RxIgnoredCback();
-
-#if defined(BLE_VS_FEATURES) && (BLE_VS_FEATURES & SCAN_REQ_RPT_CFG) &&        \
-    defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    // ensure no RxEmpty packet processing
-    events &= ~(uint64_t)RF_EventRxEmpty;
-#endif // SCAN_REQ_RPT_CFG & (ADV_NCONN_CFG | ADV_CONN_CFG)
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Rx Empty
-  // Note: Assumed to only be for Scan.
-  //////////////////////////////////////////////////////////////////////////////
-#if defined(BLE_VS_FEATURES) && (BLE_VS_FEATURES & SCAN_REQ_RPT_CFG) &&        \
-    defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  if ( events & RF_EventRxEmpty )
-  {
-    LL_RxEmptyCback();
-  }
-#endif // SCAN_REQ_RPT_CFG & (ADV_NCONN_CFG | ADV_CONN_CFG)
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Rx Entry Done
-  // Note: Assumed to only be for Scan and Connection state.
-  //////////////////////////////////////////////////////////////////////////////
-  if ( events & RF_EventRxEntryDone )
-  {
-    LL_RxEntryDoneCback_allEntries( FALSE );
-  }
-  // Case received packet with CRC error
-  else if ( events & RF_EventRxNOk )
-  {
-    LL_RxEntryDoneCback( TRUE );
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Command Done or Last Command Done
-  //////////////////////////////////////////////////////////////////////////////
-  if ( (events & RF_EventCmdDone) || (events & RF_EventLastCmdDone) )
-  {
-    // when SDAA module is enabled, this function analyze the tx consumption stat
-    MAP_LL_SDAA_HandleSDAALastCmdDone();
-    LL_LastCmdDoneCback();
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // IQ samples ready
-  //////////////////////////////////////////////////////////////////////////////
-#ifdef RTLS_CTE
-  if ( events & (uint32)RF_EventSamplesEntryDone )
-  {
-    llCteSamples.autoCopyCompleted ++;
-  }
-#endif // RTLS_CTE
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Doorbell Error
-  //////////////////////////////////////////////////////////////////////////////
-  if ( events & (uint32)RF_EventInternalError )
-  {
-    LL_DoorbellErrorCback();
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Cancelled, Aborted, Stopped, and/or Preempted
-  //////////////////////////////////////////////////////////////////////////////
-  if ( events & ( RF_EventCmdCancelled | RF_EventCmdAborted |
-                  RF_EventCmdStopped | RF_EventCmdPreempted ))
-  {
-    LL_AbortedCback((events & (RF_EventCmdPreempted|RF_EventCmdAborted)) ? TRUE : FALSE);
-  }
-
-  return;
-}
-
-/*
-** CC26xx BLE RF Driver Callback Functions
-*/
-////////////////////////////////////////////////////////////////////////////////
-// Command Cancelled, Aborted, Stopped, and/or Preempted
-////////////////////////////////////////////////////////////////////////////////
-uint32_t LL_AbortedCback( uint8 preempted )
-{
-  // disable RAT channel
-  MAP_llClearRatCompare();
-
-  // determine which radio task just ended
-  switch( llState )
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case LL_STATE_EXT_ADV:
-      MAP_llAbortEventHandleStateAdv(preempted);
-      break;
-#ifdef USE_PERIODIC_ADV
-    case LL_STATE_PERIODIC_ADV:
-      if ((preempted) || (llGetRfCmdPreemptionEnable()))
-      {
-        taskEndAction = MAP_llPeriodicAdv_PostProcess;
-        // process RF End Cause
-        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-      }
-      break;
-#endif
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-#ifdef USE_PERIODIC_SCAN
-    case LL_STATE_PERIODIC_SCAN:
-      if ((preempted) || (llGetRfCmdPreemptionEnable()))
-      {
-        taskEndAction = MAP_llPeriodicScan_PostProcess;
-
-        // process RF End Cause
-        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-      }
-      break;
-#endif
-    case LL_STATE_SCAN:
-      MAP_llAbortEventHandleStateScan(preempted);
-      break;
-#endif // SCAN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_INIT:
-      MAP_llAbortEventHandleStateInit(preempted);
-      break;
-#endif // INIT_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-    case LL_STATE_CONN_PERIPHERAL:
-      MAP_llAbortEventHandleStatePeripheral(preempted);
-      break;
-#endif // ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_CONN_CENTRAL:
-      MAP_llAbortEventHandleStateCentral(preempted);
-      break;
-#endif // INIT_CFG
-
-    default:
-      return 0;  // case not found/handled
-  }
-  return 1; // case handled
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Doorbell Internal Error
-////////////////////////////////////////////////////////////////////////////////
-void LL_DoorbellErrorCback( void )
-{
-    LL_ASSERT( FALSE );
-
-    // report failure to Host
-    MAP_llHardwareError( HW_FAIL_FW_INTERNAL_ERROR );
-
-    // need to reset the radio; for now, this is fatal
-    MAP_llResetRadio();
-
-    return;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Command Done or Last Command Done
-////////////////////////////////////////////////////////////////////////////////
-uint32_t LL_LastCmdDoneCback( void )
-{
-  // determine which radio task just ended
-  switch( llState )
-  {
-    case LL_STATE_IDLE:
-      break;
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case LL_STATE_EXT_ADV:
-      MAP_llLastCmdDoneEventHandleStateAdv();
-      break;
-#ifdef USE_PERIODIC_ADV
-    case LL_STATE_PERIODIC_ADV:
-    {
-      llPeriodicAdvSet_t *pPeriodicAdv = MAP_llGetCurrentPeriodicAdv();
-
-      if (pPeriodicAdv == NULL)
-      {
-        break;
-      }
-      taskEndStatus = pPeriodicAdv->rfCmd.rfOpCmd.status;
-      taskEndAction = MAP_llPeriodicAdv_PostProcess;
-      // process RF End Cause
-      (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-    }
-    break;
-#endif
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-    case LL_STATE_SCAN:
-      MAP_llLastCmdDoneEventHandleStateScan();
-      break;
-
-#ifdef USE_PERIODIC_SCAN
-    case LL_STATE_PERIODIC_SCAN:
-    {
-      llPeriodicScanSet_t *pPeriodicScan = MAP_llGetCurrentPeriodicScan(PERIODIC_SCAN_STATE_SYNCED);
-
-      if (pPeriodicScan == NULL)
-      {
-        break;
-      }
-      do
-      {
-        taskEndStatus = pPeriodicScan->rfCmd.rfOpCmd.status;
-      } while ((taskEndStatus & 0xFF00) == 0);
-
-      taskEndAction = MAP_llPeriodicScan_PostProcess;
-      // determine an action, if any
-      switch( taskEndStatus )
-      {
-        case BLESTAT_IDLE:
-        case BLESTAT_PENDING:
-        case BLESTAT_ACTIVE:
-        case BLESTAT_ERROR_PAR:
-          // Sanity Check:
-          // This is a fatal error as either the status doesn't make any
-          // sense (in the Idle, Pending, or Active case), or we have a
-          // status that should not have occurred:
-          // - Bad Parameter (i.e. a programming error)
-          // - OK (only valid when bEndOnRpt is enabled; not used)
-          // - Rx Error (only valid when bEndOnRpt is enabled; not used)
-          // - No Synch (only valid when bEndOnRpt is enabled; not used)
-          //LL_ASSERT( FALSE );
-
-          // report failure to Host
-          MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-          break;
-      }
-      // process RF End Cause
-      (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-    }
-    break;
-#endif
-#endif // SCAN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_INIT:
-      MAP_llLastCmdDoneEventHandleStateInit();
-      break;
-#endif // INIT_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-    case LL_STATE_CONN_PERIPHERAL:
-      MAP_llLastCmdDoneEventHandleStatePeripheral();
-      break;
-#endif // ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_CONN_CENTRAL:
-      MAP_llLastCmdDoneEventHandleStateCentral();
-      break;
-#endif // INIT_CFG
-
-    case LL_STATE_DIRECT_TEST_MODE_TX:
-    case LL_STATE_DIRECT_TEST_MODE_RX:
-    case LL_STATE_MODEM_TEST_TX:
-    case LL_STATE_MODEM_TEST_RX:
-    case LL_STATE_MODEM_TEST_TX_FREQ_HOPPING:
-      MAP_llLastCmdDoneEventHandleStateTest();
-      break;
-
-    // when SDAA module enable, RX window event create to monitor the channels noise level
-    case LL_STATE_SDAA_RX_WINDOW:
-    {
-        taskEndAction = MAP_llScheduler;
-        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-        break;
-    }
-
-    default:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or an unspecified
-      // status was returned (in all other cases)!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNKNOWN_RF_STATUS );
-
-      break;
-  }
-
-  return 1;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tx Done
-// Note: Assumed to only be for Connection state.
-////////////////////////////////////////////////////////////////////////////////
-void LL_TxDoneCback( void )
-{
-  switch( llState )
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case LL_STATE_EXT_ADV:
-      MAP_llTxDoneEventHandleStateAdv();
-    break;
-
-#ifdef USE_PERIODIC_ADV
-    case LL_STATE_PERIODIC_ADV:
-    {
-      MAP_llUpdatePeriodicAdvChainPacket();
-    }
-    break;
-#endif
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-    // Assume rest is Connection related.
-    default:
-#if defined( TEST_MODE_DTM )
-      GPIO_writeDio(HAL_GPIO_1, 1);
-#endif // TEST_MODE_DTM
-
-      if ( llState == LL_STATE_DIRECT_TEST_MODE_TX )
-      {
-#if defined( TEST_MODE_DTM )
-        // toggle GPIO
-        GPIO_writeDio(HAL_GPIO_1, 0);
-#endif // TEST_MODE_DTM
-      }
-      break;
-  }
-
-  return;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Tx Entry Done
-// Note: Assumed to only be for Connection state.
-////////////////////////////////////////////////////////////////////////////////
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-void LL_TxEntryDoneCback( void )
-{
-  llConnState_t *connPtr;
-
-  // check if the connection is still valid
-  if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
-  {
-    // connection may have already been ended by a terminate or reset
-    return;
-  }
-
-  // get connection information
-  connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
-
-  MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_TX_ISR );
-
-  return;
-}
-#endif // (ADV_CONN_CFG | INIT_CFG)
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Ignored
-// Note: Assumes only be for Adv, Scan, and Init state.
-// Note: Assumes only generated if Address Resolution is enabled.
-////////////////////////////////////////////////////////////////////////////////
-uint32_t LL_RxIgnoredCback( void )
-{
-  // action based on link layer state
-  switch( llState )
-  {
-    case LL_STATE_IDLE:
-    break;
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case LL_STATE_EXT_ADV:
-      MAP_llRxIgnoreEventHandleStateAdv();
-      break;
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-    case LL_STATE_SCAN:
-      MAP_llRxIgnoreEventHandleStateScan();
-      break;
-#endif // SCAN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_INIT:
-      MAP_llRxIgnoreEventHandleStateInit();
-      break;
-#endif // INIT_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-    case LL_STATE_CONN_PERIPHERAL:
-    case LL_STATE_CONN_CENTRAL:
-      break;
-#endif // ADV_CONN_CFG | INIT_CFG
-
-    default:
-      // Unexpected BLE state!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNKNOWN_LL_STATE );
-
-      break;
-  } // switch(llState)
-
-  return 1;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Empty
-// Note: Assumed to only be for Scan Request.
-////////////////////////////////////////////////////////////////////////////////
-#if defined(BLE_VS_FEATURES) && (BLE_VS_FEATURES & SCAN_REQ_RPT_CFG) && defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-void LL_RxEmptyCback( void )
-{
-  // action based on link layer state
-  switch( llState )
-  {
-    case LL_STATE_IDLE:
-      break;
-
-    case LL_STATE_EXT_ADV:
-      MAP_llRxEmptyEventHandleStateAdv();
-    break;
-
-    default:
-      break;
-  }
-
-  return;
-}
-#endif // SCAN_REQ_RPT_CFG & (ADV_NCONN_CFG | ADV_CONN_CFG)
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Find number of ready entries with status FINISHED
-// Note: Assumed for all states.
-////////////////////////////////////////////////////////////////////////////////
-uint8 getNumFinishedEntries( dataEntryQ_t *pRxQ )
-{
-  uint8 i = 0;
-  uint8 numFinishedEntries = 0;
-  dataEntry_t   *pDataEntryTemp;
-
-  // Get the next data entry
-  pDataEntryTemp = MAP_RFHAL_GetNextDataEntry( pRxQ );
-  if ( pDataEntryTemp == NULL )
-  {
-    return 0;
-  }
-
-  // Check the number of consecutive RX buffers that are finished
-  for (i = 0; i < NUM_RX_DATA_ENTRIES; i++)
-  {
-    if (pDataEntryTemp->status == DATASTAT_FINISHED)
-    {
-      numFinishedEntries++;
-      pDataEntryTemp = pDataEntryTemp->pNextEntry;
-    }
-    else
-    {
-      // Got a buffer that isn't finished yet. Break the loop an return
-      break;
-    }
-  }
-
-  return numFinishedEntries;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Entry Done - for all ready entries
-// Note: Assumed for all states.
-////////////////////////////////////////////////////////////////////////////////
-void LL_RxEntryDoneCback_allEntries( uint8 crcError )
-{
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG | SCAN_CFG))
-  uint8 numFinishedEntries;
-  uint8 i;
-#endif
-  // Fix Coex issue, handle all FINISHED queue entries
-  // Do it only for CONN/SCAN states
-  switch( llState )
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-    case LL_STATE_CONN_CENTRAL:
-    case LL_STATE_CONN_PERIPHERAL:
-    {
-      llConnState_t *connPtr;
-
-      // check if the connection is still valid
-      if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
-      {
-        // connection may have already been ended by a terminate or reset
-        break;
-      }
-
-      // get connection information
-      connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
-
-      numFinishedEntries = getNumFinishedEntries(connPtr->pRxDataEntryQ);
-      BLE_LOG_INT_INT(0, BLE_LOG_MODULE_RF_CMD, "CONN: numFinishedEntries=0x%x, 0x%x\n", numFinishedEntries, 0);
-      for (i=0; i<numFinishedEntries; i++)
-      {
-        LL_RxEntryDoneCback( crcError );
-      }
-      break;
-    }
-#endif
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-  case LL_STATE_SCAN:
-    {
-      numFinishedEntries = getNumFinishedEntries(extScanParam.pRXQ);
-      BLE_LOG_INT_INT(0, BLE_LOG_MODULE_RF_CMD, "SCNE: numFinishedEntries=0x%x, 0x%x\n", numFinishedEntries, 0);
-      for (i=0; i<numFinishedEntries; i++)
-      {
-        LL_RxEntryDoneCback( crcError );
-      }
-      break;
-    }
-#endif // SCAN_CFG
-
-  default:
-      LL_RxEntryDoneCback( crcError );
-      break;
-  }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Entry Done
-// Note: Assumed for all states.
-////////////////////////////////////////////////////////////////////////////////
-void LL_RxEntryDoneCback( uint8 crcError )
-{
-  // action based on link layer state
-  switch( llState )
-  {
-    case LL_STATE_IDLE:
-    break;
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case LL_STATE_EXT_ADV:
-      MAP_llRxEntryDoneEventHandleStateAdv();
-    break;
-#endif //ADV_NCONN_CFG | ADV_CONN_CFG
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-    // process Advertisment Report (ADV*_IND or SCAN_RSP)
-    case LL_STATE_SCAN:
-      // process RX FIFO data
-      MAP_llProcessExtScanRxFIFO();
-    break;
-
-#ifdef USE_PERIODIC_SCAN
-    case LL_STATE_PERIODIC_SCAN:
-    {
-      MAP_llProcessPeriodicScanRxFIFO();
-    }
-    break;
-#endif
-#endif // SCAN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case LL_STATE_INIT:
-      MAP_llRxEntryDoneEventHandleStateInit();
-    break;
-#endif // INIT_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-      // process received data or control packets in Connection
-    case LL_STATE_CONN_CENTRAL:
-    case LL_STATE_CONN_PERIPHERAL:
-      MAP_llRxEntryDoneEventHandleStateConnection(crcError);
-    break;
-#endif // (ADV_CONN_CFG | INIT_CFG)
-    case LL_STATE_DIRECT_TEST_MODE_RX:
-      MAP_llRxEntryDoneEventHandleStateTest();
-    break;
-    default:
-      // Unexpected BLE state!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNKNOWN_LL_STATE );
-
-      break;
-  }
-}
-#endif // USE_RCL
 /*
 ** Local Functions for Adv state
 */
@@ -1996,38 +1226,18 @@ void LL_RxEntryDoneCback( uint8 crcError )
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
 {
-#ifdef USE_RCL
-  RCL_MultiBuffer_ListInfo listInfo;
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) != 0 )
-  {
-      // check if RCL finished and ready to establish a connection
-      if (((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
-      {
-        // initate RCL Rx buffer list
-        RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
-      }
-      else
-      {
-          // RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
-          return FALSE;
-      }
-  }
-#ifdef USE_AE
-  else
-  {
-      // check if RCL finished and ready to establish a connection
-      if (((aeRf_t *)pAdvSet->pRfCmds)->extRfCmd.common.status == RCL_CommandStatus_Connect)
-      {
+    RCL_MultiBuffer_ListInfo listInfo;
+    // check if RCL finished and ready to establish a connection
+    if (((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
+    {
         // initate RCL Rx buffer list
         RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
-      }
-      else
-      {
+    }
+    else
+   {
         // RCL Command status is not RCL_CommandStatus_Connect, continue Advertising
         return FALSE;
-      }
-  }
-#endif
+   }
 
     RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
     uint8 *pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
@@ -2145,133 +1355,19 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
     // 2. If a device using a Public Address was added to the Accept List then the RCL will report the CONNECT_IND and we will get here
     //    If a device using a Public Address was not added then the RCL will filter the CONNECT_IND and we will not get here anyway
     return TRUE;
-    
-#else
-  uint8 status = FALSE;
 
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    aeLegacyRf_t *pRfCmds = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-
-    // check for a connection (verification of the connection indication is being done at the end of the legacy adv section)
-    if ( (pRfCmds->advCmd[0].rfOpCmd.status == BLESTAT_DONE_CONNECT) ||
-         (pRfCmds->advCmd[1].rfOpCmd.status == BLESTAT_DONE_CONNECT) ||
-         (pRfCmds->advCmd[2].rfOpCmd.status == BLESTAT_DONE_CONNECT) ||
-         ((pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT)&&
-         (pRfCmds->advCmd[3].rfOpCmd.status == BLESTAT_DONE_CONNECT)) )
-    {
-      // set status
-      taskEndStatus = BLESTAT_DONE_CONNECT;
-
-      // this is a Undirected or Directed Connect, so setup routine to post-process
-      taskEndAction = MAP_llAdv_TaskConnect;
-      status = TRUE;
-    }
-    else if ( (pRfCmds->advCmd[0].rfOpCmd.status == BLESTAT_DONE_CONNECT_CHSEL0) ||
-              (pRfCmds->advCmd[1].rfOpCmd.status == BLESTAT_DONE_CONNECT_CHSEL0) ||
-              (pRfCmds->advCmd[2].rfOpCmd.status == BLESTAT_DONE_CONNECT_CHSEL0) ||
-              ((pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT)&&
-              (pRfCmds->advCmd[3].rfOpCmd.status == BLESTAT_DONE_CONNECT_CHSEL0)) )
-    {
-      // set status
-      taskEndStatus = BLESTAT_DONE_CONNECT_CHSEL0;
-
-      // this is a Undirected or Directed Connect, so setup routine to post-process
-      taskEndAction = MAP_llAdv_TaskConnect;
-      status = TRUE;
-    }
-    if(taskEndAction == MAP_llAdv_TaskConnect)
-    {
-      uint8 *pData = (uint8 *)(pRfCmds->advParam.pRXQ->pCurEntry) + sizeof( dataEntry_t );
-
-      // verify the connect indication
-      if((pRfCmds->advParam.pRXQ->pCurEntry->status != DATASTAT_FINISHED)                               ||
-         (pRfCmds->advOutput.nRxConnReq != 1)                                                           ||
-         (!llValidateConnectIndPkt( pData ))                                                            ||
-          MAP_llConnExists(&pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
-                          MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR)))
-      {
-        //invalid connect_ind - continue with advertising
-        // in all cases, treat the same as a Task Done Okay
-        taskEndStatus = BLESTAT_DONE_OK;
-
-        // and setup routine to post-process
-        taskEndAction = MAP_llExtAdv_PostProcess;
-        status = FALSE;
-
-        // mark entry as free
-        pRfCmds->advParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-      }
-    }
-  }
-#ifdef USE_AE
-  else // !legacy
-  {
-    // get the status of the Secondary RF command
-    taskEndStatus = ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.rfOpCmd.status;
-
-    // determine an action, if any
-    if ((taskEndStatus == BLESTAT_DONE_CONNECT) ||
-        (taskEndStatus == BLESTAT_DONE_CONNECT_CHSEL0))
-    {
-        taskEndAction = MAP_llAdv_TaskConnect;
-        status = TRUE;
-    }
-  }
-#endif
-#ifdef QUAL_TEST
-  // the fix is under QUAL_TEST definition because the address resolution
-  // is enabled by default in host application
-  // in case of connection request and the address resolution is disable,
-  // check the peer address and if it is RPA, dismiss the connection request
-  // fix for the Qualification test LL.SEC.ADV.BV-08
-  // Jira ticket - BLE_AGAMA-2058
-  if ((taskEndAction == MAP_llAdv_TaskConnect) && (privInfo.addrResolution == FALSE))
-  {
-    uint8 peerAddrType;
-    uint8 peerAddr[LL_DEVICE_ADDR_LEN];
-    uint8 *pData;
-
-    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      pData = (uint8 *)((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-    }
-#ifdef USE_AE
-    else
-    {
-      pData = (uint8 *)((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-    }
-#endif
-    // read the initiator's address type from the header
-    peerAddrType = (uint8)MASK_ID_ADDRTYPE(pData[0] >> LL_ADV_PDU_HDR_TXADDR);
-    // read the initiator's address
-    MAP_osal_memcpy( peerAddr, &pData[2], LL_DEVICE_ADDR_LEN );
-    // check that the peer address is RPA
-    if (MAP_LL_PRIV_IsRPA(peerAddrType, peerAddr))
-    {
-      // in case the peer address is RPA and the adress resolution is disable,
-      // dismiss the connection request and continue in advertising
-      taskEndStatus = BLESTAT_DONE_ENDED;
-      taskEndAction = MAP_llExtAdv_PostProcess;
-      status = FALSE;
-    }
-  }
-#endif
-  return status;
-#endif //USE_RCL
 }
 
-#ifdef USE_RCL
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle Connect Request - using dynamic filter list
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llLastCmdDoneEventHandleConnectRequestDFL( advSet_t *pAdvSet )
 {
   uint8 connect = FALSE;
-  if (((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
+  if (((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.status == RCL_CommandStatus_Connect)
   {
     RCL_MultiBuffer_ListInfo listInfo;
-    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
+    RCL_MultiBuffer_ListInfo_init(&listInfo, &((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers);
     RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_next(&listInfo);
     privTestflags_t policyTests = POLICY_NO_FAILED_TEST;
     privTestflags_t testResults = POLICY_NO_FAILED_TEST;
@@ -2405,260 +1501,9 @@ uint8 llLastCmdDoneEventHandleConnectRequestDFL( advSet_t *pAdvSet )
   return connect;
 }
 
-#else
-#endif //USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Rx Ignore Event Handle Connect Request
-////////////////////////////////////////////////////////////////////////////////
-uint8 llRxIgnoreEventHandleConnectRequest( advSet_t *pAdvSet, uint8 *PeerA, uint8 PeerAdd, uint8 chSel )
-{
-#ifndef CC23X0
-  uint8 rlIndex = INVALID_RESOLVE_LIST_INDEX;
-  uint8 update = TRUE;
-  uint8 connect = FALSE;
-
-  // check if the InitA is an RPA
-  if ( MAP_LL_PRIV_IsRPA( PeerAdd, PeerA ) )
-  {
-    // try to resolve address only if address resolution is enabled
-    if (privInfo.addrResolution == TRUE)
-    {
-      // Note: ISR is not in ROM, so call doesn't need to use R2R JT.
-      rlIndex = MAP_LL_PRIV_IsResolvable( PeerA, resolvingList );
-
-      if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-      {
-        // check the filter policy
-        // Note: If the AL is used, then only respond to the Request if the
-        //       peer's ID address is in the AL.
-        // Note: If the AL is not used, then always accept! That is, the
-        //       rpaMode bit is disabled.
-        if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_CONNECT_IND) ||
-             (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
-        {
-          // check if RPA's ID is NOT found in the AL
-          if ( MAP_AL_FindEntry( alTable,
-                                 resolvingList[rlIndex].idAddr,
-                                 resolvingList[rlIndex].idAddrType ) == alTable->numAlEntries )
-          {
-            // don't continue to Legacy connection
-            connect = FALSE;
-            // don't update the ExtAL with received RPA
-            update = FALSE;
-          }
-        }
-        // if passed all the wanted filtering update the correct structures
-        if (update)
-        {
-          // Update the ExtAL with the received InitA
-          MAP_LL_PRIV_UpdateExtALEntry( alTable,
-                                        resolvingList[rlIndex].RPA,
-                                        PeerA );
-          // update RL RPA for this peer with AnitA
-          MAP_osal_memcpy( resolvingList[rlIndex].RPA, PeerA, B_ADDR_LEN );
-
-          // continue to legacy connection
-          connect = TRUE;
-        }
-      }
-    }
-
-    // address was not resolved - need to check filter policy
-    if ( rlIndex == INVALID_RESOLVE_LIST_INDEX )
-    {
-      // Check the advertising filter policy in case the peer RPA is not resolved
-      if (( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) ) &&
-          ((pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_ANY_REQ) ||
-           (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ)))
-      {
-        connect = TRUE;
-      }
-    }
-  }
-  else // not RPA
-  {
-    // Check if the ID address can be found in the resolving List
-    uint8 rlIndex = MAP_LL_PRIV_FindPeerInRL( resolvingList,
-                                              PeerAdd,
-                                              PeerA );
-
-    if( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-    {
-      // accept peer ID for Device Privacy Mode and IRK!=0
-      if ( !( MAP_LL_PRIV_IsZeroIRK( resolvingList[rlIndex].IRK )) &&
-            ( resolvingList[rlIndex].privMode == LL_DEVICE_PRIVACY_MODE ))
-      {
-          connect = TRUE;
-      }
-    }
-  }
-
-  // check if we should connect
-  if ( connect )
-  {
-    // check if AE Legacy
-    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      // check if we support Algo 2
-      if ( (deviceFeatureSet.featureSet[1] & (uint8)LL_FEATURE_CHAN_ALGO_2) &&
-           (chSel == LL_CHANNEL_SELECT_ALGO_1) )
-      {
-        // set Adv status (all three) to connect, and let process
-        // per usual (i.e. CPE0 interrupt should result)
-
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[0].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[1].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[2].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-
-        // set status
-        taskEndStatus = BLESTAT_DONE_CONNECT_CHSEL0;
-      }
-      else // either we don't support Algo2, or we and peer do
-      {
-        // set Adv status (all three) to connect, and let process
-        // per usual (i.e. CPE0 interrupt should result)
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[0].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[1].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[2].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-
-        // set status
-        taskEndStatus = BLESTAT_DONE_CONNECT;
-      }
-
-      aeLegacyRf_t *pRfCmds = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-      uint8 *pData = (uint8 *)(pRfCmds->advParam.pRXQ->pCurEntry) + sizeof( dataEntry_t );
-      // validate the received connection indication
-      if ((pRfCmds->advParam.pRXQ->pCurEntry->status == DATASTAT_FINISHED )                     &&
-          (llValidateConnectIndPkt( pData ))                                                    &&
-          (!MAP_llConnExists( &pData[LL_CONN_IND_INITIATOR_ADDRESS_OFFSET],
-                                MASK_ID_ADDRTYPE(pData[LL_CONN_IND_HEADER_OFFSET] >> LL_ADV_PDU_HDR_TXADDR))))
-      {
-        // set this flag in order to prevent handling the next RF_EventLastCmdDone interrupt
-        llUnhandleNextIntFlag = TRUE;
-
-        // nRxConnReq is increased by RF core only for packets received OK and not ignored
-        // In case of ignored packet we need to increase it here
-        ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advOutput.nRxConnReq++;
-
-        // setup routine to post-process
-        taskEndAction = MAP_llAdv_TaskConnect;
-
-        // process RF End Cause
-        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-
-      }
-    }
-    //else // !legacy
-    // Note: Since the AUX_CONNECT_RSP is required, we cannot handle
-    //       an immediate connection as was done in Legacy above.
-    //       Instead, the AUX_CONNECT_REQ'S peer RPA will be resolved
-    //       the next time, and we connect per usual.
-  }
-  else
-  {
-    // dismiss the connection request and continue in advertising
-    taskEndStatus = BLESTAT_DONE_ENDED;
-  }
-#endif
-  return TRUE;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Entry Done Event Handle Connect Request
-////////////////////////////////////////////////////////////////////////////////
-uint8 llRxEntryDoneEventHandleConnectRequest( advSet_t *pAdvSet, uint8 *PeerA, uint8 PeerAdd, uint8 chSel )
-{
-#ifndef CC23X0
-  BLE_LOG_INT_STR(0, BLE_LOG_MODULE_CTRL, "CTRL: ll_isr llState=%d, RF_PDU=%s\n", llState, "LL_CONN_REQ_PDU");
-  // check if the InitA is an RPA
-  if ( MAP_LL_PRIV_IsRPA( PeerAdd, PeerA ) )
-  {
-    // resolve the received RPA PeerA to get its corresponding ID
-    uint8 rlIndexA = MAP_LL_PRIV_IsResolvable( PeerA, resolvingList );
-    // resolve the peerAddress which was generated by the controller when the AUX_ADV_IND was sent
-    uint8 rlIndexB = MAP_LL_PRIV_IsResolvable( pAdvSet->peerAddr, resolvingList );
-    // check if both addresses are not resolved to the same ID
-    if ( rlIndexA != rlIndexB )
-    {
-      //NOTE: if we're using directed advertising and receiving a CONNECT_REQ / CONNECT_IND with RPA, we accept the
-      //      packet automatically and CONNECT_RSP sent automatically.
-      //      if the initA from the CONNECT_REQ / CONNECT_IND is not resolved to the correct expected id then:
-      //      -  if AE is used then abort the RADIO to make sure that the RSP won't be sent.
-      //      -  if LEGACY is used then mark a bit which will make the connection to disconnect with authenticaiton failure.
-
-#ifdef USE_AE
-      if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-      {
-        MAP_llHaltRadio( CMD_ABORT );
-      }
-      else
-#endif
-      {
-        pAdvSet->advHalted |= AE_ENABLE_DISCONNECT_AUTH_FAIL;
-      }
-    }
-    else
-    {
-      MAP_osal_memcpy( resolvingList[rlIndexA].RPA, PeerA, B_ADDR_LEN );
-      if  ((TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps)) &&
-           (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT))
-      {
-        // check if we support Algo 2
-        if ( (deviceFeatureSet.featureSet[1] & (uint8)LL_FEATURE_CHAN_ALGO_2) &&
-             (chSel == LL_CHANNEL_SELECT_ALGO_1) )
-        {
-          // set Adv status (all three) to connect, and let process
-          // per usual (i.e. CPE0 interrupt should result)
-
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[0].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[1].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[2].rfOpCmd.status = BLESTAT_DONE_CONNECT_CHSEL0;
-        }
-        else // either we don't support Algo2, or we and peer do
-        {
-          // set Adv status (all three) to connect, and let process
-          // per usual (i.e. CPE0 interrupt should result)
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[0].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[1].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advCmd[2].rfOpCmd.status = BLESTAT_DONE_CONNECT;
-        }
-      }
-    }
-  }
-#endif
-  return TRUE;
-}
-
 #endif
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Abort Event Handle for ADV state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llAbortEventHandleStateAdv( uint8 preempted )
-{
-  // get current Adv Set
-  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-
-  // check whether it is necessary to prevent handling this interrupt
-  if (llUnhandleNextIntFlag)
-  {
-    llUnhandleNextIntFlag = FALSE;
-    return FALSE;
-  }
-
-  if ( ( pAdvSet ) && (( preempted ) || (llGetRfCmdPreemptionEnable())) )
-  {
-    // Set DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_EXT_ADV,aeCurHandle,FALSE);
-
-    taskEndAction = MAP_llExtAdv_PostProcess;
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-  return TRUE;
-}
-#endif
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle for ADV state
 ////////////////////////////////////////////////////////////////////////////////
@@ -2672,13 +1517,6 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
     llUnhandleNextIntFlag = FALSE;
     return FALSE;
   }
-#ifndef USE_RCL
-  // set default end cause to error handler
-  taskEndAction = MAP_llTaskError;
-
-  // Reset DMM threshold
-  MAP_llDmmSetThreshold(LL_STATE_EXT_ADV,aeCurHandle,TRUE);
-#endif // USE_RCL
 
   // check for receive connect request
   if (MAP_llLastCmdDoneEventHandleConnectRequest(pAdvSet) == TRUE)
@@ -2690,7 +1528,6 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
 
     return TRUE;
   }
-#ifdef USE_RCL
   else
   {
     taskEndAction = MAP_llExtAdv_PostProcess;
@@ -2699,175 +1536,6 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
 
     return FALSE;
   }
-#else
-  // check if this will be a legacy advertisement
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    aeLegacyRf_t *pRfCmds = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-
-    // search through the command statuses to find one final status/action
-    for(uint8 i=0, done=FALSE; i<LL_MAX_NUM_ADV_CHAN && done==FALSE; i++)
-    {
-      // RF command appears to return PENDING as status,
-      // before updating status to RFSTAT_ERROR_PAST_START.
-      do
-      {
-        taskEndStatus = pRfCmds->advCmd[i].rfOpCmd.status;
-      } while (taskEndStatus == BLESTAT_PENDING);
-
-      // determine an action, if any
-      switch( taskEndStatus )
-      {
-        case RFSTAT_DONE_OK:
-          // check if this is an unused channel
-          if ( pRfCmds->advCmd->rfOpCmd.cmdNum == CMD_NOP )
-          {
-            // it is, so skip it
-            continue;
-          }
-
-          /* Drop Through */
-
-        case BLESTAT_DONE_OK:
-        case BLESTAT_DONE_RXERR:
-        case BLESTAT_DONE_NOSYNC:
-        case BLESTAT_DONE_ENDED:
-        case BLESTAT_IDLE:
-        case BLESTAT_ACTIVE:
-        case BLESTAT_SKIPPED:
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-          // check if Directed
-          if ( (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT) ||
-               (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_LDC_DIRECTED_EVT) )
-          {
-            // this is a Directed timeout, so setup routine to post-process
-            taskEndAction = MAP_llExtAdv_PostProcess;
-          }
-          else // okay to continue
-#endif // ADV_CONN_CFG
-          {
-            // in all cases, treat the same as a Task Done Okay
-            taskEndStatus = BLESTAT_DONE_OK;
-
-            // and setup routine to post-process
-            taskEndAction = MAP_llExtAdv_PostProcess;
-          }
-          // update coex counters
-          MAP_llCoexUpdateCounters(TRUE);
-          // exit loop
-          done = TRUE;
-
-          break;
-
-        case BLESTAT_DONE_CONNECT:
-        case BLESTAT_DONE_CONNECT_CHSEL0:
-          // In case we got here with status of CONNECT it means stack has rejected
-          // the connection request earlier above (in llLastCmdDoneEventHandleConnectRequest)
-          // for a reason (i.e. address resolution was disabled for example).
-          // Thus, Need to go to adv post-process.
-          // Avoiding to handle this case will result in dropping through to the default case
-          // and might results in LL_ASSERT.
-          taskEndStatus = BLESTAT_DONE_ENDED;
-
-          // and setup routine to post-process
-          taskEndAction = MAP_llExtAdv_PostProcess;
-
-          // exit loop
-          done = TRUE;
-
-          break;
-
-        case RFSTAT_ERROR_PAST_START:
-        case BLESTAT_ERROR_SYNTH_PROG:
-        //Did not recieve Grant from Coex module
-        case BLESTAT_ERROR_NO_GRANT:
-          //MAP_llHardwareError( HW_FAIL_PAST_START_TRIG );
-          //return;
-          if ( pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT )
-          {
-            // treat as if a 1.28s HDC Directed Adv event expired
-            pRfCmds->advCmd[i].rfOpCmd.status = BLESTAT_DONE_NOSYNC;
-          }
-          else
-          {
-            pRfCmds->advCmd[i].rfOpCmd.status = BLESTAT_DONE_OK;
-          }
-#ifdef USE_COEX
-          if (taskEndStatus == BLESTAT_ERROR_NO_GRANT)
-          {
-            MAP_llCoexUpdateCounters(FALSE);
-          }
-#endif // USE_COEX
-          // and setup routine to post-process
-          taskEndAction = MAP_llExtAdv_PostProcess;
-
-          // exit loop
-          done = TRUE;
-
-          break;
-
-        case BLESTAT_ERROR_RXBUF:
-          // clear the status
-          ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-
-          // and setup routine to post-process
-          taskEndAction = MAP_llExtAdv_PostProcess;
-
-          // exit loop
-          done = TRUE;
-
-          break;
-
-        case BLESTAT_ERROR_PAR:
-          // Sanity Check:
-          // This is a fatal error as either the status doesn't make any
-          // sense (in the Idle, Pending, or Active case), or an unspecified
-          // status was returned (in all other cases)!
-          LL_ASSERT( FALSE );
-
-          // report failure to Host
-          MAP_llHardwareError( HW_FAIL_INVAILD_RF_COMMAND );
-          return 1;
-          break;
-
-        default:
-          // Sanity Check:
-          // We should not be able to traverse all radio operation commands without
-          // either an error or handling the Last Command Done interrupt.
-          LL_ASSERT( FALSE );
-
-          // report failure to Host
-          MAP_llHardwareError( HW_FAIL_UNKNOWN_RF_STATUS );
-          return 1;
-          break;
-      } // switch taskEndStatus
-    } // for loop
-  }
-#ifdef USE_AE
-  else // !legacy
-  {
-    // update Coex counters
-    // Receive "No Grant" error only on Primary RF command status
-#ifdef USE_COEX
-    if (((aeRf_t *)pAdvSet->pRfCmds)->extRfCmd[0].rfOpCmd.status == BLESTAT_ERROR_NO_GRANT)
-    {
-      MAP_llCoexUpdateCounters(FALSE);
-    }
-    else
-    {
-      MAP_llCoexUpdateCounters(TRUE);
-    }
-#endif // USE_COEX
-    taskEndStatus = BLESTAT_DONE_ENDED;
-    taskEndAction = MAP_llExtAdv_PostProcess;
-  }
-#endif // USE_AE
-
-  // process RF End Cause
-  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-
-  return TRUE;
-#endif // USE_RCL
 }
 
 #ifdef USE_AE
@@ -2876,709 +1544,10 @@ uint8 llLastCmdDoneEventHandleStateAdv( void )
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llTxDoneEventHandleStateExtAdv( advSet_t *pAdvSet )
 {
-#ifndef USE_RCL
-  aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
-#ifdef USE_PERIODIC_ADV
-  llPeriodicAdvSet_t *pPeriodicAdv = NULL;
-#endif
-
-  // check if we're still processing primary channel commands
-  if ( pAdvSet->txCount < pAdvSet->numPrimChans )
-  {
-    // do not handle the primary channel - not using RF count command any more
-  }
-  // check if done with the last primary channel command
-  else if ( pAdvSet->txCount == pAdvSet->numPrimChans )
-  {
-    // set the Extended Header Info
-    pRf->comPkt.extHdrInfo  = pAdvSet->auxHdrInfo;
-
-    // set the Extended Header Flags
-    pRf->comPkt.extHdrFlags = pAdvSet->auxHdrFlags;
-
-    // check if data should be part of AUX_ADV_IND
-    // Note: Data is never part of of AUX_ADV_IND when scannable.
-    if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-    {
-      // check if AUX_ADV_IND has an AuxPtr
-      if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR) )
-      {
-        pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_AUXPTR_SIZE;
-        pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_AUXPTR;
-      }
-
-      // no auxPtr for Scannable
-      // Note: Set trigger to NOW when there is no subordinate packet.
-      pRf->auxRfParam.auxPtrTgtTime = 0;
-      pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-
-      // build the Extended Header Buffer for ADV_EXT_IND
-      // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-      //       exclude them from the Extended Header buffer.
-      MAP_llSetupExtHdr( pAdvSet,
-                         pRf->comPkt.extHdrFlags & ~(EXTHDR_FLAG_ADVA), // & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-                         AE_AUX_OFFSET_AUTO_INSERT );
-    }
-    else // !Scannable
-    {
-      // only allow data (if any) when AdvA is not anonymous
-      if ( !TST_AE_PROPS_OMIT_ADVA(pAdvSet->pAdvParam->eventProps) )
-      {
-        // setup Advertising Data (if any) for the first fragment
-        pRf->comPkt.advDataLen = (pAdvSet->dataLen)?pAdvSet->fragLen:0;
-        pRf->comPkt.pAdvData   = (pAdvSet->dataLen)?pAdvSet->pData:NULL;
-      }
-
-      // adjust data length if connectable
-      // Note: Cannot omit AdvA when connectable, so advDataLen valid.
-      if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) )
-      {
-        // check if there data to be sent
-        if ( pAdvSet->dataLen && pAdvSet->pData )
-        {
-          // set pointer
-          pRf->comPkt.pAdvData = pAdvSet->pData;
-
-          // cap the data length based on available space in AUX PDU
-          pRf->comPkt.advDataLen =
-            (pAdvSet->dataLen > pAdvSet->maxAvailData) ?
-             pAdvSet->maxAvailData                     :
-             pAdvSet->dataLen;
-        }
-      }
-
-      // check if AUX_ADV_IND has an AuxPtr
-      if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR) )
-      {
-        pRf->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pAdvSet->minTimeAdj);
-
-        // set the auxPtr time and type
-        // Note: CM0 expects time in RAT ticks.
-        pRf->auxRfParam.auxPtrTgtTime = pRf->auxRfCmd.rfOpCmd.startTime         +
-                                        US_TO_RAT_TICKS( pAdvSet->otaTimeAuxAdv +
-                                                         START_SYNTH_TO_RAT_OFFSET );
-
-        pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-     }
-      else // no auxPtr needed
-      {
-        // default aux time/type
-        // Note: Set trigger to NOW when there is no subordinate packet.
-        pRf->auxRfParam.auxPtrTgtTime = 0;
-        pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-      }
-
-      // Sync info could be only on AUX_ADV_IND in not connactable and not scannable mode
-      if ((!TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps)) &&
-          (!TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps)))
-      {
-#ifdef USE_PERIODIC_ADV
-        pPeriodicAdv = MAP_llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
-        if (pPeriodicAdv != NULL)
-        {
-          if ((pPeriodicAdv->state == PERIODIC_ADV_STATE_ENABLE) && (!TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO)))
-          {
-            SET_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
-            //pRf->comPkt.extHdrInfo  += EXTHDR_FLAG_SYNCINFO_SIZE;
-            pRf->comPkt.extHdrFlags |= EXTHDR_FLAG_SYNCINFO;
-          }
-          else if ((pPeriodicAdv->state == PERIODIC_ADV_STATE_DISABLE) && (TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO)))
-          {
-            CLR_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
-            pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_SYNCINFO_SIZE;
-            pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_SYNCINFO;
-          }
-        }
-#endif
-      }
-
-      // build the Extended Header Buffer for ADV_EXT_IND
-      // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-      //       exclude them from the Extended Header buffer.
-      MAP_llSetupExtHdr( pAdvSet,
-                         pAdvSet->auxHdrFlags & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-                         AE_AUX_OFFSET_AUTO_INSERT );
-#ifdef USE_PERIODIC_ADV
-      if ((pPeriodicAdv != NULL) &&
-          (TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO)) &&
-          (pPeriodicAdv->state == PERIODIC_ADV_STATE_PENDING_TRIGGER))
-      {
-        MAP_llTrigPeriodicAdv(pAdvSet, pPeriodicAdv);
-      }
-#endif
-    }
-  }
-  else // txCount > numPrimChans: AUX_ADV_IND Transmitted
-  {
-    // Sync info could be only on AUX_ADV_IND and NOT on AUX_CHAIN_IND
-    if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO) )
-    {
-      CLR_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
-      pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_SYNCINFO_SIZE;
-      pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_SYNCINFO;
-    }
-
-    if ( TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) )
-    {
-      // update header info and flags in case a AUX_CONNECT_RSP is needed
-      // Note: Connectable Advertising never includes ADI.
-      pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_ADI_SIZE;
-      pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_ADI;
-
-      // change Adv Mode to 00b for the possible AUX_CONNECT_RSP
-      pRf->comPkt.extHdrInfo  &= ~ADV_MODE_MASK;
-
-      // add Target Address if not already included
-      if ( !TST_EXTHDR_FLAG( pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TARGETA ) )
-      {
-        pRf->comPkt.extHdrInfo  += EXTHDR_FLAG_TARGETA_SIZE;
-        pRf->comPkt.extHdrFlags |= EXTHDR_FLAG_TARGETA;
-      }
-
-      // remove Tx Power if included
-      if ( TST_EXTHDR_FLAG( pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TXPWR ) )
-      {
-        pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_TXPWR_SIZE;
-        pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_TXPWR;
-      }
-
-      // no data in AUX_CONNECT_RSP
-      pRf->comPkt.pAdvData     = NULL;
-      pRf->comPkt.advDataLen   = 0;
-    }
-    else // !Connectable
-    {
-      uint8 remFrag;
-      uint8 auxPktCnt;
-
-      // number of aux packets sent
-      auxPktCnt = pAdvSet->txCount - pAdvSet->numPrimChans;
-
-      // Scannable?
-      if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-      {
-        // check if this is the AUX_ADV_IND packet
-        if ( auxPktCnt == 1 )
-        {
-          // just transmitted the AUX_ADV_IND, so update the start time
-          // of secondary command in case an AUX_SCAN_RSP will be sent
-          // Note: This start time is also needed to find the auxPtr
-          //       time, in case an AUX_CHAIN_IND PDU is also sent.
-          pRf->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pAdvSet->otaTimeAuxAdv);
-
-          // clear AdvMode
-          // Note: Subsequent AdvMode for AUX_SCAN_RSP and AUX_CHAIN_IND
-          //       are zero.
-          CLR_ADV_MODE( pAdvSet->auxHdrInfo );
-
-          // set the Extended Header Info
-          // Note: Already contains auxExtHdrSize+1, but not data!
-          pRf->comPkt.extHdrInfo  = pAdvSet->auxHdrInfo;
-
-          // set the Extended Header Flags
-          pRf->comPkt.extHdrFlags = pAdvSet->auxHdrFlags;
-
-#ifdef EXCLUDE_V51_FEATURES
-          // update header info and flags in case a AUX_SCAN_RSP is needed
-          // Note: Scannable Advertising never includes ADI or TargetA.
-          pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_ADI_SIZE;
-          pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_ADI;
-#endif
-          // check if TargetA included
-          if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-          {
-            // remove TargetA
-            pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_TARGETA_SIZE;
-            pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_TARGETA;
-          }
-
-          // build the Extended Header Buffer for AUX_SCAN_RSP
-          // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-          //       exclude them from the Extended Header buffer.
-          //MAP_llSetupExtHdr( pAdvSet,
-          //                   pRf->comPkt.extHdrFlags & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-          //                   AE_AUX_OFFSET_AUTO_INSERT );
-
-          // convert the OTA size of AUX packet to time based on the PHY
-          // Note: The AUX PHY field in AuxPtr is minus one the value of the parameters.
-          // Note: The expected phy and coding by llOctets2Time:
-          //         BLE5_1M_PHY, BLE5_2M_PHY, BLE5_CODED_PHY
-          //         BLE5_CODED_S8_DEFAULT, BLE5_CODED_S2_DEFAULT
-          pAdvSet->otaTimeAuxAdv = MAP_llOctets2Time( pRf->auxRfCmd.phyMode & 0x03,      // first two bits only
-                                                      (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                                      GET_EXT_HDR_LEN(pRf->comPkt.extHdrInfo)+pAdvSet->fragLen+1,
-                                                      MIC_NOT_ENABLED );
-
-          // for Scannable, don't include the T_MAFS because it is not needed to find
-          // the start time of the AUX_SCAN_RSP
-          pAdvSet->otaTimeAuxAdv += AE_MIN_T_MAFS_IN_US;
-
-          // build the Extended Header Buffer for ADV_EXT_IND
-          // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-          //       exclude them from the Extended Header buffer.
-          // Note: Since the CM0 re-reads the auxPtrTgtTime/Type too quickly, we
-          //       have to manually calculate the auxPtr, if the flag is set.
-          MAP_llSetupExtHdr( pAdvSet,
-                             pRf->comPkt.extHdrFlags & ~(EXTHDR_FLAG_ADVA), // & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-                             (pAdvSet->otaTimeAuxAdv / AE_AUX_OFFSET_30_US_UNIT_VALUE ) );
-
-
-         // tell PHY not to touch the auxPtr
-         ((aeRf_t *)pRf)->auxRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-
-          // setup Scan Response Data (if any) for the first fragment
-          pRf->comPkt.advDataLen = (pAdvSet->dataLen)?pAdvSet->fragLen:0;
-          pRf->comPkt.pAdvData   = (pAdvSet->dataLen)?pAdvSet->pData:NULL;
-
-          return TRUE;
-        }
-        // check if we got a AUX_SCAN_REQ and sent a AUX_SCAN_RSP
-        else if ( auxPktCnt == 2 )
-        {
-          // set start time of AUX_CHAIN_IND, if there is one
-          pRf->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pAdvSet->otaTimeAuxAdv);
-
-          // check if AdvA included, and if so, remove from AUX_CHAIN_IND
-          if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_ADVA) )
-          {
-            // remove AdvA
-            pRf->comPkt.extHdrInfo  -= EXTHDR_FLAG_ADVA_SIZE;
-            pRf->comPkt.extHdrFlags &= ~EXTHDR_FLAG_ADVA;
-          }
-
-          // convert the OTA size of AUX packet to time based on the PHY
-          // Note: The AUX PHY field in AuxPtr is minus one the value of the parameters.
-          // Note: The expected phy and coding by llOctets2Time:
-          //         BLE5_1M_PHY, BLE5_2M_PHY, BLE5_CODED_PHY
-          //         BLE5_CODED_S8_DEFAULT, BLE5_CODED_S2_DEFAULT
-          pAdvSet->otaTimeAuxAdv = MAP_llOctets2Time( pRf->auxRfCmd.phyMode & 0x03,      // first two bits only
-                                                      (pRf->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                                                      GET_EXT_HDR_LEN(pRf->comPkt.extHdrInfo)+pAdvSet->fragLen+1,
-                                                      MIC_NOT_ENABLED );
-
-          // for Scannable, don't include the T_MAFS because it is not needed to find
-          // the start time of the AUX_SCAN_RSP
-          pAdvSet->otaTimeAuxAdv += AE_MIN_T_MAFS_IN_US;
-
-          // build the Extended Header Buffer for ADV_EXT_IND
-          // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-          //       exclude them from the Extended Header buffer.
-          // Note: Since the CM0 re-reads the auxPtrTgtTime/Type too quickly, we
-          //       have to manually calculate the auxPtr, if the flag is set.
-          MAP_llSetupExtHdr( pAdvSet,
-                             pRf->comPkt.extHdrFlags & ~(EXTHDR_FLAG_ADVA), // & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-                             AE_AUX_OFFSET_AUTO_INSERT );
-
-          // we sent an AUX_CHAIN_IND, so adjust the next command
-          // counter based on fragmentation
-          // Note: If Scannable, we just send a AUX_ADV_IND, so pAdvSet->numFrags
-          //       is always at least one, but can be more if there's fragmented
-          //       AUX_SCAN_RSP data.
-          pRf->countCmd.counter = pAdvSet->numFrags;
-        }
-        else // all subsequent CHAIN packets remain the same
-        {
-          // set start time of AUX_CHAIN_IND, if there is one
-          pRf->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pAdvSet->otaTimeAuxAdv);
-        }
-
-        // find the remaining number of fragments
-        remFrag = (pAdvSet->numFrags + 1) - auxPktCnt;
-
-        // only update auxPtr timing if needed
-        if ( remFrag > 1 )
-        {
-          // set the auxPtr time and type
-          // Note: CM0 expects time in RAT ticks.
-          pRf->auxRfParam.auxPtrTgtTime =
-              pRf->auxRfCmd.rfOpCmd.startTime         +
-              US_TO_RAT_TICKS( pAdvSet->otaTimeAuxAdv +
-                               START_SYNTH_TO_RAT_OFFSET );
-
-          pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-        }
-      }
-      else // !Scannable
-      {
-        // update start time of secondary command in case of AUX_CHAIN_IND
-        pRf->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pAdvSet->otaTimeAuxAdv);
-
-        // find the remaining number of fragments
-        remFrag = pAdvSet->numFrags - auxPktCnt;
-
-        // check if possible upcoming AUX_CHAIN_IND has an AuxPtr
-        if ( TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_AUXPTR) )
-        {
-          // set the auxPtr time and type
-          // Note: CM0 expects time in RAT ticks.
-          pRf->auxRfParam.auxPtrTgtTime = pRf->auxRfCmd.rfOpCmd.startTime         +
-                                          US_TO_RAT_TICKS( pAdvSet->otaTimeAuxAdv +
-                                                           START_SYNTH_TO_RAT_OFFSET );
-
-          pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-        }
-      }
-
-      // check if there are more AUX_CHAIN_IND packets to follow
-      if ( remFrag )
-      {
-        uint8 auxHdrFlags = pAdvSet->auxHdrFlags;
-        uint8 auxHdrInfo  = pAdvSet->auxHdrInfo;
-        uint8 auxExtHdrSize;
-
-        // advance the pointer
-        pRf->comPkt.pAdvData += pAdvSet->fragLen;
-
-        // remove AdvA
-        CLR_EXTHDR_FLAG( auxHdrFlags,
-                         EXTHDR_FLAG_ADVA );
-
-        // check if TargetA included
-        if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps) )
-        {
-          CLR_EXTHDR_FLAG( auxHdrFlags,
-                           EXTHDR_FLAG_TARGETA );
-        }
-
-        // check if the next fragment will be the last fragment
-        if ( remFrag == 1 )
-        {
-          // setup the next frag, which is the last frag
-
-          // remove AuxPtr
-          CLR_EXTHDR_FLAG( auxHdrFlags,
-                           EXTHDR_FLAG_AUXPTR );
-
-          // setup last fragment length
-          pRf->comPkt.advDataLen = pAdvSet->lastFragLen;
-
-          // force auxPtr offset to zero
-          pRf->auxRfParam.auxPtrTgtTime = 0;
-          pRf->auxRfParam.auxPtrTgtType = TRIGTYPE_NOW;
-        }
-
-        // update size of Extended Header buffer
-        auxExtHdrSize = MAP_llGetExtHdrLen( auxHdrFlags );
-
-        // add length to Extended Header Info
-        SET_EXTHDR_LEN( auxHdrInfo,
-                        auxExtHdrSize );
-
-        // set the Extended Header Info
-        pRf->comPkt.extHdrInfo = auxHdrInfo;
-
-        // set the Extended Header Flags
-        pRf->comPkt.extHdrFlags = auxHdrFlags;
-
-        // build the Extended Header Buffer for AUX_CHAIN_IND
-        // Note: Since the CM0 auto-inserts AdvA and TargetA if needed, we can
-        //       exclude them from the Extended Header buffer.
-        MAP_llSetupExtHdr( pAdvSet,
-                           auxHdrFlags & ~(EXTHDR_FLAG_ADVA | EXTHDR_FLAG_TARGETA),
-                           AE_AUX_OFFSET_AUTO_INSERT );
-      }
-    }
-  }
-#endif
   return TRUE;
 }
 #endif
 
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// TxDone Event Handle for ADV state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llTxDoneEventHandleStateAdv( void )
-{
-  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-
-  if ( pAdvSet == NULL )
-  {
-    return FALSE;
-  }
-  // check if this is the first Adv event
-  if ( pAdvSet->txCount == 0 )
-  {
-    // indicate first event has complete
-    pAdvSet->firstAdvEvt = 1;
-  }
-
-  // bump the number of Tx Done interrupts received
-  pAdvSet->txCount++;
-
-#ifdef USE_AE
-  // only non-legacy allowed for this ISR
-  if ( !TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    MAP_llTxDoneEventHandleStateExtAdv(pAdvSet);
-  }
-  else //legacy
-#endif
-  {
-#if defined(CC13X2P)
-    // get pointer to RF command
-    aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
-    uint8 i = (pAdvSet->firstPrimChan - LL_ADV_BASE_CHAN) + pAdvSet->txCount;
-    if ( pAdvSet->txCount < pAdvSet->numPrimChans )
-    {
-      if (pRf->advCmd[i].rfOpCmd.cmdNum == CMD_NOP)
-      {
-        i++;
-      }
-      // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-      MAP_llTxPwrSwitchPA( pAdvSet->txPowerIndex, (uint32 *)&(pRf->advCmd[i]) );
-    }
-#endif
-  }
-  return TRUE;
-}
-#endif
-////////////////////////////////////////////////////////////////////////////////
-// Rx Ignore Event Handle for ADV state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llRxIgnoreEventHandleStateAdv( void )
-{
-#ifndef CC23X0
-  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-  uint8 *pPkt;
-  uint8 PeerAdd;
-  uint8 PeerA[B_ADDR_LEN];
-
-  if (pAdvSet == NULL)
-  {
-    return FALSE;
-  }
-  // check if AE Legacy
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    // get a pointer directly to the packet (i.e. data entry payload)
-    pPkt = (uint8 *)((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-  }
-#ifdef USE_AE
-  else // !legacy
-  {
-    // get a pointer directly to the packet (i.e. data entry payload)
-    pPkt = (uint8 *)((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-  }
-#endif
-  // copy peer address so there's no race condition or overwrite
-  MAP_osal_memcpy( PeerA, &pPkt[2], B_ADDR_LEN );
-
-  // copy address types
-  PeerAdd = LL_ADV_HDR_GET_TX_ADD( *pPkt );
-
-  // read PDU type in header
-  // Note: Sent in response to a Scannable Undirected or Connectable
-  //       Undirected Advertisement.
-  // Note: LL_PKT_TYPE_SCAN_REQ and LL_PKT_TYPE_AUX_SCAN_REQ have the same value.
-  if ( LL_SCAN_REQ_PDU( *pPkt ) )
-  {
-    BLE_LOG_INT_STR(0, BLE_LOG_MODULE_CTRL, "CTRL: ll_isr llState=%d, RF_PDU=%s\n", llState, "LL_SCAN_REQ_PDU");
-    // check if the ScanA is an RPA
-    if ( MAP_LL_PRIV_IsRPA( PeerAdd, PeerA ) )
-    {
-      // check the filter policy
-      // Note: If the AL is used, then only respond to the Request if the
-      //       peer's ID address is in the AL.
-      // Note: If the AL is not used, then always accept! That is, the
-      //       rpaMode bit is disabled.
-      if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) ||
-           (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_ALL_REQ) )
-      {
-        // try to resolve the RPA
-        uint8 rlIndex = MAP_LL_PRIV_IsResolvable( PeerA, resolvingList );
-
-        if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-        {
-          // check if resolved RPA's ID is in the AL
-          if ( MAP_AL_FindEntry( alTable,
-                                 resolvingList[rlIndex].idAddr,
-                                 resolvingList[rlIndex].idAddrType ) != alTable->numAlEntries )
-          {
-            // update the peer RPA in the extended accept list table
-            MAP_LL_PRIV_UpdateExtALEntry( alTable,
-                                          resolvingList[rlIndex].RPA,
-                                          PeerA );
-
-            // update RL RPA for this peer with ScanA
-            MAP_osal_memcpy( resolvingList[rlIndex].RPA, PeerA, B_ADDR_LEN );
-          }
-        } // failed to resolve when using AL, so reject
-      } // FP is ANY, so PHY will accept
-    } // not RPA, so PHY will accept if FP=ANY, and not to be ignrored due to Privacy Mode
-  }
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  else if ( LL_CONN_REQ_PDU( *pPkt ) )
-  {
-    // get the Channel Selection Algorithm bit, in case we connect
-    uint8 chSel = LL_ADV_HDR_GET_CHSEL( *pPkt );
-
-    MAP_llRxIgnoreEventHandleConnectRequest(pAdvSet,PeerA,PeerAdd,chSel);
-  }
-#endif // ADV_CONN_CFG
-  // check if AE Legacy
-  if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-  {
-    // clear the status, only in case we didn't start the post-process routine
-    if ( llUnhandleNextIntFlag == FALSE )
-    {
-      ((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-    }
-  }
-#ifdef USE_AE
-  else // !legacy
-  {
-    // clear the status
-    ((aeRf_t *)pAdvSet->pRfCmds)->auxRfParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-  }
-#endif
-#endif
-  return TRUE;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Rx Empty Event Handle for ADV state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llRxEmptyEventHandleStateAdv( void )
-{
-#ifndef CC23X0
-  // process RX FIFO data
-  uint8    *pPkt;
-  advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-
-  // got pointer
-  if ( pAdvSet && TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
-  {
-    uint8 *pRf = pAdvSet->pRfCmds;
-
-    // check if this will be a legacy advertisement
-    if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-    {
-      pPkt = (uint8 *)((aeLegacyRf_t *)pRf)->advParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-    }
-#ifdef USE_AE
-    else // !legacy
-    {
-      uint16 extraOtaTime = 0;
-
-      pPkt = (uint8 *)((aeRf_t *)pRf)->auxRfParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
-
-      // find the additional time needed for Scan Response AuxPtr based on PHY
-      switch ( pPkt[LL_PKT_HDR_LEN + (2*LL_DEVICE_ADDR_LEN) + SUFFIX_RSSI_SIZE + 1] )
-      {
-        case BLE5_1M_PHY:
-          extraOtaTime = 176;  // in us
-          break;
-
-        case BLE5_2M_PHY:
-          extraOtaTime = 92;   // in us
-          break;
-
-        case BLE5_S2_PHY:
-          extraOtaTime = 654;  // in us
-          break;
-
-        case BLE5_S8_PHY:
-          extraOtaTime = 1488; // in us
-          break;
-
-        default:
-          LL_ASSERT( FALSE );
-          break;
-      }
-
-      // add two T_IFS
-      extraOtaTime += (2 * AE_T_IFS_US); // in us
-
-      // update the start time of AUX_SCAN_RSP with the time it took to
-      // receive the AUX_SCAN_REQ
-      // extraOtaTime =
-      // - 150us T_IFS
-      // - AUX_SCAN_REQ @ PHY
-      // - 150us T_IFS
-      ((aeRf_t *)pRf)->auxRfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(extraOtaTime);
-
-      // This is a fix for the race condition in case of power saving.
-      // CM0 raise TX done interrupt after sent the AUX_SCAN_RSP data.
-      // In the TX done contex, Controller change the counter from 1 to numFrags
-      // as indication for the CM0 that there are more data to send in AUX_CHAIN_IND
-      // But in case power save is enable, it is too late because the CM0 already
-      // read the previous counter which is 1 and the remain data would not be send.
-      // So we update it here in the Rx Empty interrupt context which CM0 raise
-      // before it send the the AUX_SCAN_RSP data.
-      if (pAdvSet->numFrags > 1)
-      {
-        ((aeRf_t *)pRf)->countCmd.counter = pAdvSet->numFrags;
-      }
-    }
-#endif
-    // check if there's a register callback
-    if ( MAP_llCheckCBack(LL_CBACK_EXT_SCAN_REQ_RECEIVED) )
-    {
-      // check if a Scan Request Report is needed
-      if ( pAdvSet->pAdvParam->notifyEnableFlags & AE_NOTIFY_ENABLE_SCAN_REQUEST )
-      {
-        aeScanReqReceived_t *scanReqRpt;
-
-        // Use allocLimited to avoid overflowing the heap...
-        scanReqRpt = MAP_osal_mem_allocLimited( sizeof(aeScanReqReceived_t) );
-
-        // check if we got the memory
-        if ( scanReqRpt )
-        {
-          scanReqRpt->subCode      = AE_ADV_HCI_BLE_SCAN_REQUEST_RECEIVED_EVENT;
-          scanReqRpt->handle       = aeCurHandle;
-          scanReqRpt->scanAddrType = LL_ADV_HDR_GET_TX_ADD(*pPkt);
-
-          MAP_osal_memcpy( scanReqRpt->scanAddr, &pPkt[2], B_ADDR_LEN );
-#ifdef USE_RCL
-          scanReqRpt->rssi         = (LRF_RSSI_INVALID == connOutput.lastRssi) ? LL_RF_RSSI_INVALID : connOutput.lastRssi;
-          scanReqRpt->channel      = GET_CHANNEL_IDX(RCL_BLE5_getRxChannel(pPkt));
-#else
-          scanReqRpt->channel      = GET_CHANNEL_IDX(pPkt[15]);
-          scanReqRpt->rssi         = LL_CHECK_LAST_RSSI(pPkt[14]);
-#endif
-
-          // check if the ScanA is an RPA
-          if ( MAP_LL_PRIV_IsRPA( scanReqRpt->scanAddrType, scanReqRpt->scanAddr ) )
-          {
-            uint8 rlIndex = MAP_LL_PRIV_IsResolvable( scanReqRpt->scanAddr, resolvingList );
-
-            // see if the Peer Address resolved
-            if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-            {
-              // it is, so use ID address and address type
-              scanReqRpt->scanAddrType = resolvingList[rlIndex].idAddrType | LL_DEV_ADDR_TYPE_ID_MASK;
-              MAP_osal_memcpy( scanReqRpt->scanAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN );
-            }
-          }
-
-          MAP_llExtAdvCBack( LL_CBACK_EXT_SCAN_REQ_RECEIVED, (void *)scanReqRpt );
-        }
-        else // out of memory
-        {
-          MAP_llExtAdvCBack( LL_CBACK_OUT_OF_MEMORY, NULL );
-        }
-      }
-
-      // check if this will be a legacy advertisement
-      if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
-      {
-        // clear the status
-        ((aeLegacyRf_t *)pRf)->advParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-      }
-#ifdef USE_AE
-      else // !legacy
-      {
-        // clear the status
-        ((aeRf_t *)pRf)->auxRfParam.pRXQ->pCurEntry->status = DATASTAT_PENDING;
-      }
-#endif
-    }
-  }
-#endif
-  return TRUE;
-}
 ////////////////////////////////////////////////////////////////////////////////
 // Rx Entry Done Event Handle for ADV state
 ////////////////////////////////////////////////////////////////////////////////
@@ -3606,7 +1575,7 @@ uint8 llRxEntryDoneEventHandleStateAdv( void )
   if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
   {
     // get a pointer directly to the packet (i.e. data entry payload)
-    pPkt = (uint8 *)((aeLegacyRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
+    pPkt = (uint8 *)((aeRf_t *)pAdvSet->pRfCmds)->advParam.pRXQ->pCurEntry + sizeof( dataEntry_t );
   }
 #ifdef USE_AE
   else // !legacy
@@ -3637,130 +1606,12 @@ uint8 llRxEntryDoneEventHandleStateAdv( void )
 ** Local Functions for Scan state
 */
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Abort Event Handle for Scan state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llAbortEventHandleStateScan( uint8 preempted )
-{
-  // if preempted, post process and call Scheduler
-  if ((preempted) || (llGetRfCmdPreemptionEnable()))
-  {
-    // Set DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_SCAN,0,FALSE);
-    taskEndAction = MAP_llExtScan_PostProcess;
-
-    // post-process
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-  return TRUE;
-}
-#endif
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle for SCAN state
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llLastCmdDoneEventHandleStateScan( void )
 {
-#ifdef USE_RCL
   taskEndAction = MAP_llExtScan_PostProcess;
-#else
-  // TEMP: RF command appears to return zero as status, before updating status.
-  do
-  {
-    taskEndStatus = extScanCmd.rfOpCmd.status;
-  } while ((taskEndStatus & 0xFF00) == 0);
-
-  // set default end cause to error handler
-  taskEndAction = MAP_llTaskError;
-
-  // Reset DMM threshold
-  MAP_llDmmSetThreshold(LL_STATE_SCAN,0,TRUE);
-
-  // determine an action, if any
-  switch( taskEndStatus )
-  {
-    case BLESTAT_DONE_ENDED:
-    case BLESTAT_DONE_RXTIMEOUT:
-    case BLESTAT_DONE_OK:
-    case BLESTAT_DONE_AUX:
-    case BLESTAT_DONE_RXERR:
-    case BLESTAT_DONE_NOSYNC:
-      // update coex counters
-      MAP_llCoexUpdateCounters(TRUE);
-      // either the command was stopped by the user, ended due to a
-      // combination cutoff, or ended normally; in all cases, just
-      // post process and call Scheduler
-      taskEndAction = MAP_llExtScan_PostProcess;
-      break;
-
-    // handle occasional modem issues when using 2M
-    case RFSTAT_ERROR_MODEM_TX_UNDF:
-    case RFSTAT_ERROR_MODEM_RX_OVRF:
-    case BLESTAT_ERROR_TX_UNDERFLOW:
-    case BLESTAT_ERROR_RX_OVERFLOW:
-    case RFSTAT_ERROR_PAST_START:
-    //Did not recieve Grant from Coex module
-    case BLESTAT_ERROR_NO_GRANT:
-      //MAP_llHardwareError( HW_FAIL_PAST_START_TRIG );
-      //return;
-      extScanCmd.rfOpCmd.status = BLESTAT_DONE_ENDED;
-
-      // decrement the next Scan channel so we ensure the reject channel will
-      // be used when rescheduled
-      extScanCmd.chan = LL_ADV_BASE_CHAN + llGetNextOrPreviousExtScanChannelIndex(LL_GET_PREV_SCAN_CHAN);
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llExtScan_PostProcess;
-
-      if (taskEndStatus == BLESTAT_ERROR_NO_GRANT)
-      {
-        MAP_llCoexUpdateCounters(FALSE);
-      }
-      break;
-
-    case BLESTAT_ERROR_RXBUF:
-    case BLESTAT_ERROR_SYNTH_PROG:
-      // either there's no space to receive an Adv or Scan Response
-      // packet, or there was a Frequency Synthesizer Programming Error
-      // Note: Out of Rx buffer space is an error, but the only
-      //       recoverable action is to continue the Scan.
-      // Note: Frequency Synthesizer Programming Error is an error in the
-      //       radio, but the only recoverable action is to continue with
-      //       the Scan (i.e. the Scan has to be restarted in order to be
-      //       able to receive again).
-      taskEndAction = MAP_llExtScan_PostProcess;
-      break;
-
-    case BLESTAT_IDLE:
-    case BLESTAT_PENDING:
-    case BLESTAT_ACTIVE:
-    case BLESTAT_ERROR_PAR:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or we have a
-      // status that should not have occurred:
-      // - Bad Parameter (i.e. a programming error)
-      // - OK (only valid when bEndOnRpt is enabled; not used)
-      // - Rx Error (only valid when bEndOnRpt is enabled; not used)
-      // - No Synch (only valid when bEndOnRpt is enabled; not used)
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-      break;
-
-    default:
-      // Sanity Check:
-      // Unexpected status!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNKNOWN_RF_STATUS );
-
-      break;
-  }
-#endif
   // process RF End Cause
   (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
 
@@ -3999,117 +1850,11 @@ uint8 llRxIgnoreEventHandleStateScan( void )
 ** Local Functions for Init state
 */
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Rx Ignore Event Handle Connect Response
-////////////////////////////////////////////////////////////////////////////////
-uint8 llRxIgnoreEventHandleConnectResponse( uint8 *OwnA, uint8 OwnAdd, uint8 *PeerA, uint8 PeerAdd )
-{
-#ifndef CC23X0
-  uint8 rlIndex = INVALID_RESOLVE_LIST_INDEX;
-  uint8 connRlEntry = INVALID_RESOLVE_LIST_INDEX;
-  llConnState_t *connPtr = MAP_llDataGetConnPtr( extInitInfo->connId );
-  uint8 connect = FALSE;
-
-  // check if the own address type is valid
-  if ( OwnAdd != LL_INVALID_DEV_ADDR_TYPE )
-  {
-    // check if the InitA is an RPA
-    if ( MAP_LL_PRIV_IsRPA( OwnAdd, OwnA ) )
-    {
-      if ( !MAP_LL_PRIV_ResolveRPA( OwnA, resolvingList[LOCAL_RL_INDEX].IRK ) )
-      {
-        //if not resolved then disconnect with authentication failure
-        MAP_llConnTerminate(connPtr,LL_DISCONNECT_AUTH_FAILURE);
-      }
-    }
-  }
-
-  // check if the AdvA is an RPA
-  if ( MAP_LL_PRIV_IsRPA( PeerAdd, PeerA ) )
-  {
-    // try to resolve address only if address resolution is enabled
-    if (privInfo.addrResolution == TRUE)
-    {
-      // Note: ISR is not in ROM, so call doesn't need to use R2R JT.
-      rlIndex = MAP_LL_PRIV_IsResolvable( PeerA, resolvingList );
-
-      if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
-      {
-        // Check if the address type in the connection request is ID address
-        if( LL_IS_ADDR_IDENTITY_TYPE(connPtr->peerInfo.peerAddrType) )
-        {
-          // If the connection request was sent to the identidity address - compare to the ID address
-          if( MAP_osal_memcmp(connPtr->peerInfo.peerAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN) == TRUE )
-          {
-            connect = TRUE;
-          }
-        }
-        else
-        {
-          // Resolve the RPA in the connection pointer and compare with the resolved
-          connRlEntry = MAP_LL_PRIV_IsResolvable( connPtr->peerInfo.peerAddr, resolvingList );
-
-          if( connRlEntry != INVALID_RESOLVE_LIST_INDEX )
-          {
-            if( MAP_osal_memcmp(resolvingList[connRlEntry].idAddr, resolvingList[rlIndex].idAddr, B_ADDR_LEN) == TRUE )
-            {
-              connect = TRUE;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // check if we should connect
-  if ( connect )
-  {
-    // Update the ExtAL with the received AdvA
-    MAP_LL_PRIV_UpdateExtALEntry( alTable,
-                                  resolvingList[rlIndex].RPA,
-                                  PeerA );
-
-    // update RL RPA for this peer with AdvA
-    MAP_osal_memcpy( resolvingList[rlIndex].RPA, PeerA, B_ADDR_LEN );
-
-    // set this flag in order to prevent handling the next RF_EventLastCmdDone interrupt
-    llUnhandleNextIntFlag_Init = TRUE;
-
-    // setup routine to post-process
-    taskEndAction = MAP_llInit_TaskConnect;
-
-    // process RF End Cause
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-#endif
-  return TRUE;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Abort Event Handle for Init state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llAbortEventHandleStateInit( uint8 preempted )
-{
-  // if preempted, post-process and call Scheduler
-  if ((preempted) || (llGetRfCmdPreemptionEnable()))
-  {
-    // Set DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_INIT,0,FALSE);
-    taskEndAction = MAP_llExtInit_PostProcess;
-
-    // post-process
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-  return TRUE;
-}
-#endif
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle for Init state
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llLastCmdDoneEventHandleStateInit( void )
 {
-#ifdef USE_RCL
   if (extInitCmd.common.status == RCL_CommandStatus_Connect)
   {
     taskEndAction = MAP_llInit_TaskConnect;
@@ -4118,118 +1863,6 @@ uint8 llLastCmdDoneEventHandleStateInit( void )
   {
     taskEndAction = MAP_llExtInit_PostProcess;
   }
-#else
-
-  if( llUnhandleNextIntFlag_Init == TRUE )
-  {
-      llUnhandleNextIntFlag_Init = FALSE;
-      return FALSE;
-  }
-
-  // TEMP: RF command appears to return PENDING as status,
-  //       before updating status to RFSTAT_ERROR_PAST_START.
-  do
-  {
-    // get the status of the commands
-    taskEndStatus = extInitCmd.rfOpCmd.status;
-  } while ((taskEndStatus & 0xFF00) == 0);
-
-  // set default end cause to error handler
-  taskEndAction = MAP_llTaskError;
-
-  // Reset DMM threshold
-  MAP_llDmmSetThreshold(LL_STATE_INIT,0,TRUE);
-
-  // determine an action, if any
-  switch( taskEndStatus )
-  {
-    case BLESTAT_DONE_CONNECT:
-    case BLESTAT_DONE_CONNECT_CHSEL0:
-      taskEndAction = MAP_llInit_TaskConnect;
-      break;
-
-    case BLESTAT_DONE_ENDED:
-    case BLESTAT_DONE_RXTIMEOUT:
-    case BLESTAT_DONE_OK:
-    case BLESTAT_DONE_AUX:
-    case BLESTAT_DONE_RXERR:
-    case BLESTAT_DONE_NOSYNC:
-      // update coex counters
-      MAP_llCoexUpdateCounters(TRUE);
-      // either the command was stopped by the user, ended due to a
-      // combination cutoff, or ended normally; in all cases, just
-      // post process and call Scheduler
-      taskEndAction = MAP_llExtInit_PostProcess;
-      break;
-
-    // handle occasional modem issues when using 2M
-    case RFSTAT_ERROR_MODEM_TX_UNDF:
-    case RFSTAT_ERROR_MODEM_RX_OVRF:
-    case BLESTAT_ERROR_TX_UNDERFLOW:
-    case BLESTAT_ERROR_RX_OVERFLOW:
-    case RFSTAT_ERROR_PAST_START:
-    //Did not recieve Grant from Coex module
-    case BLESTAT_ERROR_NO_GRANT:
-      //MAP_llHardwareError( HW_FAIL_PAST_START_TRIG );
-      //return;
-      extInitCmd.rfOpCmd.status = BLESTAT_DONE_ENDED;
-
-      // decrement the next Scan channel so we ensure the reject channel will
-      // be used when rescheduled
-      extInitCmd.chan = ((extInitCmd.chan==LL_SCAN_ADV_CHAN_37) ?
-                         (LL_SCAN_ADV_CHAN_39)                  :
-                         (extInitCmd.chan - 1));
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llExtInit_PostProcess;
-      if (taskEndStatus == BLESTAT_ERROR_NO_GRANT)
-      {
-        MAP_llCoexUpdateCounters(FALSE);
-      }
-      break;
-
-    case BLESTAT_ERROR_RXBUF:
-    case BLESTAT_ERROR_SYNTH_PROG:
-      // either there's no space to receive a Connection Request packet
-      // or there was a Frequency Synthesizer Programming Error
-      // Note: Out of Rx buffer space is an error, but the only
-      //       recoverable action is to continue the Scan.
-      // Note: Frequency Synthesizer Programming Error is an error in the
-      //       radio, but the only recoverable action is to continue with
-      //       the Scan (i.e. the Scan has to be restarted in order to be
-      //       able to receive again).
-      taskEndAction = MAP_llExtInit_PostProcess;
-      break;
-
-    case BLESTAT_IDLE:
-    case BLESTAT_PENDING:
-    case BLESTAT_ACTIVE:
-    case BLESTAT_ERROR_PAR:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or we have a
-      // status that should not have occurred:
-      // - Bad Parameter (i.e. a programming error)
-      // - OK (only valid when bEndOnRpt is enabled; not used)
-      // - Rx Error (only valid when bEndOnRpt is enabled; not used)
-      // - No Synch (only valid when bEndOnRpt is enabled; not used)
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-      break;
-
-    default:
-      // Sanity Check:
-      // Unexpected status!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNKNOWN_RF_STATUS );
-      break;
-  }
-#endif
   // process RF End Cause
   (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
   return TRUE;
@@ -4701,29 +2334,6 @@ uint8 llRxEntryDoneEventHandleStateInit( void )
 ** Local Functions for Peripheral state
 */
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Abort Event Handle for Peripheral state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llAbortEventHandleStatePeripheral( uint8 preempted )
-{
-  // check whether it is necessary to prevent handling this interrupt
-  if (llUnhandleNextIntFlag)
-  {
-    llUnhandleNextIntFlag = FALSE;
-    return FALSE;
-  }
-  // check if the connection is still valid and the command is preempted
-  if ( llConns.currentConn != LL_INVALID_CONNECTION_ID && (preempted || (llGetRfCmdPreemptionEnable())) )
-  {
-    taskEndAction = MAP_llPeripheral_TaskEnd;
-
-    // process RF End Cause
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-  return TRUE;
-}
-#endif
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle for Peripheral state
 ////////////////////////////////////////////////////////////////////////////////
@@ -4748,119 +2358,7 @@ uint8 llLastCmdDoneEventHandleStatePeripheral( void )
     // Connection needs to be cleaned up in llScheduler
     return FALSE;
   }
-#ifdef USE_RCL
    taskEndAction = MAP_llPeripheral_TaskEnd;
-#else
-  switch ( llConns.llConnection[llConns.currentConn].connId )
-  {
-    case 0:
-      HAL_GPIO_CLR( HAL_GPIO_1 );
-      break;
-
-    case 1:
-      HAL_GPIO_CLR( HAL_GPIO_2 );
-      break;
-
-    case 2:
-      HAL_GPIO_CLR( HAL_GPIO_3 );
-      break;
-
-    case 3:
-      HAL_GPIO_CLR( HAL_GPIO_4 );
-      break;
-
-    case 4:
-      HAL_GPIO_CLR( HAL_GPIO_5 );
-      break;
-
-    case 5:
-      HAL_GPIO_CLR( HAL_GPIO_6 );
-      break;
-
-    case 6:
-      HAL_GPIO_CLR( HAL_GPIO_7 );
-      break;
-
-    case 7:
-      HAL_GPIO_CLR( HAL_GPIO_8 );
-      break;
-
-    default:
-      // only using eight GPIOs
-      break;
-  }
-
-  // set default end cause to error handler
-  taskEndAction = MAP_llTaskError;
-
-  // get the command status
-  // TEMP: RF command appears to return PENDING as status,
-  //       before updating status to RFSTAT_ERROR_PAST_START.
-  do
-  {
-    taskEndStatus = linkCmd[llConns.currentConn].rfOpCmd.status;
-  } while ((taskEndStatus & 0xFF00) == 0);
-
-  // Check if there are anymore pakcets in the RX queue that needed to be processed
-  LL_RxEntryDoneCback_allEntries(FALSE);
-
-  // determine action based on command status
-  switch ( taskEndStatus )
-  {
-    case BLESTAT_DONE_OK:
-    case BLESTAT_DONE_NOSYNC:
-    case BLESTAT_DONE_RXERR:
-    case BLESTAT_DONE_MAXNACK:
-    case BLESTAT_DONE_RXTIMEOUT:
-    case BLESTAT_DONE_ENDED:
-    case BLESTAT_ERROR_SYNTH_PROG:
-      // update coex counters
-      MAP_llCoexUpdateCounters(TRUE);
-      taskEndAction = MAP_llPeripheral_TaskEnd;
-      break;
-
-    case RFSTAT_ERROR_PAST_START:
-      //MAP_llHardwareError( HW_FAIL_PAST_START_TRIG );
-      //return;
-      linkCmd[llConns.currentConn].rfOpCmd.status = BLESTAT_DONE_RXTIMEOUT;
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llPeripheral_TaskEnd;
-      break;
-
-    // handle occasional modem issues when using 2M
-    case RFSTAT_ERROR_MODEM_TX_UNDF:
-    case RFSTAT_ERROR_MODEM_RX_OVRF:
-    case BLESTAT_ERROR_TX_UNDERFLOW:
-    case BLESTAT_ERROR_RX_OVERFLOW:
-    //Did not recieve Grant from Coex module
-    case BLESTAT_ERROR_NO_GRANT:
-      linkCmd[llConns.currentConn].rfOpCmd.status = BLESTAT_DONE_OK;
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llPeripheral_TaskEnd;
-      if (taskEndStatus == BLESTAT_ERROR_NO_GRANT)
-      {
-        MAP_llCoexUpdateCounters(FALSE);
-      }
-      break;
-    case BLESTAT_IDLE:
-    case BLESTAT_PENDING:
-    case BLESTAT_ACTIVE:
-    case BLESTAT_ERROR_PAR:
-    default:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or an unspecified
-      // status was returned (in all other cases)!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-      break;
-  }
-#endif
   // process RF End Cause
   (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
 
@@ -4876,23 +2374,6 @@ uint8 llLastCmdDoneEventHandleStatePeripheral( void )
 ** Local Functions for Peripheral state
 */
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-#ifndef USE_RCL
-////////////////////////////////////////////////////////////////////////////////
-// Abort Event Handle for Central state
-////////////////////////////////////////////////////////////////////////////////
-uint8 llAbortEventHandleStateCentral( uint8 preempted )
-{
-  // check if the connection is still valid and the command is preempted
-  if ( llConns.currentConn != LL_INVALID_CONNECTION_ID && (preempted || (llGetRfCmdPreemptionEnable())) )
-  {
-    taskEndAction = MAP_llCentral_TaskEnd;
-
-    // process RF End Cause
-    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-  }
-  return TRUE;
-}
-#endif
 ////////////////////////////////////////////////////////////////////////////////
 // LastCmdDone Event Handle for Central state
 ////////////////////////////////////////////////////////////////////////////////
@@ -4904,116 +2385,8 @@ uint8 llLastCmdDoneEventHandleStateCentral( void )
     // connection may have already been ended by a reset
     return FALSE;
   }
-#ifdef USE_RCL
   taskEndAction = MAP_llCentral_TaskEnd;
-#else
-  switch ( llConns.llConnection[llConns.currentConn].connId )
-  {
-    case 0:
-      HAL_GPIO_CLR( HAL_GPIO_1 );
-      break;
 
-    case 1:
-      HAL_GPIO_CLR( HAL_GPIO_2 );
-      break;
-
-    case 2:
-      HAL_GPIO_CLR( HAL_GPIO_3 );
-      break;
-
-    case 3:
-      HAL_GPIO_CLR( HAL_GPIO_4 );
-      break;
-
-    case 4:
-      HAL_GPIO_CLR( HAL_GPIO_5 );
-      break;
-
-    case 5:
-      HAL_GPIO_CLR( HAL_GPIO_6 );
-      break;
-
-    case 6:
-      HAL_GPIO_CLR( HAL_GPIO_7 );
-      break;
-
-    case 7:
-      HAL_GPIO_CLR( HAL_GPIO_8 );
-      break;
-
-    default:
-      // only using eight GPIOs
-      break;
-  }
-
-  // set default end cause to error handler
-  taskEndAction = MAP_llTaskError;
-
-  // get the command status
-  // TEMP: RF command appears to return PENDING as status,
-  //       before updating status to RFSTAT_ERROR_PAST_START.
-  do
-  {
-    taskEndStatus = linkCmd[llConns.currentConn].rfOpCmd.status;
-  } while ((taskEndStatus & 0xFF00) == 0);
-
-  // Check if there are anymore pakcets in the RX queue that needed to be processed
-  LL_RxEntryDoneCback_allEntries(FALSE);
-
-  // determine action based on command status
-  switch ( taskEndStatus )
-  {
-    case BLESTAT_DONE_OK:
-    case BLESTAT_DONE_NOSYNC:
-    case BLESTAT_DONE_RXERR:
-    case BLESTAT_DONE_MAXNACK:
-    case BLESTAT_DONE_ENDED:
-    case BLESTAT_ERROR_SYNTH_PROG:
-      // update coex counters
-      MAP_llCoexUpdateCounters(TRUE);
-      taskEndAction = MAP_llCentral_TaskEnd;
-      break;
-
-    case RFSTAT_ERROR_PAST_START:
-      linkCmd[llConns.currentConn].rfOpCmd.status = BLESTAT_DONE_NOSYNC;
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llCentral_TaskEnd;
-      break;
-
-    // handle occasional modem issues when using 2M
-    case RFSTAT_ERROR_MODEM_TX_UNDF:
-    case RFSTAT_ERROR_MODEM_RX_OVRF:
-    case BLESTAT_ERROR_TX_UNDERFLOW:
-    case BLESTAT_ERROR_RX_OVERFLOW:
-    //Did not recieve Grant from Coex module
-    case BLESTAT_ERROR_NO_GRANT:
-      linkCmd[llConns.currentConn].rfOpCmd.status = BLESTAT_DONE_OK;
-
-      // and setup routine to post-process
-      taskEndAction = MAP_llCentral_TaskEnd;
-      if (taskEndStatus == BLESTAT_ERROR_NO_GRANT)
-      {
-        MAP_llCoexUpdateCounters(FALSE);
-      }
-      break;
-    case BLESTAT_IDLE:
-    case BLESTAT_PENDING:
-    case BLESTAT_ACTIVE:
-    case BLESTAT_ERROR_PAR:
-    default:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or an unspecified
-      // status was returned (in all other cases)!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-      break;
-  }
-#endif
   // process RF End Cause
   (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
 
@@ -5037,11 +2410,7 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   halIntState_t  cs;
   llConnState_t *connPtr;
 
-#ifdef USE_RCL
   RCL_Buffer_DataEntry *pDataEntry;
-#else
-  dataEntry_t   *pDataEntry;
-#endif
   uint8         *pPkt;
   uint8          pktLen;
   uint8          pktHdr;
@@ -5061,7 +2430,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   // get connection information
   connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
 
-#ifdef USE_RCL
   /*
   * RX Buffers (rxDataQ) are a in fact a unique shared queue for all connections (peripheral and/or central).
   *
@@ -5082,22 +2450,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   {
     // get pointer to BLE PDU packet
     pPkt = pDataEntry->data + (pDataEntry->numPad - 1);
-#else
-  // get pointer to packet
-  pDataEntry = MAP_RFHAL_GetNextDataEntry( connPtr->pRxDataEntryQ );
-
-  // check that the packet is really finished while CRC is OK
-  // Note: It has been been observed that this callback occurs even when
-  //       no buffer in the ring buffer is finished!
-  if (( pDataEntry->status != DATASTAT_FINISHED ) && (!crcError))
-  {
-    // ignore callback
-    return FALSE;
-  }
-
-  // get pointer to BLE PDU packet
-  pPkt = ((dataEntryPtr_t *)pDataEntry)->pData;
-#endif
   // get the packet header
   pktHdrInfo = *pPkt++;
   pktHdr = pktHdrInfo & LL_DATA_PDU_HDR_LLID_MASK;
@@ -5118,7 +2470,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   if ( LL_INVALID_LLID(pktHdr) )
   {
     // it is, so mark buffer as available, and advance to next entry
-#ifdef USE_RCL
     /*
     * RX Buffers (rxDataQ) are a in fact a unique shared queue for all connections (peripheral and/or central).
     *
@@ -5137,9 +2488,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
     llClearRxDataEntry(&rxDataQ.multiBuffers, &rxDataQ.finishedBuffers);
     // Align the global Rx buffer list
     llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-#else
-    MAP_RFHAL_NextDataEntryDone( connPtr->pRxDataEntryQ );
-#endif
     return TRUE;
   }
 
@@ -5381,7 +2729,7 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
     // check if opcode and pktLen are valid
     // Note: Since the opcode values are sequential, we can compare it
     //       directly to the size of the table to see if it is valid.
-    if ( (*pPkt >= sizeof(ctrlPktLenTable)) ||
+    if ( (*pPkt >= NUM_OF_CTRL_PKT) ||
          (pktLen != ctrlPktLenTable[*pPkt]) )
     {
       // control packet received for features that are not supported
@@ -5410,12 +2758,10 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
       }
     }
   }
-#ifdef USE_RCL
   } // while
-#endif
+
 
   // mark data entry as free
-#ifdef USE_RCL
   /*
   * RX Buffers (rxDataQ) are a in fact a unique shared queue for all connections (peripheral and/or central).
   *
@@ -5434,9 +2780,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   llClearRxDataEntry(&rxDataQ.multiBuffers, &rxDataQ.finishedBuffers);
   // Align the global Rx buffer list
   llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-#else
-  MAP_RFHAL_NextDataEntryDone( connPtr->pRxDataEntryQ );
-#endif
   return TRUE;
 }
 #endif //(CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
@@ -5449,7 +2792,6 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
 ////////////////////////////////////////////////////////////////////////////////
 uint8 llLastCmdDoneEventHandleStateTest( void )
 {
-#ifdef USE_RCL
   if (llState == LL_STATE_DIRECT_TEST_MODE_TX)
   {
     // get the command status
@@ -5507,235 +2849,6 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
     return FALSE;
   }
 
-#else
-  if ((llState == LL_STATE_DIRECT_TEST_MODE_TX) ||
-      (llState == LL_STATE_DIRECT_TEST_MODE_RX))
-  {
-#ifndef RF_SINGLEMODE
-    RF_ScheduleCmdParams cmdParams = {
-      0,
-      RF_StartNotSpecified,
-      RF_AllowDelayAny,
-      0,
-      RF_EndNotSpecified,
-      0,
-      0,
-      RF_PriorityCoexDefault,
-      RF_RequestCoexDefault
-    };
-#endif // !RF_SINGLEMODE
-    // TEMP: RF command appears to return PENDING as status,
-    //       before updating status to RFSTAT_ERROR_PAST_START.
-    do
-    {
-      // get the command status
-      taskEndStatus = trxTestCmd.rfOpCmd.status;
-    } while ((taskEndStatus & 0xFF00) == 0);
-
-    // determine action based on command status
-    switch ( taskEndStatus )
-    {
-      case BLESTAT_ERROR_SYNTH_PROG:
-      {
-
-#ifdef DEBUG_SW_TRACE
-        DBG_PRINT0(DBGSYS, "");
-        DBG_PRINT0(DBGSYS, "*** ERROR: SYNTH PROG FAILED! ***");
-        DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-#ifdef RF_SINGLEMODE
-        // re-issue radio command
-        rfCmdHandle = RF_postCmd( rfHandle,
-                                  (RF_Op *)&trxTestCmd,
-                                  RF_PriorityHighest,
-                                  (RF_Callback)MAP_rfCallback,
-                                  (RF_EventLastCmdDone | RF_EventInternalError) );
-#else // !RF_SINGLEMODE
-        // Set the Coex params
-        MAP_llCoexSetParams(CMD_BLE5_RX_TEST,&cmdParams);
-        // re-issue radio command
-        rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                      (RF_Op *)&trxTestCmd,
-                                      &cmdParams,
-                                      (RF_Callback)MAP_rfCallback,
-                                      RF_EventLastCmdDone | RF_EventInternalError );
-#endif // RF_SINGLEMODE
-
-        return TRUE;
-        break;
-      }
-
-      case BLESTAT_DONE_OK:
-      case BLESTAT_DONE_RXERR:
-        if ( (llState == LL_STATE_DIRECT_TEST_MODE_TX) &&
-             (dtmInfo->txPktCnt != LL_EXT_DTM_TX_CONTINUOUS) )
-        {
-          // restore Tx power setting
-          MAP_llSetTxPower( curTxPowerVal );
-
-          // generate a callback for the packet report
-          // Note: For TX, the number of received packets is always zero.
-          MAP_LL_DirectTestEndDoneCback( 0, LL_DIRECT_TEST_MODE_TX );
-
-          // back to Idle
-          llState = LL_STATE_IDLE;
-
-          break;
-        }
-#ifdef RTLS_CTE
-        else if ( (llState == LL_STATE_DIRECT_TEST_MODE_RX) && (llCteTest.testMode) )
-        {
-          if (llCteTest.inProgress == FALSE)
-          {
-            llCteTest.inProgress = TRUE;
-            // send the CTE samples to Host
-            if ((llCteSamples.autoCopyCompleted) > 0 && (llCteTest.recvCte == TRUE))
-            {
-              MAP_llGetCteInfo( CTE_TASK_ID_TEST, NULL );
-            }
-
-            #ifdef RF_SINGLEMODE
-              // issue radio command asynchrously
-              rfCmdHandle = RF_postCmd( rfHandle,
-                                        (RF_Op *)&fwParDtmCmd,
-                                        RF_PriorityHighest,
-                                        (RF_Callback)MAP_rfCallback,
-                                        (RF_EventLastCmdDone | RF_EventInternalError | RF_EventRxEntryDone | RF_EventSamplesEntryDone) );
-            #else // !RF_SINGLEMODE
-              // issue radio command asynchrously
-              rfCmdHandle = RF_scheduleCmd( rfHandle,
-                                            (RF_Op *)&fwParDtmCmd,
-                                            &cmdParams,
-                                            (RF_Callback)MAP_rfCallback,
-                                            RF_EventLastCmdDone | RF_EventInternalError | RF_EventRxEntryDone | RF_EventSamplesEntryDone);
-            #endif // RF_SINGLEMODE
-
-            llCteTest.inProgress = FALSE;
-            llCteTest.recvCte = FALSE;
-          }
-          break;
-        }
-#endif // RTLS_CTE
-        // else: either not DTM Tx or DTM Tx using continuous transmit
-        // Note: Since command should never end until stopped, the rest
-        //       of these values are unexpected.
-
-        /* DROP THROUGH */
-
-      case BLESTAT_IDLE:
-      case BLESTAT_PENDING:
-      case BLESTAT_ACTIVE:
-      case BLESTAT_ERROR_PAR:
-      case BLESTAT_DONE_ENDED:
-      case BLESTAT_ERROR_RXBUF:
-      case BLESTAT_ERROR_NO_GRANT:
-      default:
-        // Sanity Check:
-        // This is a fatal error as either the status doesn't make any
-        // sense (in the Idle, Pending, or Active case), or an unspecified
-        // status was returned (in all other cases)!
-        LL_ASSERT( FALSE );
-
-        // report failure to Host
-        MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-        break;
-    }
-  }
-  else if ((llState == LL_STATE_MODEM_TEST_TX) ||
-           (llState == LL_STATE_MODEM_TEST_RX))
-  {
-    // TEMP: RF command appears to return PENDING as status,
-    //       before updating status to RFSTAT_ERROR_PAST_START.
-    do
-    {
-      // get the command status
-      taskEndStatus = trxTestCmd.rfOpCmd.status;
-    } while ((taskEndStatus & 0xFF00) == 0);
-
-    // determine action based on command status
-    switch ( taskEndStatus )
-    {
-      default:
-      // Sanity Check:
-      // This is a fatal error as either the status doesn't make any
-      // sense (in the Idle, Pending, or Active case), or an unspecified
-      // status was returned (in all other cases)!
-      LL_ASSERT( FALSE );
-
-      // report failure to Host
-      MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-    }
-  }
-  else if (llState == LL_STATE_MODEM_TEST_TX_FREQ_HOPPING)
-  {
-    // get the command status
-    taskEndStatus = trxTestCmd.rfOpCmd.status;
-
-    switch ( taskEndStatus )
-    {
-      case BLESTAT_ERROR_SYNTH_PROG:
-#ifdef DEBUG_SW_TRACE
-        DBG_PRINT0(DBGSYS, "");
-        DBG_PRINT0(DBGSYS, "*** ERROR: SYNTH PROG FAILED! ***");
-        DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-        // DROP THROUGH!
-
-      case BLESTAT_DONE_OK:
-      case BLESTAT_IDLE:
-      case BLESTAT_PENDING:
-      case BLESTAT_ACTIVE:
-        HAL_GPIO_SET( HAL_GPIO_1 );
-
-        // bump the Tx channel frequency
-        // Note: This frequency channel is adjusted. See header file.
-        // Note: It is assumed this can be done before the start of the
-        //       next Tx command, whcih occurs every 625us.
-        // Note: Assumed this interrupt only occurs from Modem Tx Hop test!
-        trxTestCmd.chan += 2;
-
-        // handle wrap
-        if ( trxTestCmd.chan > LL_LAST_RF_CHAN_ADJ )
-        {
-          trxTestCmd.chan = LL_FIRST_RF_CHAN_ADJ;
-        }
-
-        // clear status
-        trxTestCmd.rfOpCmd.status = RFSTAT_IDLE;
-
-        HAL_GPIO_CLR( HAL_GPIO_1 );
-
-        //return;
-        break;
-
-      //case RFSTAT_ERROR_PAST_START:
-      // re-issue radio command
-      // Note: Must not use SendCommandSynch.
-      //  MAP_MB_SendCommand( (uint32)&trxTestCmd );
-      //  break;
-
-      case BLESTAT_ERROR_PAR:
-      case BLESTAT_DONE_RXERR:
-      case BLESTAT_DONE_ENDED:
-      case BLESTAT_ERROR_RXBUF:
-      case BLESTAT_ERROR_NO_GRANT:
-      default:
-        // Sanity Check:
-        // This is a fatal error as either the status doesn't make any
-        // sense (in the Idle, Pending, or Active case), or an unspecified
-        // status was returned (in all other cases)!
-        LL_ASSERT( FALSE );
-
-        // report failure to Host
-        MAP_llHardwareError( HW_FAIL_UNEXPECTED_RF_STATUS );
-
-        break;
-    }
-  }
-#endif
   return TRUE;
 }
 
@@ -5807,7 +2920,7 @@ uint8 llRxEntryDoneEventHandleStateTest( void )
 
 void llRecordTxUsage()
 {
-#ifndef USE_RCL
+#ifdef SDAA_ENABLE //NOTE: USE RFLIB API!!
     // if SDAA module is disable return
     if(!MAP_LL_Is_SDAA_Enable())
     {
@@ -5889,7 +3002,7 @@ void llRecordTxUsage()
       }
     }
 
-#endif //USE_RCL
+#endif //SDAA_ENABLE
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5907,7 +3020,7 @@ void llHandleSDAALastCmdDone()
   }
   else
   {
-#ifndef USE_RCL
+#ifdef SDAA_ENABLE //NOTE: USE RFLIB API!!
     taskInfo_t *llTask = MAP_llGetCurrentTask();
     llConnState_t* connPtr = NULL;
     if(llTask == NULL)
@@ -5955,7 +3068,7 @@ void llHandleSDAALastCmdDone()
         default:
           break;
     }
-#endif //USE_RCL
+#endif //SDAA_ENABLE
   }
 }
 

@@ -36,13 +36,7 @@
 #endif // CC26XX/CC13XX
 
 #include "rom_jt.h"
-#ifndef USE_RCL
-#include "ecc_rom.h"
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
 
-extern RF_Handle rfHandle;
-#endif
 
 /*******************************************************************************
  * MACROS
@@ -61,7 +55,7 @@ extern RF_Handle rfHandle;
 
 // Major Version (8 bits) . Minor Version (4 bits) . SubMinor Version (4 bits)
 #if defined( CC23X0 )
-  #define HCI_REVISION                               0x0322  // HCI Version BLE5 3.2.2
+  #define HCI_REVISION                               0x0332  // HCI Version BLE5 3.3.2
 #else
   #define HCI_REVISION                               0x0228  // HCI Version BLE5 2.2.8
 #endif
@@ -1248,8 +1242,6 @@ hciStatus_t HCI_SendDataPkt( uint16  connHandle,
 {
   hciStatus_t hciStatus;
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // various checks
   if ( hciPTMenabled == TRUE )
   {
@@ -1291,7 +1283,6 @@ hciStatus_t HCI_DisconnectCmd( uint16 connHandle,
                                uint8  reason )
 
 {
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   MAP_HCI_CommandStatusEvent( MAP_LL_Disconnect(connHandle, reason),
                               HCI_DISCONNECT );
@@ -1311,8 +1302,6 @@ hciStatus_t HCI_DisconnectCmd( uint16 connHandle,
 hciStatus_t HCI_ReadRemoteVersionInfoCmd( uint16 connHandle )
 {
   hciStatus_t status;
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   MAP_HCI_CommandStatusEvent( HCI_SUCCESS, HCI_READ_REMOTE_VERSION_INFO );
 
@@ -1340,20 +1329,14 @@ hciStatus_t HCI_ReadRemoteVersionInfoCmd( uint16 connHandle )
  * This BT API is used to set the HCI event mask, which is used to determine
  * which events are supported.
  *
- * Note: The global pHciEvtMask is used for BT events. A different global is
- *       used for LE events: bleEvtMask.
- *
  * Public function defined in hci.h.
  */
 hciStatus_t HCI_SetEventMaskCmd( uint8 *pMask )
 {
-  hciStatus_t status;
+  hciStatus_t status = HCI_SUCCESS;
 
-  // check parameters
-  if( pMask != NULL )
+  if( MAP_HCI_SetEventMaskPage1(pMask) ==  HCI_SUCCESS )
   {
-    (void)MAP_osal_memcpy( pHciEvtMask, pMask, B_EVENT_MASK_LEN );
-
     status = HCI_SUCCESS;
   }
   else // bad parameters
@@ -1363,7 +1346,7 @@ hciStatus_t HCI_SetEventMaskCmd( uint8 *pMask )
 
   MAP_HCI_CommandCompleteEvent( HCI_SET_EVENT_MASK, sizeof(status), &status );
 
-  return( HCI_SUCCESS );
+  return( status );
 }
 
 
@@ -1371,20 +1354,15 @@ hciStatus_t HCI_SetEventMaskCmd( uint8 *pMask )
  * This BT API is used to set the HCI event mask page 2, which is used to
  * determine which events are supported.
  *
- * Note: The global pHciEvtMask2 is used for BT events. A different global is
- *       used for LE events: pBleEvtMask.
  *
  * Public function defined in hci.h.
  */
 hciStatus_t HCI_SetEventMaskPage2Cmd( uint8 *pMask )
 {
-  hciStatus_t status;
+  hciStatus_t status = HCI_SUCCESS;
 
-  // check parameters
-  if( pMask != NULL )
+  if( MAP_HCI_SetEventMaskPage2(pMask) ==  HCI_SUCCESS )
   {
-    (void)MAP_osal_memcpy( pHciEvtMask2, pMask, B_EVENT_MASK_LEN );
-
     status = HCI_SUCCESS;
   }
   else // bad parameters
@@ -1394,7 +1372,7 @@ hciStatus_t HCI_SetEventMaskPage2Cmd( uint8 *pMask )
 
   MAP_HCI_CommandCompleteEvent( HCI_SET_EVENT_MASK_PAGE_2, sizeof(status), &status );
 
-  return( HCI_SUCCESS );
+  return( status );
 }
 
 
@@ -1412,7 +1390,7 @@ hciStatus_t HCI_ResetCmd( void )
   status = MAP_LL_Reset();
 
   // reset the Bluetooth and the BLE event mask bits
-  MAP_hciInitEventMasks();
+  MAP_HCI_InitEventMasks();
 
   // initialize Controller to Host flow control flag and counter
   ctrlToHostEnable = FALSE;
@@ -1441,13 +1419,9 @@ hciStatus_t HCI_ReadTransmitPowerLevelCmd( uint16 connHandle,
   // 3: Transmit Power Level
   uint8 rtnParam[4];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_ReadTxPowerLevel( connHandle,
                                          txPwrType,
                                          (int8 *)&(rtnParam[3]) );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -1739,13 +1713,9 @@ hciStatus_t HCI_ReadRssiCmd( uint16 connHandle )
   // 3: RSSI
   uint8 rtnParam[4];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // status
   rtnParam[0] = MAP_LL_ReadRssi( connHandle,
                                  (int8 *)&(rtnParam[3]) );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle);
@@ -1765,9 +1735,6 @@ hciStatus_t HCI_ReadRssiCmd( uint16 connHandle )
  * This LE API is used to set the HCI LE event mask, which is used to determine
  * which LE events are supported.
  *
- * Note: The global pBleEvtMask is used for LE events. A different global is
- *       used for BT events: pHciEvtMask.
- *
  * Public function defined in hci.h.
  * This BT API is used to read the local version information.
  *
@@ -1775,17 +1742,10 @@ hciStatus_t HCI_ReadRssiCmd( uint16 connHandle )
  */
 hciStatus_t HCI_LE_SetEventMaskCmd( uint8 *pEventMask )
 {
-  hciStatus_t status;
+  hciStatus_t status = HCI_SUCCESS;
 
-  // check parameters
-  if ( pEventMask != NULL )
+  if ( MAP_HCI_SetEventMaskLe(pEventMask) ==  HCI_SUCCESS)
   {
-    // set the BLE event mask
-    for ( uint8 i=0; i<B_EVENT_MASK_LEN; i++ )
-    {
-      pBleEvtMask[i] = pEventMask[i];
-    }
-
     status = HCI_SUCCESS;
   }
   else // bad parameters
@@ -1797,7 +1757,7 @@ hciStatus_t HCI_LE_SetEventMaskCmd( uint8 *pEventMask )
                                 sizeof(status),
                                 &status );
 
-  return( HCI_SUCCESS );
+  return( status );
 }
 
 
@@ -2207,8 +2167,6 @@ hciStatus_t HCI_LE_ConnUpdateCmd( uint16 connHandle,
 {
   hciStatus_t status;
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
 #if defined(CC26XX) || (!defined(CC26XX) && (CTRL_CONFIG & INIT_CFG)) ||       \
     defined(CC13XX) || (!defined(CC13XX) && (CTRL_CONFIG & INIT_CFG)) ||       \
     defined(CC23X0) || (!defined(CC23X0) && (CTRL_CONFIG & INIT_CFG))
@@ -2324,12 +2282,8 @@ hciStatus_t HCI_LE_ReadChannelMapCmd( uint16 connHandle )
   // 3..7: Channel Map (LSB to MSB)
   uint8 rtnParam[8];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_ReadChanMap(  connHandle,
                                     &(rtnParam[3]) );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2353,8 +2307,6 @@ hciStatus_t HCI_LE_ReadChannelMapCmd( uint16 connHandle )
 hciStatus_t HCI_LE_ReadRemoteUsedFeaturesCmd( uint16 connHandle )
 {
   hciStatus_t status;
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   MAP_HCI_CommandStatusEvent( HCI_SUCCESS, HCI_LE_READ_REMOTE_USED_FEATURES );
 
@@ -2470,8 +2422,6 @@ hciStatus_t HCI_LE_StartEncyptCmd( uint16  connHandle,
 {
   hciStatus_t status;
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   status = MAP_LL_StartEncrypt( connHandle,
                                 random,
                                 encDiv,
@@ -2496,11 +2446,7 @@ hciStatus_t HCI_LE_LtkReqReplyCmd( uint16  connHandle,
   // 2: Connection Handle (MSB)
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_EncLtkReply( connHandle, ltk );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2527,11 +2473,7 @@ hciStatus_t HCI_LE_LtkReqNegReplyCmd( uint16 connHandle )
   // 2: Connection Handle (MSB)
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_EncLtkNegReply( connHandle );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2584,12 +2526,8 @@ hciStatus_t HCI_ReadAuthPayloadTimeoutCmd( uint16  connHandle,
   uint8 rtnParam[5];
   uint16 aptoVal;
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_ReadAuthPayloadTimeout( connHandle,
                                                &aptoVal );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2623,12 +2561,8 @@ hciStatus_t HCI_WriteAuthPayloadTimeoutCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_WriteAuthPayloadTimeout( connHandle,
                                                 aptoValue );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2663,8 +2597,6 @@ hciStatus_t HCI_LE_RemoteConnParamReqReplyCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_RemoteConnParamReqReply( connHandle,
                                                 connIntervalMin,
                                                 connIntervalMax,
@@ -2672,8 +2604,6 @@ hciStatus_t HCI_LE_RemoteConnParamReqReplyCmd( uint16 connHandle,
                                                 connTimeout,
                                                 minLen,
                                                 maxLen );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -2706,13 +2636,8 @@ hciStatus_t HCI_LE_RemoteConnParamReqNegReplyCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_RemoteConnParamReqNegReply( connHandle,
                                                    reason );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
-
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
   rtnParam[2] = HI_UINT16( connHandle );
@@ -2744,13 +2669,9 @@ hciStatus_t HCI_LE_SetDataLenCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_SetDataLen( connHandle,
                                    txOctets,
                                    txTime );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -3323,13 +3244,9 @@ hciStatus_t HCI_LE_ReadPhyCmd( uint16 connHandle )
   // 4: Rx PHY
   uint8 rtnParam[5];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = MAP_LL_ReadPhy( connHandle,
                                 &rtnParam[3],
                                 &rtnParam[4] );
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -3384,8 +3301,6 @@ hciStatus_t HCI_LE_SetPhyCmd( uint16 connHandle,
                               uint16 phyOpts )
 {
   hciStatus_t status;
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   status = MAP_LL_SetPhy( connHandle,
                           allPhys,
@@ -3694,16 +3609,12 @@ hciStatus_t HCI_LE_SetConnectionCteReceiveParamsCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // status
   rtnParam[0] = MAP_LL_SetConnectionCteReceiveParams(connHandle,
                                                      samplingEnable,
                                                      slotDurations,
                                                      length,
                                                      pAntenna);
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -3733,15 +3644,11 @@ hciStatus_t HCI_LE_SetConnectionCteTransmitParamsCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // status
   rtnParam[0] = MAP_LL_SetConnectionCteTransmitParams(connHandle,
                                                       types,
                                                       length,
                                                       pAntenna);
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -3770,17 +3677,12 @@ hciStatus_t HCI_LE_SetConnectionCteRequestEnableCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // status
   rtnParam[0] = MAP_LL_SetConnectionCteRequestEnable(connHandle,
                                                      enable,
                                                      interval,
                                                      length,
                                                      type);
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
-
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
   rtnParam[2] = HI_UINT16( connHandle );
@@ -3806,13 +3708,9 @@ hciStatus_t HCI_LE_SetConnectionCteResponseEnableCmd( uint16 connHandle,
   // 2: Connection Handle MSB
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   // status
   rtnParam[0] = MAP_LL_SetConnectionCteResponseEnable(connHandle,
                                                       enable);
-
-  connHandle = CONN_HANDLE_CTRL_TO_HOST_CONVERT(connHandle);
 
   // connection handle
   rtnParam[1] = LO_UINT16( connHandle );
@@ -5220,8 +5118,6 @@ hciStatus_t HCI_EXT_DisconnectImmedCmd( uint16 connHandle )
   // 2: Status
   uint8 rtnParam[3];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = LO_UINT16( HCI_EXT_DISCONNECT_IMMED_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_DISCONNECT_IMMED_EVENT );
   rtnParam[2] = MAP_LL_EXT_DisconnectImmed( connHandle );
@@ -5249,8 +5145,6 @@ hciStatus_t HCI_EXT_PacketErrorRateCmd( uint16 connHandle, uint8 command )
   // 2: Status
   // 3: Command
   uint8 rtnParam[4];
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   rtnParam[0] = LO_UINT16( HCI_EXT_PER_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_PER_EVENT );
@@ -5283,8 +5177,6 @@ hciStatus_t HCI_EXT_PERbyChanCmd( uint16 connHandle, perByChan_t *perByChan )
   // 1: Event Opcode (MSB)
   // 2: Status
   uint8 rtnParam[3];
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   rtnParam[0] = LO_UINT16( HCI_EXT_PER_BY_CHAN_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_PER_BY_CHAN_EVENT );
@@ -5953,8 +5845,6 @@ hciStatus_t HCI_EXT_GetRxStatisticsCmd( uint16 connHandle, uint8 command )
   // 3: Command
   uint8 rtnParam[4];
 
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
-
   rtnParam[0] = LO_UINT16( HCI_EXT_GET_RX_STATS_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_GET_RX_STATS_EVENT );
   rtnParam[2] = MAP_LL_EXT_GetRxStats( connHandle, command );
@@ -5984,8 +5874,6 @@ hciStatus_t HCI_EXT_GetTxStatisticsCmd( uint16 connHandle, uint8 command )
   // 2: Status
   // 3: Command
   uint8 rtnParam[4];
-
-  connHandle = CONN_HANDLE_HOST_TO_CTRL_CONVERT(connHandle);
 
   rtnParam[0] = LO_UINT16( HCI_EXT_GET_TX_STATS_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_GET_TX_STATS_EVENT );

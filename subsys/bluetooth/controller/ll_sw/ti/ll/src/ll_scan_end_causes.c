@@ -19,13 +19,8 @@
 /*******************************************************************************
  * INCLUDES
  */
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#else
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#endif //USE_RCL
 #include "bcomdef.h"
 #include "hal_mcu.h"
 #include "hci_event.h"
@@ -90,10 +85,8 @@ void llExtScan_PostProcess( void )
   GPIO_writeDio(HAL_GPIO_2, 0);
 #endif // DEBUG_GPIO_ADV_SCAN
 
-#ifdef USE_RCL
   // clear all RX entries
   llClearScanDataQueue(TRUE);
-#endif
   // check if still active
   if ( extScanInfo->scanMode == LL_SCAN_STOP )
   {
@@ -117,11 +110,8 @@ void llExtScan_PostProcess( void )
   // update health check
   MAP_llHealthUpdate(LL_STATE_SCAN);
   // clear command status value
-#ifdef USE_RCL
   extScanCmd.common.status = RCL_CommandStatus_Idle;
-#else
-  extScanCmd.rfOpCmd.status = RFSTAT_IDLE;
-#endif
+
   // get current time with some margin
   currentTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_625US;
 
@@ -139,34 +129,23 @@ void llExtScan_PostProcess( void )
   // check if there's more time before the end of the scan window and
   // that end time is not before the current time
   // Note: True when first parameter is greater than second.
-#ifdef USE_RCL
-  if ( (MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
+  if ( ((MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
                           extScanCmd.common.timing.relGracefulStopTime, currentTime ) ) &&
-       (extScanCmd.common.timing.relHardStopTime == 0) ||
-       (extScanCmd.common.timing.relHardStopTime != 0) &&
+       (extScanCmd.common.timing.relHardStopTime == 0)) ||
+       ((extScanCmd.common.timing.relHardStopTime != 0) &&
        (MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
-                          extScanCmd.common.timing.relHardStopTime, currentTime ) ))
+                          extScanCmd.common.timing.relHardStopTime, currentTime ))) )
   {
     // Update start time to the future
     uint32 timeDiff = currentTime - extScanCmd.common.timing.absStartTime;
     extScanCmd.common.timing.absStartTime = currentTime;
-    // Update relGracefulStopTime with the time left to scan since the last command done
-    // received because the RCL stopped scanning after it finished receiving AUX packet
-    // and not becaus the scan window ended
+
+    // Update relGracefulStopTime and relHardStopTime with the time left to scan since the
+    // last command done received because the RCL stopped scanning after it finished receiving
+    // AUX packet and not because the scan window ended.
     extScanCmd.common.timing.relGracefulStopTime -= timeDiff;
-#else
-  if ( MAP_llTimeCompare( extScanParam.timeoutTime, currentTime ) &&
-       (( extScanParam.endTime == 0 ) ||
-       (( extScanParam.endTime != 0 ) &&
-        ( MAP_llTimeCompare( extScanParam.endTime, currentTime )))))
-  {
-    // update start time to the future
-    // Note: Once the CM0 follows an auxPtr to a secondary channel, it never
-    //       returns to the primary channel! (sigh)
-    // Note: RAT Compare cannot handle Past Start! (sigh)
-    // Note: Scan Window trigger is absolute, so there's no need to adjust it.
-    extScanCmd.rfOpCmd.startTime = currentTime;
-#endif
+    extScanCmd.common.timing.relHardStopTime -= timeDiff;
+
     // restart immediately
     // Note: Already the current task.
     // Note: Scan Window trigger is absolute.
@@ -178,11 +157,7 @@ void llExtScan_PostProcess( void )
     nextScanChannel = LL_ADV_BASE_CHAN + llGetNextOrPreviousExtScanChannelIndex(LL_GET_NEXT_SCAN_CHAN);
 
     // set the next Scan channel
-#ifdef USE_RCL
     extScanCmd.channel = nextScanChannel;
-#else
-    extScanCmd.chan = nextScanChannel;
-#endif
 
     // check if there's more than one Scan primary PHY
     if ( extScanInfo->pScanParam->scanPhys == (LL_PHY_1_MBPS+LL_PHY_CODED) )
@@ -194,7 +169,6 @@ void llExtScan_PostProcess( void )
         extScanIndex ^= 1;
       }
 
-#ifdef USE_RCL
       // update the scan type based on changed extScanIndex
       extScanCmd.activeScan = extScanInfo->pScanParam->extScanParam[extScanIndex].scanType;
 
@@ -205,54 +179,19 @@ void llExtScan_PostProcess( void )
       // Restart the Graceful Stop Time
       extScanCmd.common.timing.relGracefulStopTime = extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US;
       extScanCmd.common.phyFeatures = extScanIndex << 1;
-#else
-      // update the type of scan based on changed extScanIndex
-      SETVAR_SCAN_CFG_ACTIVE_SCAN( extScanParam.scanCfg,
-                                   extScanInfo->pScanParam->extScanParam[extScanIndex].scanType );
 
-      // update Start Time based on Scan Interval
-      extScanCmd.rfOpCmd.startTime = extScanInfo->scanStartTime +
-                                    (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
-      extScanInfo->scanStartTime = extScanCmd.rfOpCmd.startTime;
-
-      // set primary PHY
-      // Note: The index is 0 for 1M and 1 for Coded, so 2*extScanIndex provides
-      //       a value of 0 for PHY 1M, and 2 for PHY Coded.
-      // OPT: ALLOW USER TO SPECIFY THE CODED SCHEME FOR AUX_SCAN_REQ?
-      extScanCmd.phyMode = extScanIndex << 1;
-
-      // set range delay based on PHY
-      extScanCmd.rangeDelay = ( extScanIndex == 0 ) ? LL_UNCODED_RANGE_DELAY_RAT_TICKS : LL_CODED_RANGE_DELAY_RAT_TICKS;
-#endif
     }
     else // only one PHY is active, so leave the index alone
     {
-#ifdef USE_RCL
       // update Start Time based on Scan Interval
       extScanCmd.common.timing.absStartTime = extScanInfo->scanStartTime +
                                              (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
       // save the absolute start time of the scanner for post-processing
       extScanInfo->scanStartTime = extScanCmd.common.timing.absStartTime;
-#else
-      // update Start Time based on Scan Interval
-      extScanCmd.rfOpCmd.startTime = extScanInfo->scanStartTime +
-                                     (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
-
-      // save the absolute start time of the scanner for post-processing
-      // Note: The start time has to be adjusted for AE packets because the CMO
-      //       ends after following a secondary channel. Thus, the time the
-      //       event first started has to be preserved.
-      extScanInfo->scanStartTime = extScanCmd.rfOpCmd.startTime;
-#endif
     }
 
     // set window
-#ifdef USE_RCL
     extScanCmd.common.timing.relGracefulStopTime =
-#else
-    extScanParam.timeoutTime =
-      extScanCmd.rfOpCmd.startTime +
-#endif
       (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
 
     // only if address resolution is enabled
@@ -275,7 +214,6 @@ void llExtScan_PostProcess( void )
                          resolvingList[LOCAL_RL_INDEX].RPA,
                          B_ADDR_LEN );
 
-#ifdef USE_RCL
         // In devices using RF Driver (rflib instead of rcl), the command
         // itself will point to extScanInfo->ownAddr which naturally updates
         // the RPA.
@@ -284,7 +222,6 @@ void llExtScan_PostProcess( void )
         MAP_osal_memcpy( extScanCmd.ctx->ownA,
                          resolvingList[LOCAL_RL_INDEX].RPA,
                          B_ADDR_LEN );
-#endif
       }
     }
 

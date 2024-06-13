@@ -24,7 +24,12 @@
 #include "osal.h"
 #include "ll_user_config.h"
 #include "ble_user_config.h"
+
+#ifdef ZEPHYR_OS
+#include "rcl_settings_ble.h"
+#else
 #include "ti_radio_config.h"
+#endif
 
 #ifdef SYSCFG
 #include "ti_ble_config.h"
@@ -36,6 +41,7 @@
 #include "l2cap.h"
 
 #endif // ( CENTRAL_CFG | PERIPHERAL_CFG )
+
 
 /*******************************************************************************
  * GLOBAL VARIABLES
@@ -117,6 +123,8 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
     llUserConfig.maxAlElems    = stackConfig->maxAcceptListElems;
     llUserConfig.maxRlElems    = stackConfig->maxResolvListElems;
     llUserConfig.advReportIncChannel = stackConfig->advReportIncChannel;
+    // Set useDFL to false initially
+    llUserConfig.useDFL = stackConfig->useDFL;
 #ifndef CC23X0
     llUserConfig.maxNumCteBufs = stackConfig->maxNumCteBuffers;
 
@@ -197,10 +205,9 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
     llUserConfig.pErrCb             = stackConfig->rfDriverParams.pErrCb;
 #endif //!CC23X0
 
-#ifndef CONFIG_SOC_CC2340R5
     // ECC Driver Parameter
     llUserConfig.eccCurveParams     = stackConfig->eccParams;
-#endif
+
 #ifndef CC23X0
 #ifndef CC33xx
 #if defined(USE_CRYPTO_DRIVER) || defined(CC26XX_R2) || defined(CC26X2) || defined(CC13X2) || defined(CC13X2P) || defined(CC13X4)
@@ -273,7 +280,6 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
     llUserConfig.extStackSettings = stackConfig->extStackSettings;
 
 
-#ifdef USE_RCL
     llUserConfig.lrfTxPowerTablePtr = &LRF_txPowerTable;
     llUserConfig.lrfConfigPtr = &LRF_config;
     llUserConfig.defaultTxPowerDbm = defaultTxPowerDbm;
@@ -283,7 +289,6 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
     llUserConfig.rclPhyFeatureCoded = RCL_PHY_FEATURE_SUB_PHY_CODED;
     llUserConfig.rclPhyFeatureCodedS8 = RCL_PHY_FEATURE_CODED_TX_RATE_S8;
     llUserConfig.rclPhyFeatureCodedS2 = RCL_PHY_FEATURE_CODED_TX_RATE_S2;
-#endif
 
 #ifndef CC33xx
     // save off the application's assert handler
@@ -306,6 +311,9 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
   {
       LL_ASSERT( FALSE );
   }
+
+  llUserConfig.useSrcClkLFOSC = SRC_CLK_IS_LFOSC;
+  llUserConfig.cfgLFOSCExtraPPM = USER_CFG_LFOSC_EXTRA_PPM;
 
   return;
 }
@@ -422,7 +430,6 @@ void setBleUserConfig( bleUserCfg_t *userCfg )
     // BLE Stack Type
     llUserConfig.bleStackType = userCfg->bleStackType;
 
-#ifdef USE_RCL
     llUserConfig.lrfTxPowerTablePtr = &LRF_txPowerTable;
     llUserConfig.lrfConfigPtr = &LRF_config;
     llUserConfig.defaultTxPowerDbm = defaultTxPowerDbm;
@@ -432,13 +439,15 @@ void setBleUserConfig( bleUserCfg_t *userCfg )
     llUserConfig.rclPhyFeatureCoded = RCL_PHY_FEATURE_SUB_PHY_CODED;
     llUserConfig.rclPhyFeatureCodedS8 = RCL_PHY_FEATURE_CODED_TX_RATE_S8;
     llUserConfig.rclPhyFeatureCodedS2 = RCL_PHY_FEATURE_CODED_TX_RATE_S2;
-#endif
 
 #ifndef CC33xx
     // save off the application's assert handler
     halAssertInit( **userCfg->assertCback, HAL_ASSERT_LEGACY_MODE_DISABLED );
 #endif // CC33xx
   }
+
+  llUserConfig.useSrcClkLFOSC = SRC_CLK_IS_LFOSC;
+  llUserConfig.cfgLFOSCExtraPPM = USER_CFG_LFOSC_EXTRA_PPM;
 
   return;
 }

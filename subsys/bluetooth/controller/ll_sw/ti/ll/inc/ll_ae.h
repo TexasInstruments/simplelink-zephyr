@@ -33,12 +33,8 @@
  * INCLUDES
  */
 
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#else
-#include "rf_hal.h"
-#endif
 #include "ble.h"
 #include "ll_al.h"
 #include "ll_common.h"
@@ -220,7 +216,6 @@
 #define EXTHDR_ACAD_CHANMAP_UPDATE_SIZE                    0x08
 #define EXTHDR_ACAD_CHANMAP_UPDATE_TYPE                    0x28
 //
-#ifdef USE_RCL
 #define EXTHDR_TOTAL_BUF_SIZE                               (EXTHDR_FLAGS_SIZE         +  \
                                                              EXTHDR_FLAG_ADVA_SIZE     +  \
                                                              EXTHDR_FLAG_TARGETA_SIZE  +  \
@@ -229,13 +224,7 @@
                                                              EXTHDR_FLAG_AUXPTR_SIZE   +  \
                                                              EXTHDR_FLAG_SYNCINFO_SIZE +  \
                                                              EXTHDR_FLAG_TXPWR_SIZE)
-#else
-#define EXTHDR_TOTAL_BUF_SIZE                               (EXTHDR_FLAG_ADI_SIZE      +  \
-                                                             EXTHDR_FLAG_AUXPTR_SIZE   +  \
-                                                             EXTHDR_FLAG_SYNCINFO_SIZE +  \
-                                                             EXTHDR_FLAG_TXPWR_SIZE)
 
-#endif // USE_RCL
 #define PERIODIC_ADV_HDR_TOTAL_BUF_SIZE                     (EXTHDR_FLAG_CTEINFO_SIZE  +  \
                                                              EXTHDR_FLAG_AUXPTR_SIZE   +  \
                                                              EXTHDR_FLAG_TXPWR_SIZE)   +  \
@@ -280,22 +269,22 @@
 #define AE_AUX_CODED_PHY                                    BLE5_CODED_PHY
 
 /*
-** Common Extended Advertisnig Payload Format
+** Common Extended Advertising Payload Format
 */
 #define AE_EXT_HDR_LEN_SIZE                                 1
 #define AE_EXT_HDR_FLAGS_SIZE                               1
-#ifdef USE_RCL
-#define AE_PHY_INDEX            LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
-                                AE_EXT_HDR_FLAGS_SIZE + 2 * LL_DEVICE_ADDR_LEN
-#else
-#define AE_PHY_INDEX            LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
-                                AE_EXT_HDR_FLAGS_SIZE + 2 * LL_DEVICE_ADDR_LEN + 1
-#endif // USE_RCL
 
-#define AE_AUX_ADVA_INDEX       LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
-                                AE_EXT_HDR_FLAGS_SIZE
+/* Extended Advetising index */
+#define AUX_CONN_RSP_PHY_INDEX      LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
+                                    AE_EXT_HDR_FLAGS_SIZE + 2 * LL_DEVICE_ADDR_LEN
 
-#define AE_AUX_TARGETA_INDEX    AE_AUX_ADVA_INDEX + B_ADDR_LEN
+#define AE_AUX_ADVA_INDEX           LL_PKT_HDR_LEN + AE_EXT_HDR_LEN_SIZE + \
+                                    AE_EXT_HDR_FLAGS_SIZE
+
+#define AE_AUX_TARGETA_INDEX        AE_AUX_ADVA_INDEX + B_ADDR_LEN
+
+#define ADV_DATA_INDEX              2
+#define AUX_CONN_REQ_PHY_INDEX      36
 
 /*
 ** Advertising and Scan Response Data
@@ -421,10 +410,7 @@
 #define LEGACY_ADV_MAX_TIME_CONSUME                        3500
 #define AE_CONSUME_OVERHEAD                                1500
 #define AE_NUM_BYTES_OVERHAED_27_BYTES                       27
-#ifdef USE_RCL
-#define AE_SWITCH_TIME                                     420
-#endif
-
+#define AE_SWITCH_TIME                                      420
 // adv sorted list node start time error code
 #define AE_INVALID_START_TIME                               0
 
@@ -861,7 +847,7 @@
 #define LL_CBACK_OUT_OF_MEMORY                              14
 
 /*******************************************************************************
- * @fn          LE Extended Advertisment Data Truncated Event Callback
+ * @fn          LE Extended Advertisement Data Truncated Event Callback
  *
  * @brief       This callback is used to inform the Host that the Extended
  *              Advertising Data was truncated. This can happen when there's
@@ -874,7 +860,7 @@
  * input parameters
  *
  * @param       eventId - Specified by this define.
- * @param       pParams - Pointer truncData to the extended advertisment data
+ * @param       pParams - Pointer truncData to the extended advertisement data
  *                        truncated event, data specified by aeAdvTrucData_t.
  *
  *                        Note: The pointer pParams MUST NOT be freed!
@@ -1192,7 +1178,6 @@ PACKED_TYPEDEF_STRUCT
 /*
 ** BLE Input Command Parameter Structures
 */
-#ifdef USE_RCL
 
 // Legacy advertising packet struct
 typedef struct
@@ -1219,7 +1204,7 @@ typedef struct
 // Common Extended Packet Entry Format
 typedef struct
 {
-  uint8         extHdrInfo;            // W:  advMode(7..6), lenth(5..0)
+  uint8         extHdrInfo;            // W:  advMode(7..6), length(5..0)
   uint8         extHdrFlags;           // W:  ext hdr flags per spec
   uint8         extHdrConfig;          // W:  ext hdr configuration
   uint8         advDataLen;            // W:  size of Adv data
@@ -1253,7 +1238,7 @@ typedef struct
  */
 typedef struct
 {
-  RCL_CmdBle5Advertiser    extRfCmd;
+  RCL_CmdBle5Advertiser    advCmd;
   RCL_CtxAdvertiser        advParam;
   RCL_StatsAdvScanInit     advOutput;
   aePacket                 txBuffer;
@@ -1287,133 +1272,6 @@ typedef union
 } aeRfCmdSize_t;
 
 
-#else
-
-#ifdef USE_AE
-// Extended Advertiser Command Parameters
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  extAdvCfg_t   advCfg;                // W:  advertiser configuration
-  uint8         reserved[2];           // unused
-  uint8         auxPtrTgtType;         // W:  reference for auxPtrTgtTime
-  uint32        auxPtrTgtTime;         // W:  start time of Aux Pkt
-  uint8        *pAdvPkt;               // W:  ptr to Ext Adv Pkt (ADV_EXT_IND)
-  uint8        *pDeviceAddr;           // W:  ptr to device BLE address
-} extAdvCmd_t;
-
-// Secondary Channel Advertiser Command Parameters
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  advCfg_t      advCfg;                // W:  advertiser configuration
-  uint8         reserved;              // unused
-  uint8         auxPtrTgtType;         // W:  reference for auxPtrTgtTime
-  uint32        auxPtrTgtTime;         // W:  start time of Aux Pkt
-  uint8        *pAdvPkt;               // W:  ptr to Ext Adv Pkt (ADV_AUX_IND)
-  uint8        *pRspPkt;               // W:  ptr to Ext Adv Pkt (AUX_SCAN_RSP, AUX_CONNECT_RSP)
-  uint8        *pDeviceAddr;           // W:  ptr to device BLE address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list
-} secChanAdvCmd_t;
-
-// Common Extended Packet Entry Format
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  uint8         extHdrInfo;            // W:  advMode(7..6), lenth(5..0)
-  uint8         extHdrFlags;           // W:  ext hdr flags per spec
-  uint8         extHdrConfig;          // W:  ext hdr configuration
-  uint8         advDataLen;            // W:  size of Adv data
-  uint8        *pExtHeader;            // W:  ptr to buffer with ext hdr
-  uint8        *pAdvData;              // W:  ptr to adv data
-} comExtPktFormat_t;
-
-// Extended Advertiser Output Structure
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  uint16        nTxAdv;                // RW: num ADV*_IND Tx pkts
-  uint8         nTxScanRsp;            // RW: num *SCAN_RSP Tx pkts
-  uint8         nRxScanReq;            // RW: num *SCAN_REQ okay Rx pkts
-  uint8         nRxConnReq;            // RW: num *CONNECT_IND okay Rx pkts
-  uint8         nTxConnRsp;            // RW: num Tx AUX_CONNECT_RSP
-  uint16        nRxNok;                // RW: num not okay Rx pkts
-  uint16        nRxIgn;                // RW: num okay Rx pkts ignored
-  uint8         nRxBufFull;            // RW: num pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint32        timeStamp;             // R:  timestamp of last Rx pkt
-} extAdvOut_t;
-
-// Total AE Memory Allocation for RF
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  ble5OpCmd_t         extRfCmd[LL_MAX_NUM_ADV_CHAN];
-  ble5OpCmd_t         auxRfCmd;
-  rfOpCmd_Count_t     countCmd;
-  extAdvCmd_t         extRfParam;
-  secChanAdvCmd_t     auxRfParam;
-  comExtPktFormat_t   comPkt;
-  extAdvOut_t         comOutput;
-  uint8               extHdr[EXTHDR_TOTAL_BUF_SIZE];
-} aeRf_t;
-#endif // USE_AE
-
-// Total AE Legacy Memory Allocation for RF
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  bleOpCmd_t          advCmd[LL_MAX_NUM_ADV_CHAN + 1];
-  advParam_t          advParam;
-  advOut_t            advOutput;
-} aeLegacyRf_t;
-
-typedef union
-{
-  aeLegacyRf_t aeRfLegacyCmd;
-#ifdef USE_AE
-  aeRf_t       aeRfCmd;
-#endif
-} aeRfCmdSize_t;
-
-#ifdef USE_PERIODIC_ADV
-// Periodic Advertiser Command Parameters
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  uint8         reserved[3];           // unused
-  uint8         auxPtrTgtType;         // W:  reference for auxPtrTgtTime
-  uint32        auxPtrTgtTime;         // W:  start time of Aux Pkt
-  uint8        *pAdvPkt;               // W:  ptr to Ext Adv Pkt (ADV_EXT_IND)
-  uint32        accessAddress;         // W:  Access address used on the periodic advertisement
-  uint8         crcInit0;              // W:  CRC initialization value used on the periodic advertisement least significant byte
-  uint8         crcInit1;              // W:  CRC initialization value used on the periodic advertisement middle byte
-  uint8         crcInit2;              // W:  CRC initialization value used on the periodic advertisement most significant byte
-  uint8         reserved2;             // unused
-} periodicAdvCmd_t;
-#endif
-
-#ifdef USE_PERIODIC_SCAN
-// Periodic Scanner Command Parameters
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  scanCfg_t     scanCfg;               // W:  advertiser configuration
-  uint8         reserved[10];          // unused
-  uint8        *pDeviceAddr;           // W:  ptr to device address
-  uint32        accessAddress;         // W:  Access address used on the periodic advertisement
-  uint8         crcInit0;              // W:  CRC initialization value used on the periodic advertisement – least significant byte
-  uint8         crcInit1;              // W:  CRC initialization value used on the periodic advertisement – middle byte
-  uint8         crcInit2;              // W:  CRC initialization value used on the periodic advertisement – most significant byte
-  uint8          __dummy3;             // unused
-  uint16        maxWaitForAux;         // W:  max wait time to secondary channel
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint32        endTime;               // W:  time for end trigger
-  uint32        rxStartTime;           // R:  time needed to start Rx
-  uint16        rxListenTime;          // R:  time needed to listen
-  uint8         chan;                  // R:  secondary channel number
-  uint8         phyMode;               // R:  secondary channel PHY
-}periodicScanParam_t;
-#endif
-#endif
 
 /*
 ** Controller Extended Advertising Set
@@ -1428,7 +1286,7 @@ struct advSet_t
   advSet_t       *next;                           // ptr to next handle in list, if any
   taskInfo_t     *llTask;                         // pointer to associated BLE task block
   uint8           advMode;                        // flag to indicate if currently advertising
-  uint8           paramValid;                     // flag to indicate paraetmers are valid
+  uint8           paramValid;                     // flag to indicate parameters are valid
   uint8           connId;                         // allocated connection ID
   uint8           firstAdvEvt;                    // flag indicating first advertisement event
   uint8           maxAdvEvts;                     // maximum number of AE events, or continuous
@@ -1510,7 +1368,7 @@ typedef struct
   // Note: Address must start on word boundary!
   uint8        ownAddr[ LL_DEVICE_ADDR_LEN ]; // own device address
   uint8        ownAddrType;                   // own device address type of public or random
-  uint8        paramValid;                    // flag to indicate paraetmers are valid
+  uint8        paramValid;                    // flag to indicate parameters are valid
   uint8        scanMode;                      // flag to indicate if currently scanning
   //
   uint32       scanStartTime;                 // start time of scanner event
@@ -1805,16 +1663,11 @@ extern uint8           extScanIndex;
 extern uint16          extScanNumMissed;
 extern uint8           extScanPriority;
 //
-#ifdef USE_RCL
+
 extern RCL_CmdBle5Scanner   extScanCmd;
 extern RCL_CtxScanInit      extScanParam;
 extern RCL_StatsAdvScanInit extScanOutput;
-#else
-extern ble5OpCmd_t     extScanCmd;
-extern adiList_t       adiList[AE_MAX_NUM_SID];
-extern extScanParam_t  extScanParam;
-extern extScanOut_t    extScanOutput;
-#endif
+
 extern uint8           extScanChanMap;
 #ifdef USE_PERIODIC_SCAN
 extern llPeriodicScan_t llPeriodicScan;
@@ -1828,15 +1681,11 @@ extern extInitInfo_t  *extInitInfo;
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 extern uint8           extInitIndex;
 //
-#ifdef USE_RCL
+
 extern RCL_CmdBle5Initiator  extInitCmd;
 extern RCL_CtxScanInit       extInitParam;
 extern RCL_StatsAdvScanInit  extInitOutput;
-#else
-extern ble5OpCmd_t     extInitCmd;
-extern extInitParam_t  extInitParam;
-extern extScanOut_t    extInitOutput;
-#endif
+
 //
 #endif // INIT_CFG
 
@@ -1943,9 +1792,8 @@ extern uint32        llGetSecondaryTaskEndTime( taskInfo_t *, uint32 , llConnSta
 extern uint8         llCheckRfCmdPreemption( uint32, uint8 );
 extern void          llSetRestPrimaryChannels( advSet_t * );
 extern void          llTermExtAdv( advSet_t *, uint8  );
-#ifdef USE_RCL
-extern void          llRclPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint8 *pAddr, uint8 alIndex);
-#endif
+extern void          llPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint8 *pAddr, uint8 alIndex);
+
 // RF Post Processing
 extern void          llExtAdv_PostProcess( void );
 extern void          llPeriodicAdv_PostProcess( void );
@@ -1962,12 +1810,6 @@ extern void          llProcessPeriodicScanRxFIFO( void );
 extern void         *llFindNextAdvSet( void );
 extern void         *llFindNextSecCmd( taskInfo_t *llTask );
 extern void         *llFindNextPeriodicAdv( void );
-
-#ifndef USE_RCL
-// Other
-extern dataEntryQ_t *llSetupExtScanDataEntryQueue( void );
-extern dataEntryQ_t *llSetupPeriodicScanDataEntryQueue( void );
-#endif
 
 extern uint8 llAddExtAlAndSetIgnBit(aeExtAdvRptEvt_t *extAdvRpt, uint8 ignoreBit);
 extern uint8 llFlushIgnoredRxEntry(uint8 ignoreBit);

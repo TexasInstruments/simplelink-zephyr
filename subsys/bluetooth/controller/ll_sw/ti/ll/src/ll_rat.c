@@ -20,14 +20,8 @@
  */
 
 #include "bcomdef.h"
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/RCL_Scheduler.h>
-#else
-#include <ti/drivers/rf/RF.h>
-#include "rf_api.h"
-#include "rf_hal.h"
-#endif
 #include <ti/devices/DeviceFamily.h>
 #include DeviceFamily_constructPath(inc/hw_memmap.h)
 #include "hal_mcu.h"
@@ -82,11 +76,7 @@ uint32 llGetCurrentTime( void );
  */
 uint32 llGetCurrentTime( void )
 {
-#ifdef USE_RCL
   return( RCL_Scheduler_getCurrentTime() );
-#else
-  return( RF_getCurrentTime() );
-#endif
 }
 
 

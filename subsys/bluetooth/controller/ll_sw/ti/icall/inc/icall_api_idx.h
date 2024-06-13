@@ -111,6 +111,7 @@
 #define IDX_GAP_SendPeripheralSecurityRequest         GAP_SendPeripheralSecurityRequest
 #define IDX_GAP_Signable                              GAP_Signable
 #define IDX_GAP_Bond                                  GAP_Bond
+#define IDX_Gap_ReplyToLTKReq                         Gap_ReplyToLTKReq
 
 /* RTLS Services API */
 /*********************/

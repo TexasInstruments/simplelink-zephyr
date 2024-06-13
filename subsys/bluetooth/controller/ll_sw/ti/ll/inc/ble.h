@@ -32,12 +32,8 @@
 /*******************************************************************************
  * INCLUDES
  */
-#ifdef USE_RCL
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#else
-#include "rf_hal.h"
-#endif
 #include "ll_al.h"
 #include "ll_common.h"
 #include "ll_config.h"
@@ -45,7 +41,6 @@
 /*******************************************************************************
  * CONSTANTS
  */
-#ifdef USE_RCL
 #define RCL_329                                                               // This is the requirement ticket number that was open to the RCL
                                                                               // to provide an API to update a peer device RPA address
                                                                               // when LL_INIT_AL_POLICY_USE_PEER_ADDR filter policy is used
@@ -57,98 +52,6 @@
 #ifdef RCL_329
 #define RCL_PEER_ADDR_INDEX             0                                     // This is used when initiator uses filter policy is LL_INIT_AL_POLICY_USE_PEER_ADDR
 #endif
-#else
-// Mailbox CPE Interrupts for BLE
-#define MB_NO_INT                      0
-#define MB_TX_DONE_INT                 BV(4)
-#define MB_TX_ACK_INT                  BV(5)
-#define MB_TX_CTRL_INT                 BV(6)
-#define MB_TX_CTRL_ACK_INT             BV(7)
-#define MB_TX_CTRL_ACK_ACK_INT         BV(8)
-#define MB_TX_RETRANS_INT              BV(9)
-#define MB_TX_ENTRY_DONE_INT           BV(10)
-#define MB_TX_BUF_CHANGED_INT          BV(11)
-#define MB_RX_OK_INT                   BV(16)
-#define MB_RX_NOK_INT                  BV(17)
-#define MB_RX_IGNORED_INT              BV(18)
-#define MB_RX_EMPTY_INT                BV(19)
-#define MB_RX_CTRL_INT                 BV(20)
-#define MB_RX_CTRL_ACK_INT             BV(21)
-#define MB_RX_BUF_FULL_INT             BV(22)
-#define MB_RX_ENTRY_DONE_INT           BV(23)
-#if defined( CC26XX ) || defined( CC13XX )
-#define MB_RX_DATA_WRITTEN             BV(24)
-#define MB_RX_N_DATA_WRITTEN           BV(25)
-#define MB_RX_ABORTED                  BV(26)
-#endif // CC26XX/CC13XX
-
-// Mailbox Hardware Interrupts for BLE
-#define MB_HW_RAT_CHAN_5_INT           RAT_CHAN_5_IRQ
-#define MB_HW_RAT_CHAN_6_INT           RAT_CHAN_6_IRQ
-#define MB_HW_RAT_CHAN_7_INT           RAT_CHAN_7_IRQ
-
-// Mailbox BLE Immediate Commands
-#define CMD_BLE_ADV_PAYLOAD            0x1001
-
-// Rf Command Legacy vs Rf Command BLE5 for the Tx power configurations
-#define TX_PWR_CMD_BLE5                 0x0  // For all BLE5 Rf commands
-#define TX_PWR_CMD_LEGACY               0x1  // For all Legacy Rf commands
-#define TX_PWR_CMD_POS_BIT              0x7  // Bit 7 would indicate the type of Rf command
-
-// Mailbox BLE Direct Commands
-
-// Mailbox BLE Radio Commands
-#define CMD_BLE_PERIPHERAL             0x1801
-#define CMD_BLE_CENTRAL                0x1802
-#define CMD_BLE_ADV                    0x1803
-#define CMD_BLE_ADV_DIR                0x1804
-#define CMD_BLE_ADV_NC                 0x1805
-#define CMD_BLE_ADV_SCAN               0x1806
-#define CMD_BLE_SCANNER                0x1807
-#define CMD_BLE_INITIATOR              0x1808
-#define CMD_BLE_RX_TEST                0x1809
-#define CMD_BLE_TX_TEST                0x180A
-
-// Mailbox BLE5 Radio Commands
-#define CMD_BLE5_RADIO_SETUP           0x1820
-#define CMD_BLE5_PERIPHERAL            0x1821
-#define CMD_BLE5_CENTRAL               0x1822
-#define CMD_BLE5_ADV_EXT               0x1823
-#define CMD_BLE5_ADV_AUX               0x1824
-#define CMD_BLE5_SCANNER               0x1827
-#define CMD_BLE5_INITIATOR             0x1828
-#define CMD_BLE5_RX_TEST               0x1829
-#define CMD_BLE5_TX_TEST               0x182A
-
-// BLE Radio Operation Command Status
-#define BLESTAT_IDLE                   RFSTAT_IDLE
-#define BLESTAT_PENDING                RFSTAT_PENDING
-#define BLESTAT_ACTIVE                 RFSTAT_ACTIVE
-#define BLESTAT_SKIPPED                RFSTAT_SKIPPED
-//
-#define BLESTAT_DONE_OK                0x1400  // result True
-#define BLESTAT_DONE_RXTIMEOUT         0x1401  // result False
-#define BLESTAT_DONE_NOSYNC            0x1402  // result True
-#define BLESTAT_DONE_RXERR             0x1403  // result True
-#define BLESTAT_DONE_CONNECT           0x1404  // result True (False for Peripheral)
-#define BLESTAT_DONE_MAXNACK           0x1405  // result True
-#define BLESTAT_DONE_ENDED             0x1406  // result False
-#define BLESTAT_DONE_ABORT             0x1407  // result Abort
-#define BLESTAT_DONE_STOPPED           0x1408  // result False
-#define BLESTAT_DONE_AUX               0x1409  // result False
-#define BLESTAT_DONE_CONNECT_CHSEL0    0x140A  // result False
-//
-#define BLESTAT_ERROR_PAR              0x1800  // result Abort
-#define BLESTAT_ERROR_RXBUF            0x1801  // result False
-#define BLESTAT_ERROR_NO_SETUP         0x1802  // result Abort
-#define BLEBTAT_ERROR_NO_FS            0x1803  // result Abort
-#define BLESTAT_ERROR_SYNTH_PROG       0x1804  // result Abort
-#define BLESTAT_ERROR_RX_OVERFLOW      0x1805  // result Abort
-#define BLESTAT_ERROR_TX_UNDERFLOW     0x1806  // result Abort
-#define BLESTAT_ERROR_AUX              0x1807  // result Abort
-#define BLESTAT_ERROR_NO_GRANT         0x1808  // result Abort
-
-#endif //!USE_RCL
 
 // Advertisement Data Type
 #define BLE_ADV_DATA_TYPE              0
@@ -286,7 +189,8 @@
 #define BLE_BDADDR_SIZE                6
 #define MAX_BLE_CONNECT_IND_SIZE       34 // init addr + own addr + payload
 #define MAX_BLE_ADV_PKT_SIZE          255 // payload
-
+#define MAX_EXT_ADV_PKT_SIZE           8  // max size of AE EXT_ADV_PKT PDU
+#define AUX_CONN_RSP_PKT_SIZE          14 // AUX_CONN_RSP PDU packet size (constant size)
 // HCI Rx Packet Header
 // | Packet Type (1) | Handler(2) | Length(2) |
 // Note: This is the same define as what's in hci_tl.h: HCI_DATA_MIN_LENGTH!
@@ -580,89 +484,10 @@
 /*******************************************************************************
  * TYPEDEFS
  */
-#ifndef USE_RCL
-
-// BLE Radio Operation Whitening Configuration
-// |     7    |       6..0     |
-// | Override | Whitening Init |
-//
-typedef uint8 whitenCfg_t;
-
-// BLE Radio Operation Receive Queue Configuration
-// |     7     |   6    |   5  |  4  |      3      |       2        |         1           |         0         |
-// | Timestamp | Status | RSSI | CRC | Length Byte | AutoFlushEmpty | AutoFlush CRC Error | AutoFlush Ignored |
-//
-typedef uint8 rxQCfg_t;
-
-// BLE Radio Operation Sequence Number Status
-// |         7        |      6      |    5    |      4       |      3       |     2      |      1     |     0      |
-// | Ctrl Ack Pending | Ctrl Ack Rx | Ctrl Tx | Tx AutoEmpty | First Packet | Next Tx SN | Last Tx SN | Last Rx SN |
-//
-typedef uint8 seqNumStat_t;
-
-// BLE Advertiser Configuration
-// |     7    |           6         |        5      |         4         |        3       |        2         |     1..0      |
-// | RPA Mode | Privacy Ignore Mode | Chan Algo Sel | Strict Len Filter | Peer Addr Type | Device Addr Type | Filter Policy |
-typedef uint8 advCfg_t;
-
-// BLE Extended Advertiser Configuration
-// |     7 ..3   |        2         |   1..0   |
-// |   Reserved  | Device Addr Type | Reserved |
-typedef uint8 extAdvCfg_t;
-
-// BLE Scanner Configuration
-// |     7    |       6       |         5         |       4       |      3     |        2         |      1              0
-// | RPA Mode | End On Report | AutoSet AL Ignore | Length Filter | RPA Filter | Device Addr Type | Active Scan | Filter Policy |
-//
-typedef uint8 scanCfg_t;
-
-// BLE Backoff Parameters
-// | 7..6 |      5      |      4       |     3..0        |
-// |  N/A | Last Failed | Last Success | Log Upper Limit |
-//
-typedef uint8 bkOff_t;
-
-// BLE Initiator Configuration
-// | 7..6 |   5   |      4        |       3        |        2         |         1          |       0        |
-// |  N/A | ChSel | Length Filter | Peer Addr Type | Device Addr Type | Dyn. Window Offset | Use Accept list |
-//
-typedef uint8 initCfg_t;
-
-// BLE Transmit Test Override Configuration
-// | 7..3 |      2     |     1     |         0         |
-// |  N/A | Use PRBS15 | Use PRBS9 | Encoding Override |
-//
-typedef uint8 txTestCfg_t;
-
-// Receive Status Byte Bit Field
-// |  7  |    6    |    5   |     4    |     3     |    2    |    1    |        0        |
-// | N/A | lastACK | lastMD | lastCTRL | lastEmpty | lastIgn | lastErr | Timestamp Valid |
-//
-typedef uint8 pktStat_t;
-
-// Extended Scanner Filter Configuration
-// |   7..6   |       5       |        4        |       3       |          2         |        1       |     0     |
-// | Reserved | bExclusiveSid | bAutoAdiProcess | bAutoAlIgnore | bApplyDupFiltering | bAutoAdiUpdate | bCheckAdi |
-//
-typedef uint8 extFltrCfg_t;
-
-// Extended Scanner Filter Configuration
-// |    7     | 6..4  |      3..0       |
-// | Reserved | state | lastAcceptedSid |
-//
-typedef uint8 adiStatus_t;
-
-// Extended Scanner ADI List
-// |  15..14  | 13..12 |   11..0   |
-// | Reserved |  mode  | advDataId |
-//
-typedef uint16 adiList_t;
-#endif
 /*
 ** BLE Data Entry Structures
 */
 
-#ifdef USE_RCL
 // TX Data
 typedef struct
 {
@@ -705,437 +530,6 @@ PACKED_TYPEDEF_STRUCT
   uint8              hopSca;
 } connReqData_t;
 
-#else //!USE_RCL
-// IDEA:
-// USE OVERLAY TO MAKE THIS WORK.
-// E.G. SIZE = sizeof( dataEntry_t ) + sizeof( dataEntryPrefix_t ) + dataSize + sizeof( dataEntrySuffix_t )
-//      THEN CREATE A BUFFER OF THAT SIZE: uint8 buf[ SIZE ]
-//      THEN MAP DATA ENTRY POINTER: dataQueue->pCurEntry = &buf[ sizeof( dataEntryPrefix_t ) ]
-//      THEN BEGIN AT: &(dataQueue->pCurEntry->length+sizeof(uint16))?
-
-// Data Entry Prefix
-// Note: Not formally part of the radio data entry definition.
-// ALT: Could move to BLE file.
-PACKED_TYPEDEF_STRUCT
-{
-  uint8  bleStateRole;                 // could be combined wtih connection ID
-  uint8  reserved;                     // for packing
-  uint16 bleConnID;                    // could be combined with task state NOT NEEDED IF QUEUE PER CONNECTION
-  uint32 rxPktCount;                   // used for building nonce for encryption
-} dataEntryPrefix_t;
-
-/*
-** BLE Radio Commands
-**
-** R  = System CPU reads; Radio CPU will not read.
-** W  = System CPU writes; Radio CPU reads but will not modify.
-** RW = System CPU writes initially; Radio CPU reads and may modify.
-*/
-
-// BLE Radio Operation Command Common Structure
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  rfOpCmd_t     rfOpCmd;               // radio command common structure
-  uint8         chan;                  // W:  channel number
-  whitenCfg_t   whitening;             // W:  whitening configuration
-  uint8        *pParams;               // W:  ptr to cmd specific parameters
-  uint8        *pOutput;               // W:  ptr to cmd specific results, or NULL
-} bleOpCmd_t;
-
-// BLE5 Radio Operation Command Common Structure
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  rfOpCmd_t     rfOpCmd;               // radio command common structure
-  uint8         chan;                  // W:  channel number
-  whitenCfg_t   whitening;             // W:  whitening configuration
-  uint8         phyMode;               // W:  mainMode and LR coding
-  uint8         rangeDelay;            // W:  extended T_IFS in RAT ticks
-  uint16        txPower;               // W:  Tx power for this command
-  uint8        *pParams;               // W:  ptr to cmd specific parameters
-  uint8        *pOutput;               // W:  ptr to cmd specific results, or NULL
-  /* The define EM_CC1354P10_1_LP is needed since it is High PA device for
-     other stacks (not for BLE) and thus needed to be defined */
-#if defined(CC13X2P) || defined(EM_CC1354P10_1_LP)
-  uint32       *tx20Power;             // W:  Tx power for HP PA
-#endif // CC13X2P
-} ble5OpCmd_t;
-
-
-/*
-** BLE Input Command Parameter Structures
-*/
-
-// Advertiser Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  advCfg_t      advCfg;                // W:  advertiser configuration
-  uint8         advLen;                // W:  size of Adv data
-  uint8         scanRspLen;            // W:  size of Scan Response data
-  uint8        *pAdvData;              // W:  ptr to Adv data
-  uint8        *pScanRspData;          // W:  ptr to Scan Response data
-  uint8        *pDeviceAddr;           // W:  ptr to device BLE address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list
-  uint8         reserved[3];           // unused
-  trig_t        endTrig;               // W:  end trig for adv event
-  uint32        endTime;               // W:  time for end trigger
-} advParam_t;
-
-// Scanner Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  scanCfg_t     scanCfg;               // W:  advertiser configuration
-  uint16        randState;             // RW: a pseudo-random number
-  uint16        backoffCount;          // RW: backoff count
-  bkOff_t       backoffParam;          // RW: backoff parameters
-  uint8         scanReqLen;            // W:  size of Scan Request data
-  uint8        *pScanReqData;          // W:  ptr to Scan Request data
-  uint8        *pDeviceAddr;           // W:  ptr to device address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list
-  uint16        reserved1;             // unused
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint32        endTime;               // W:  time for end trigger
-} scanParam_t;
-
-// Extended Scanner Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  scanCfg_t     scanCfg;               // W:  advertiser configuration
-  uint16        randState;             // RW: a pseudo-random number
-  uint16        backoffCount;          // RW: backoff count
-  bkOff_t       backoffParam;          // RW: backoff parameters
-  extFltrCfg_t  extFltrCfg;            // W:  extended filter configuration
-  adiStatus_t   adiStatus;             // RW: adi status
-  uint8         reserved[3];           // unused
-  uint8        *pDeviceAddr;           // W:  ptr to device address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list
-  adiList_t    *pAdiList;              // W:  ptr to ADI list
-  uint16        maxWaitForAux;         // W:  max wait time to secondary channel
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint32        endTime;               // W:  time for end trigger
-  uint32        rxStartTime;           // R:  time needed to start Rx
-  uint16        rxListenTime;          // R:  time needed to listen
-  uint8         chan;                  // R:  secondary channel number
-  uint8         phyMode;               // R:  secondary channel PHY
-} extScanParam_t;
-
-// Initiator Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  initCfg_t     initCfg;               // W:  initiator configuration
-  uint8         reserved1;             // unused
-  uint8         connReqLen;            // W:  size of Connect Request data
-  uint8        *pConnReqData;          // W:  ptr to Connect Request data
-  uint8        *pDeviceAddr;           // W:  ptr to device address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list or peer address
-  uint32        connectTime;           // RW: time of first connection event
-  uint16        reserved2;             // unused
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint32        endTime;               // W:  time for end trigger
-} initParam_t;
-
-// Extended Initiator Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  initCfg_t     initCfg;               // W:  initiator configuration
-  uint16        randState;             // RW: a pseudo-random number
-  uint16        backoffCount;          // RW: backoff count
-  bkOff_t       backoffParam;          // RW: backoff parameters
-  uint8         connReqLen;            // W:  size of Connect Request data
-  uint8        *pConnReqData;          // W:  ptr to Connect Request data
-  uint8        *pDeviceAddr;           // W:  ptr to device address
-  alEntry_t    *pAcceptList;           // W:  ptr to accept list or peer address
-  uint32        connectTime;           // RW: time of first connection event
-  uint16        maxWaitForAux;         // W:  max wait time to secondary channel
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint32        endTime;               // W:  time for end trigger
-  uint32        rxStartTime;           // R:  time needed to start Rx
-  uint16        rxListenTime;          // R:  time needed to listen
-  uint8         chan;                  // R:  secondary channel number
-  uint8         phyMode;               // R:  secondary channel PHY
-} extInitParam_t;
-
-// Initiator Command CONNECT_IND LL_Data
-PACKED_TYPEDEF_STRUCT
-{
-  uint32        accessAddress;         // W:  access address used in connection
-  uint8         crcInit[BLE_CRC_LEN];  // W:  CRC init value
-  uint8         winSize;
-  uint16        winOffset;
-  uint16        connInterval;
-  uint16        latency;
-  uint16        timeout;
-  uint8         chanMap[BLE_CHAN_MAP_LEN];
-  uint8         hopSca;
-} connReqData_t;
-
-// Central Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  dataEntryQ_t *pTXQ;                  // W:  ptr to Tx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  seqNumStat_t  seqStat;               // RW: sequence status bit field
-  uint8         maxNAck;               // W:  max number of NACKs allowed
-  uint8         maxTxPkt;              // W:  max number of Tx pkts allowed
-  uint32        accessAddress;         // W:  access address used in connection
-  uint8         crcInit[BLE_CRC_LEN];  // W:  CRC init value
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        endTime;               // W:  time for end trigger
-  uint8         maxRxPktLen;           // W:  BLE5 max Rx pkt len allowed
-  uint8         maxTxLenForLR;         // W:  BLE5 max Rx pkt len for S=8 LR
-  uint8         reserved[2];           // unused
-} centralParam_t;
-
-// Peripheral Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  dataEntryQ_t *pTXQ;                  // W:  ptr to Tx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  seqNumStat_t  seqStat;               // RW: sequence status bit field
-  uint8         maxNAck;               // W:  max number of NACKs allowed
-  uint8         maxTxPkt;              // W:  max number of Tx pkts allowed
-  uint32        accessAddress;         // W:  access address used in connection
-  uint8         crcInit[BLE_CRC_LEN];  // W:  CRC init value
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint8         maxRxPktLen;           // W:  BLE5 max Rx pkt len allowed
-  uint8         maxTxLenForLR;         // W:  BLE5 max Rx pkt len for S=8 LR
-  uint8         reserved[1];           // unused
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        endTime;               // W:  time for end trigger
-} peripheralParam_t;
-
-// Connection Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue
-  dataEntryQ_t *pTXQ;                  // W:  ptr to Tx queue
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  seqNumStat_t  seqStat;               // RW: sequence status bit field
-  uint8         maxNAck;               // W:  max number of NACKs allowed
-  uint8         maxTxPkt;              // W:  max number of Tx pkts allowed
-  uint32        accessAddress;         // W:  access address used in connection
-  uint8         crcInit[BLE_CRC_LEN];  // W:  CRC init value
-  trig_t        timeoutTrig;           // W:  timeout trig for first Rx operation
-  uint32        timeoutTime;           // W:  time for timeout trigger
-  uint8         maxRxPktLen;           // W:  BLE5 max Rx pkt len allowed
-  uint8         maxTxLenForLR;         // W:  BLE5 max Rx pkt len for S=8 LR
-  uint8         reserved[1];           // unused
-  trig_t        endTrig;               // W:  end trig for connection event
-  uint32        endTime;               // W:  time for end trigger
-} linkParam_t;
-
-// Generic Rx Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  dataEntryQ_t *pRXQ;                  // W:  ptr to Rx queue, or NULL
-  rxQCfg_t      rxCfg;                 // W:  rx queue configuration
-  uint8         repeatMode;            // W:  end/restart after pkt Rx
-  uint16        reserved;              // unused
-  uint32        accessAddress;         // W:  access address used in connection
-  uint8         crcInit[BLE_CRC_LEN];  // W:  CRC init value
-  trig_t        endTrig;               // W:  end trig for Rx
-  uint32        endTime;               // W:  time for end trigger
-} rxTestParam_t;
-
-// Test Tx Command Parameters
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        numPkts;               // W:  number of pkts to Tx
-  uint8         payloadLen;            // W:  size of Tx pkt
-  uint8         pktType;               // W:  packet type
-  uint32        period;                // W:  inter-pkt time, in radio cycles
-  txTestCfg_t   config;                // W:  override packet encoding
-  uint8         byteVal;               // W:  override byte to Tx
-  uint8         reserved;              // unused
-  trig_t        endTrig;               // W:  end trig for Tx
-  uint32        endTime;               // W:  time for end trigger
-} txTestParam_t;
-
-/*
-** BLE Output Command Structures
-*/
-
-// Advertiser Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nTxAdv;                // RW: num ADV*_IND Tx pkts
-  uint8         nTxScanRsp;            // RW: num SCAN_RSP Tx pkts
-  uint8         nRxScanReq;            // RW: num SCAN_REQ okay Rx pkts
-  uint8         nRxConnReq;            // RW: num CONNECT_IND okay Rx pkts
-  uint8         reserved;              // unused
-  uint16        nRxNok;                // RW: num not okay Rx pkts
-  uint16        nRxIgn;                // RW: num okay Rx pkts ignored
-  uint8         nRxBufFull;            // RW: num pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint32        timeStamp;             // R:  timestamp of last Rx pkt
-} advOut_t;
-
-// Scanner Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nTxScanReq;            // RW: num SCAN_REQ Tx pkts
-  uint16        nBoffScanReq;          // RW: num SCAN_REQ pkts not sent due to backoff
-  uint16        nRxAdvOk;              // RW: num ADV*_IND okay Rx pkts
-  uint16        nRxAdvIgn;             // RW: num ADV*_IND okay Rx pkts ignored
-  uint16        nRxAdvNok;             // RW: num ADV*_IND not okay Rx pkts
-  uint16        nRxScanRspOk;          // RW: num SCAN_RSP okay Rx pkts
-  uint16        nRxScanRspIgn;         // RW: num SCAN_RSP okay Rx pkts ignored
-  uint16        nRxScanRspNok;         // RW: num SCAN_RSP not okay Rx pkts
-  uint8         nRxAdvBufFull;         // RW: num ADV*_IND pkts discarded
-  uint8         nRxScanRspBufFull;     // RW: num SCAN_RSP pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint8         reserved;              // unused
-  uint32        timeStamp;             // R: timestamp of last Rx ADV*_IND
-} scanOut_t;
-
-// Extended Scanner Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nTxReq;                // RW: num _REQ Tx
-  uint16        nBoffScanReq;          // RW: num _REQ not sent due to backoff
-  uint16        nRxAdvOk;              // RW: num ADV*_IND okay Rx pkts
-  uint16        nRxAdvIgn;             // RW: num ADV*_IND okay Rx pkts ignored
-  uint16        nRxAdvNok;             // RW: num ADV*_IND not okay Rx pkts
-  uint16        nRxScanRspOk;          // RW: num SCAN_RSP okay Rx pkts
-  uint16        nRxScanRspIgn;         // RW: num SCAN_RSP okay Rx pkts ignored
-  uint16        nRxScanRspNok;         // RW: num SCAN_RSP not okay Rx pkts
-  uint8         nRxAdvBufFull;         // RW: num ADV*_IND pkts discarded
-  uint8         nRxScanRspBufFull;     // RW: num SCAN_RSP pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint8         reserved;              // unused
-  uint32        timeStamp;             // R:  timestamp of last Rx *ADV*_IND
-} extScanOut_t;
-
-// Initiator Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint8         nTxConnReq;            // RW: num CONN_REQ Tx pkts
-  uint8         nRxAdvOk;              // RW: num ADV*_IND okay Rx pkts
-  uint16        nRxAdvIgn;             // RW: num ADV*_IND okay Rx pkts ignored
-  uint16        nRxAdvNok;             // RW: num ADV*_IND not okay Rx pkts
-  uint8         nRxAdvBufFull;         // RW: num ADV*_IND pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint32        timeStamp;             // R:  timestamp of last Rx ADV*_IND
-} initOut_t;
-
-// Extended Initiator Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nTxReq;                // RW: num _REQ Tx
-  uint16        nBoffScanReq;          // RW: num _REQ not sent due to backoff
-  uint16        nRxAdvOk;              // RW: num ADV*_IND okay Rx pkts
-  uint16        nRxAdvIgn;             // RW: num ADV*_IND okay Rx pkts ignored
-  uint16        nRxAdvNok;             // RW: num ADV*_IND not okay Rx pkts
-  uint16        nRxScanRspOk;          // RW: num SCAN_RSP okay Rx pkts
-  uint16        nRxScanRspIgn;         // RW: num SCAN_RSP okay Rx pkts ignored
-  uint16        nRxScanRspNok;         // RW: num SCAN_RSP not okay Rx pkts
-  uint8         nRxAdvBufFull;         // RW: num ADV*_IND pkts discarded
-  uint8         nRxScanRspBufFull;     // RW: num SCAN_RSP pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint8         reserved;              // unused
-  uint32        timeStamp;             // R:  timestamp of last Rx ADV*_IND
-} extInitOut_t;
-
-// Central or Peripheral Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint8         nTx;                   // RW: num Tx pkts
-  uint8         nTxAck;                // RW: num Tx pkts Acked
-  uint8         nTxCtrl;               // RW: num Tx ctrl pkts
-  uint8         nTxCtrlAck;            // RW: num Tx ctrl pkts Acked
-  uint8         nTxCtrlAckAck;         // RW: num Tx ctrl pkts Acked that were Acked
-  uint8         nTxRetrans;            // RW: num retransmissions
-  uint8         nTxEntryDone;          // RW: num pkts on Tx queue that are finished
-  uint8         nRxOk;                 // RW: num okay Rx pkts
-  uint8         nRxCtrl;               // RW: num okay Rx ctrl pkts
-  uint8         nRxCtrlAck;            // RW: num okay Rx ctrl pkts Acked
-  uint8         nRxNok;                // RW: num not okay Rx pkts
-  uint8         nRxIgn;                // RW: num okay Rx pkts ignored
-  uint8         nRxEmpty;              // RW: num okay Rx pkts with no payload
-  uint8         nRxBufFull;            // RW: num pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  pktStat_t     pktStatus;             // RW: last pkt status and timestamp
-  uint32        timeStamp;             // R:  timestamp of first Rx pkt (Peripheral Only)
-} connOut_t;
-
-// Generic Rx Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nRxOk;                 // RW: num okay Rx pkts
-  uint16        nRxNok;                // RW: num not okay Rx pkts
-  uint16        nRxBufFull;            // RW: num ADV*_IND pkts discarded
-  uint8         lastRssi;              // R:  RSSI of last Rx pkt
-  uint8         reserved;              // unused
-  uint32        timeStamp;             // R:  timestamp of first Rx pkt (Peripheral Only)
-} rxOut_t;
-
-// Test Tx Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        nTx;                   // RW: num Tx pkts
-  uint16        reserved;              // unused - for alignment only
-} txOut_t;
-
-/*
-** BLE Radio Immediate Commands
-*/
-
-// Update Advertising Data Command
-PACKED_TYPEDEF_STRUCT
-{
-  uint16        cmdNum;                // W:  radio command number
-  uint8         dataType;              // W:  Adv or Scan Rsp data
-  uint8         dataLen;               // W:  length of update
-  uint8        *pData;                 // W:  ptr to update data
-  uint8        *pParams;               // W:  ptr to update parameters
-} bleUpdateAdvData_t;
-
-
-/*
-** BLE5
-*/
-
-// CMD_BLE5_RADIO_SETUP: BLE5 Radio Setup Command
-PACKED_ALIGNED_TYPEDEF_STRUCT
-{
-  rfOpCmd_t      rfOpCmd;              // radio command common structure
-  uint8          defaultPhy;           // for non-BLE commands only
-  uint8          reserved;             // unused
-  uint16         config;               // bias, trim, FS power up, etc.
-  uint16         txPower;              // IB, GC, tempCoeff
-  regOverride_t *pRegOverrideCommon;   // ptr to list of common overrides
-  regOverride_t *pRegOverride1M;       // ptr to list of 1M overrides
-  regOverride_t *pRegOverride2M;       // ptr to list of 2M overrides
-  regOverride_t *pRegOverrideCoded;    // ptr to list of Coded overrides
-  /* The define EM_CC1354P10_1_LP is needed since it is High PA device for
-     other stacks (not for BLE) and thus needed to be defined */
-#if defined(CC13X2P) || defined(EM_CC1354P10_1_LP)
-  regOverride_t *pRegOverrideTxStd;
-  regOverride_t *pRegOverrideTx20;     // ptr to list of High Gain overrides (only applicable on CC1352P)
-#endif
-} rfOpCmd_Ble5RadioSetup_t;
-
-#endif //USE_RCL
 /*******************************************************************************
  * LOCAL VARIABLES
  */
@@ -1143,7 +537,7 @@ PACKED_ALIGNED_TYPEDEF_STRUCT
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
-#ifdef USE_RCL
+
 // transmit queue
 extern txDataQ_t *txDataQ;
 extern rxDataQ_t rxDataQ;
@@ -1162,39 +556,6 @@ extern RCL_CtxGenericRx      rxTestParam;
 extern RCL_StatsGenericRx    rxTestOut;
 extern RCL_CmdBle5TxTest     txTestCmd;
 
-#else //!USE_RCL
-// Receive Queue
-extern dataQ_t *txDataQ;
-extern dataEntryPtr_t rxRingBuf[NUM_RX_DATA_ENTRIES];
-
-// Advertising Data Structures
-extern const uint8      advChan[];
-extern const uint16     advEvt2Cmd[];
-
-extern connReqData_t    connReqData[];
-
-// Connection Data Structures
-extern ble5OpCmd_t      *linkCmd;
-extern linkParam_t      *linkParam;
-
-// Connection Output
-extern connOut_t        connOutput;
-
-// Direct Test Mode Data Structures
-extern ble5OpCmd_t      trxTestCmd;
-extern txTestParam_t    txTestParam;
-extern txOut_t          txTestOut;
-extern rxTestParam_t    rxTestParam;
-extern rxOut_t          rxTestOut;
-
-// Modem Tests (TELECO)
-extern rfOpCmd_TxTest_t txModemTestCmd;
-extern rfOpCmd_RxTest_t rxModemTestCmd;
-// RX command for sdaa module
-extern rfOpCmd_RxTest_t sdaaRxWindowCmd;
-extern rfOpCmd_freqSynthCtrl_t sdaaFsRfCmd;
-#endif
-
 /*******************************************************************************
  * APIs
  */
@@ -1206,34 +567,9 @@ extern void         *llSetupScanDataEntryQueue( void );
 extern void         *llSetupInitDataEntryQueue( void );
 extern void         *llSetupAdvDataEntryQueue( void );
 extern void         *llSetupConnRxDataEntryQueue( uint8 connId );
-#ifdef USE_RCL
 extern void          llClearRxDataEntry( void *, List_List * );
 extern void          llClearScanDataQueue( uint8 );
-#else
-// ISR Callbacks
-extern void cpe0IntCback( void );
-extern void cpe1IntCback( void );
-extern void hwIntCback( void );
 
-// Mailbox
-extern void llSetupMailbox( void );
-
-// RF HAL
-extern void llSetupRfHal( void );
-extern void llPatchCM0( void );
-
-// RAT Channel
-extern void llSetupRATChanCompare( uint8 ratChan, uint32 compareTime );
-extern void llRatChanCBack_A( void );
-extern void llRatChanCBack_B( void );
-extern void llRatChanCBack_C( void );
-extern void llRatChanCBack_D( void );
-
-// Data Processing
-extern uint8         llSetupCteSamplesEntryQueue( uint8 numBuffers );
-extern uint8         llFreeCteSamplesEntryQueue( void );
-extern void          llSetRfReportAodPackets( void );
-#endif
 
 /*******************************************************************************
  */

@@ -31,12 +31,10 @@
 /*******************************************************************************
  * EXTERNS
  */
-#ifndef CONFIG_SOC_CC2340R5
 
 // ROM's C Runtime initialization
 extern void ROM_Init( void );
 extern void FPB_Init( void );
 extern void CommonROM_Init( void );
-#endif
 
 #endif // ROM_H

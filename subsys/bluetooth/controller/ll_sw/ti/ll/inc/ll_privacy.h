@@ -33,10 +33,6 @@
  * INCLUDES
  */
 
-#ifdef USE_RCL
-#else
-#include "rf_hal.h"
-#endif
 #include "bcomdef.h"
 #include "ll.h"
 #include "ll_common.h"

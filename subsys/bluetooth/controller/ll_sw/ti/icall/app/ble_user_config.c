@@ -54,14 +54,9 @@
 #endif // CONTROLLER_ONLY
 #endif // SYSCFG
 
-#if defined(FREERTOS) || defined(CC33xx)
 #define Swi_restore SwiP_restore
 #define Swi_disable SwiP_disable
 #include <ti/drivers/dpl/SwiP.h>
-#else
-#include <ti/sysbios/knl/Swi.h>
-#include <ti/sysbios/BIOS.h>
-#endif // FREERTOS || CC33xx
 
 #ifndef CC23X0
 #if !defined(DeviceFamily_CC26X1)
@@ -95,13 +90,18 @@
 // Tx Power
 #define NUM_TX_POWER_VALUES (RF_BLE_TX_POWER_TABLE_SIZE - 1)
 
-// Override NOP
-#define OVERRIDE_NOP                   0xC0000001
-
 
 /*******************************************************************************
  * TYPEDEFS
  */
+// Use dynamic filter list when the device role is advertiser only and number of bond is greater than 5
+#if defined(DeviceFamily_CC27XX) || defined(DeviceFamily_CC23X0R5)
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG)) && !(CTRL_CONFIG & (SCAN_CFG | INIT_CFG)) // (If the device role is advertiser only)
+#if defined(GAP_BOND_MGR) && (GAP_BONDINGS_MAX > 5) // If number of bondings greater than 5
+#define USE_DFL
+#endif // (advertiser only)
+#endif // (number of bondings greater than 5)
+#endif // (supported devices)
 
 /*******************************************************************************
  * LOCAL VARIABLES
@@ -359,7 +359,12 @@ const stackSpecific_t bleStackConfig =
 #ifndef CC23X0
   .maxNumCteBuffers                     = MAX_NUM_CTE_BUFS,
 #endif
-  .advReportIncChannel                  = ADV_RPT_INC_CHANNEL
+  .advReportIncChannel                  = ADV_RPT_INC_CHANNEL,
+#ifdef USE_DFL
+  .useDFL                               = TRUE
+#else
+  .useDFL                               = FALSE
+#endif
 };
 
 uint16_t bleUserCfg_maxPduSize = MAX_PDU_SIZE;

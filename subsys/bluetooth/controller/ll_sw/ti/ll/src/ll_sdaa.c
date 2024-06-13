@@ -21,7 +21,6 @@
 */
 
 #ifdef SDAA_ENABLE
-#ifndef USE_RCL
 #include "ll_sdaa.h"
 #include "ll_rat.h"
 #include "ll.h"
@@ -1547,5 +1546,4 @@ uint8 llSDAASufficientTimeRXWindow(taskInfo_t *nextTask, uint32 *pStartTime)
     // the rxWinCmd task hasn't enough time to start relative to the next Task
     return FALSE;
 }
-#endif //USE_RCL
 #endif //SDAA_ENABLE

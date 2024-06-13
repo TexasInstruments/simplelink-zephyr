@@ -210,16 +210,9 @@ void llPeripheral_TaskEnd( void )
       case LL_TEST_MODE_TP_CON_MAS_BI_02:
         if ( connPtr->currentEvent > 10 )
         {
-#ifdef USE_RCL
           llClearRxDataEntry(&rxDataQ.multiBuffers, &rxDataQ.finishedBuffers);
           // Align the global Rx buffer list
           llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-#else
-          for (uint8 i=0; i<NUM_RX_DATA_ENTRIES; i++)
-          {
-            rxRingBuf[i].dataEntry.status = DATASTAT_FINISHED;
-          }
-#endif // USE_RCL
         }
         break;
 
@@ -233,33 +226,6 @@ void llPeripheral_TaskEnd( void )
   //       nRxOk when there's no room in the FIFO. When Auto-Flush is
   //       disabled and there's no room in the FIFO, only nRxBufFull is
   //       incremented for any kind of received packet.
-#ifndef USE_RCL
-  numPkts = ( connOutput.nRxOk      +
-              connOutput.nRxNok     +
-              connOutput.nRxEmpty   +
-              connOutput.nRxIgn     +
-              connOutput.nRxBufFull );
-
-  channel = linkCmd[connPtr->connId].chan;
-
-  // collect RX statistics
-  connPtr->rxStats.numRxOk         += connOutput.nRxOk;
-  connPtr->rxStats.numRxCtrl       += connOutput.nRxCtrl;
-  connPtr->rxStats.numRxCtrlAck    += connOutput.nRxCtrlAck;
-  connPtr->rxStats.numRxCrcErr     += connOutput.nRxNok;
-  connPtr->rxStats.numRxIgnored    += connOutput.nRxIgn;
-  connPtr->rxStats.numRxEmpty      += connOutput.nRxEmpty;
-  connPtr->rxStats.numRxBufFull    += connOutput.nRxBufFull;
-
-  // collect TX statistics
-  connPtr->txStats.numTx           += connOutput.nTx;
-  connPtr->txStats.numTxAck        += connOutput.nTxAck;
-  connPtr->txStats.numTxCtrl       += connOutput.nTxCtrl;
-  connPtr->txStats.numTxCtrlAck    += connOutput.nTxCtrlAck;
-  connPtr->txStats.numTxCtrlAckAck += connOutput.nTxCtrlAckAck;
-  connPtr->txStats.numTxRetrans    += connOutput.nTxRetrans;
-  connPtr->txStats.numTxEntryDone  += connOutput.nTxEntryDone;
-#else
   numPkts = ( connOutput.nRxOk      +
               connOutput.nRxNok     +
               connOutput.nRxEmpty   +
@@ -284,7 +250,6 @@ void llPeripheral_TaskEnd( void )
   connPtr->txStats.numTxCtrlAck    += connOutput.nTxCtlAck;
   connPtr->txStats.numTxRetrans    += connOutput.nTxRetrans;
   connPtr->txStats.numTxEntryDone  += connOutput.nTxDone;
-#endif
 
   // collect packet error information
   connPtr->perInfo.numEvents++;
@@ -301,21 +266,12 @@ void llPeripheral_TaskEnd( void )
   /*****************************************************/
   /************ Stop Last Connection's Timer ***********/
   /*****************************************************/
-#ifndef USE_RCL
-  // Clear the RAT handle timer.
-  MAP_llClearRatCompare();
-#endif
   // check if any data has been received
   // Note: numRxOk includes numRxCtrl
   // Note: numRxNotOk removed as 4.5.2 of spec says the LSTO is reset upon
   //       receipt of a "valid packet", which is taken to mean no CRC error.
-#ifdef USE_RCL
   if ( connOutput.nRxOk    || connOutput.nRxIgnored ||
        connOutput.nRxEmpty || connOutput.nRxFifoFull )
-#else
-  if ( connOutput.nRxOk    || connOutput.nRxIgn ||
-       connOutput.nRxEmpty || connOutput.nRxBufFull )
-#endif
   {
     connEvtStatus = LL_CONN_EVT_STAT_SUCCESS;
 
@@ -438,21 +394,12 @@ void llPeripheral_TaskEnd( void )
       // in that case we should increase the timeoutTime to make sure we don't miss the anchor.
       if (connPtr->firstPacket)
       {
-#ifdef USE_RCL
         linkCmd[connPtr->connId].relRxTimeoutTime =
-#else
-        linkParam[connPtr->connId].timeoutTime =
-#endif
                            (2 * connPtr->timerDrift)                                +
                            (2 * LL_JITTER_CORRECTION)                               +
                            LL_RX_RAMP_OVERHEAD                                      +
                            ((uint32)connPtr->curParam.winSize * RAT_TICKS_IN_625US) +
                            LL_RX_SYNCH_OVERHEAD;
-
-#ifndef USE_RCL
-        // set timeout trigger
-        SET_RFOP_TRIG_TYPE( linkParam[connPtr->connId].timeoutTrig, TRIGTYPE_REL_CMD_START );
-#endif
       }
     }
 
@@ -538,21 +485,13 @@ void llPeripheral_TaskEnd( void )
   {
     // check if the Peripheral has ACK'ed the Update and no Central retransmissions
     if ( (connPtr->updateSLPending == UPDATE_NEW_TRANS_PENDING) &&
-#ifdef USE_RCL
          (connOutput.nRxIgnored == 0) )
-#else
-         (connOutput.nRxIgn == 0) )
-#endif
     {
       // allow peripheral latency based on Central confirming Peripheral Ack to update
       connPtr->updateSLPending = UPDATE_PL_OKAY;
     }
     // check if the Peripheral has ACK'ed the update request
-#ifdef USE_RCL
     else if ( connOutput.nRxCtlAck != 0 )
-#else
-    else if ( connOutput.nRxCtrlAck != 0 )
-#endif
     {
       // indicate udpate control packet has been ACK'ed
       connPtr->updateSLPending = UPDATE_NEW_TRANS_PENDING;
@@ -563,20 +502,12 @@ void llPeripheral_TaskEnd( void )
   // Note: This bit is cleared at the start of a new task.
   // Note: The anchor capture will occur even if the RX FIFO was too full to
   //       accept the packet.
-#ifdef USE_RCL
   if ( connOutput.anchorValid )
-#else
-  if ( VALID_TIMESTAMP( connOutput.pktStatus ) )
-#endif
   {
     //GPIO_writeDio(HAL_GPIO_2, 1);
 
     // read/save the the anchor point capture from RAT
-#ifdef USE_RCL
     connPtr->llTask->anchorPoint = connOutput.anchorPoint;
-#else
-    connPtr->llTask->anchorPoint = connOutput.timeStamp;
-#endif
 
 #ifdef CC23X0
     /* TODO: Find characterized value */
@@ -597,11 +528,7 @@ void llPeripheral_TaskEnd( void )
 #endif // CC26X2 ||CC13X2 || CC13X4
 #endif
     // clear window widening
-#ifdef USE_RCL
     linkCmd[connPtr->connId].relRxTimeoutTime = 0;
-#else
-    linkParam[connPtr->connId].timeoutTime = 0;
-#endif
 #ifdef DEBUG_SW_TRACE
     DBG_PRINT0(DBGSYS, "");
     DBG_PRINTL1(DBGSYS, "PERIPHERAL AP VALID = 0x%08X", connPtr->llTask->anchorPoint );
@@ -615,18 +542,11 @@ void llPeripheral_TaskEnd( void )
     //GPIO_writeDio(HAL_GPIO_3, 1);
 
     // save last Timeout only when a miss has occurred to preserve timeoutTime
-#ifdef USE_RCL
     connPtr->lastTimeoutTime = linkCmd[connPtr->connId].relRxTimeoutTime;
-#else
-    connPtr->lastTimeoutTime = linkParam[connPtr->connId].timeoutTime;
-#endif
 
     // set the AP to last known start time
-#ifdef USE_RCL
     connPtr->llTask->anchorPoint = linkCmd[connPtr->connId].common.timing.absStartTime;
-#else
-    connPtr->llTask->anchorPoint = linkCmd[connPtr->connId].rfOpCmd.startTime;
-#endif // USE_RCL
+
     // disable peripheral latency
     connPtr->peripheralLatency = 0;
     connPtr->peripheralLatencyAllowed = FALSE;
@@ -664,11 +584,8 @@ void llPeripheral_TaskEnd( void )
   // Processing Tx data (if any)
   MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_POST_PROCESSING );
 
-#ifdef USE_RCL
   //align the RX buffers head and tail pointers with all other active connections
   llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-
-#endif // USE_RCL
 
   // Send the callback before calculating the next channel
   llSendConnEvtCallback(connEvtStatus, numPkts, connPtr);
@@ -684,7 +601,7 @@ void llPeripheral_TaskEnd( void )
   // update CTE state
 #ifdef RTLS_CTE
   MAP_llUpdateCteState( connPtr );
-#endif // USE_RCL
+#endif // RTLS_CTE
 
   // determine next task (if any) and schedule it
   MAP_llScheduler();
@@ -734,7 +651,6 @@ uint8 llSetupNextPeripheralEvent( void )
   ** Check for a Update RX Buffers length
   **
   */
-#ifdef USE_RCL
   if ( TST_FEATURE_FLAG( connPtr->lenInfo.lenFlags, REPLACE_RX_BUFFERS ) )
   {
     // Clear the flag
@@ -742,14 +658,9 @@ uint8 llSetupNextPeripheralEvent( void )
     // Check for update the RX buffers
     MAP_llReplaceRxBuffers( connPtr );
   }
-#endif
 
   // check if there's any TX data pending, and if so, disable peripheral latency
-#ifdef USE_RCL
   if ( RCL_TxBuffer_head(((txDataQ_t *)connPtr->pTxDataEntryQ)->rfDataBuffers) != NULL )
-#else
-  if ( ((dataEntryQ_t *)connPtr->pTxDataEntryQ)->pCurEntry != NULL )
-#endif
   {
     connPtr->peripheralLatency = 0;
   }
@@ -946,11 +857,7 @@ uint8 llSetupNextPeripheralEvent( void )
 #endif
   {
     // check if we received an anchor point or not
-#ifdef USE_RCL
     if ( connOutput.anchorValid )
-#else
-    if ( VALID_TIMESTAMP(connOutput.pktStatus) )
-#endif
     {
       applyExtraSCA = 0;
 
@@ -1000,7 +907,6 @@ uint8 llSetupNextPeripheralEvent( void )
   //       due to peripheral latency. It is used to figure out where the next event
   //       time is between the previous event and the next event (i.e. the event
   //       time given by (SL+1)*CI).
-#ifdef USE_RCL
   connPtr->llTask->lastStartTime = linkCmd[connPtr->connId].common.timing.absStartTime;
   linkCmd[connPtr->connId].common.timing.absStartTime = connPtr->llTask->anchorPoint -
                                                         connPtr->timerDrift;
@@ -1105,183 +1011,6 @@ uint8 llSetupNextPeripheralEvent( void )
       ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
       (2 * RAT_TICKS_IN_150US);
 
-#else // USE_RCL
-  connPtr->llTask->lastStartTime = linkCmd[connPtr->connId].rfOpCmd.startTime;
-
-  // setup the Start Time of the receive window
-  // Note: In the case we don't receive a packet at the first connection
-  //       event, (and thus, don't have an updated anchor point), this anchor
-  //       point will be used for finding the start of the connection event
-  //       after that. That is, the update is relative to the last valid anchor
-  //       point.
-  // Note: If the AP is valid, we have to adjust the AP by timer drift. If the
-  //       AP is not valid, we still have to adjust the AP based on the amount
-  //       of timer drift that results from a widened window. Since SL is
-  //       disabled when the AP is invalid (i.e. a RX Timeout means no packet
-  //       was received, and by the spec, SL is discontinued until one is),
-  //       the time to next event is the connection interval, and timer drift
-  //       was re-calculated based on (SL+1)*CI where SL=0.
-  linkCmd[connPtr->connId].rfOpCmd.startTime = connPtr->llTask->anchorPoint -
-                                               connPtr->timerDrift;
-
-  connPtr->llTask->startTime = linkCmd[connPtr->connId].rfOpCmd.startTime;
-
-  // set the Start Trigger
-  SET_RFOP_TRIG_TYPE( linkCmd[connPtr->connId].rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
-
-  // clear command status value
-  linkCmd[connPtr->connId].rfOpCmd.status = RFSTAT_IDLE;
-
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL Timer Drift  = 0x%08X", connPtr->timerDrift );
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL Start Time after TD = 0x%08X", linkCmd[connPtr->connId].rfOpCmd.startTime );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-  // setup the receiver Timeout time
-  // Note: If the AP is valid, then timeoutTime was previously cleared and any
-  //       previous window widening accumulation was therefore reset to zero.
-  // Note: Timeout trigger remains as it was when connection was formed.
-  linkParam[connPtr->connId].timeoutTime += (2 * connPtr->timerDrift);
-
-  // add the window size if a new connection or update connection is pending
-  if ( connPtr->pendingParamUpdate == PARAM_UPDATE_APPLIED )
-  {
-    linkParam[connPtr->connId].timeoutTime +=
-      ( (uint32)connPtr->curParam.winSize * RAT_TICKS_IN_625US );
-  }
-
-  // only back up start time by overhead if the anchor point is valid
-  // Note: If the anchor point isn't valid, then we have already accounted
-  //       for the overhead and jitter.
-  if ( VALID_TIMESTAMP( connOutput.pktStatus ) )
-  {
-#ifdef LL_TEST_MODE
-    if ( (llTestMode.testCase == LL_TEST_MODE_MISSED_SLV_EVT) &&
-         (--forcedMissedEvent == 0) )
-    {
-      forcedMissedEvent = FORCE_MISSED_EVENT_COUNT;
-    }
-    else
-#endif // LL_TEST_MODE
-    {
-      // account for radio startup overhead and jitter per the spec
-      linkCmd[connPtr->connId].rfOpCmd.startTime -= (LL_RX_RAMP_OVERHEAD + LL_JITTER_CORRECTION);
-    }
-
-    connPtr->llTask->startTime = linkCmd[connPtr->connId].rfOpCmd.startTime;
-
-    // override the lastStartTime based on this valid AP
-    // Note: Even though the post-processing associated with this connection
-    //       resulted in a Hit, it could have been based on a start time that
-    //       had been adjusted by many missed/skipped events. If so, then the
-    //       start time could be off when used as the lastST in subsequent
-    //       missed/skipped events as the Central's AP would have moved and this
-    //       would not have been takeen into account.
-    connPtr->llTask->lastStartTime = connPtr->llTask->startTime -
-                                     (timeToNextEvt * RAT_TICKS_IN_625US);
-
-    // additional widening based on whether the AP is valid
-    // Note: The overhead to receive a preamble and synch word to detect a
-    //       packet is added in case a packet arrives right at the end of the
-    //       receive window.
-    linkParam[connPtr->connId].timeoutTime += LL_RX_RAMP_OVERHEAD        +
-                                              (2 * LL_JITTER_CORRECTION) +
-                                              LL_RX_SYNCH_OVERHEAD;
-
-  // check if we're using coded
-  if ( connPtr->phyInfo.curPhy == LL_PHY_CODED )
-  {
-    // adjust backend of Rx window based on PHY
-    linkParam[connPtr->connId].timeoutTime += LL_RX_SYNCH_OVERHEAD_CODED;
-  }
-
-    // override last Timeout to current timeout time
-    // Note: Without updating lastTimeoutTime here, we could end up with an
-    //       ever increasing timeoutTime. This could happen when a hit occurs
-    //       after a series of of missed events. When a post-processing finally
-    //       occurs, we save lastTimeoutTime, which would a large value due to
-    //       all the previous missed events. Then timeoutTime would be updated.
-    //       If this were followed by a series of connection realignments, then
-    //       timeoutTime would be updated with an unsually large value. What's
-    //       more, under the right circumstances, it would never be reset to
-    //       the original base value even when hits occur, eventually leading
-    //       to a disconnect due to the below check after a miss.
-    connPtr->lastTimeoutTime = linkParam[connPtr->connId].timeoutTime;
-  }
-  else // RX Timeout
-  {
-    // Note: If we are in a new connection or at the start of an Update
-    //       Parameter control procedure, and firstPacket has not been received,
-    //       the timer drift is recalcualted based on the connection interval
-    //       (the new one for an Update Parameter control procedure), and the
-    //       rxTimeout still includes the window size, so this does not have to
-    //       be added in again.
-
-    // check if the window is wider than 1/2 the connection interval, per spec
-    // Note: Since we're comparing 1/2 Rx window to 1/2 CI, might as well
-    //       skip the divide by two, and compare directly.
-    // Note: Don't want to include the overhead pad for RX window, so take it
-    //       out before the compare to (CI - T_IFS).
-
-    // we should add the sync coded over head to the timeout to insure the followed condition
-    // in case we just changed the phy to coded and we got rx timeout
-    if ( phyWasChanged == LL_PHY_CODED )
-    {
-      // adjust backend of Rx window based on PHY
-      linkParam[connPtr->connId].timeoutTime += LL_RX_SYNCH_OVERHEAD_CODED;
-    }
-
-    // check if we're using coded
-    if ( (linkParam[connPtr->connId].timeoutTime -
-          (LL_RX_RAMP_OVERHEAD  +
-           LL_RX_SYNCH_OVERHEAD +
-           ((connPtr->phyInfo.curPhy == LL_PHY_CODED)?LL_RX_SYNCH_OVERHEAD_CODED:0))) >=
-         ((connPtr->curParam.connInterval * RAT_TICKS_IN_625US) - RAT_TICKS_IN_150US) )
-    {
-      // yes, so terminate immediately as the connection establishment failed
-      MAP_llConnTerminate( connPtr, LL_SUPERVISION_TIMEOUT_TERM );
-
-      return( LL_SETUP_NEXT_LINK_STATUS_TERMINATE );
-    }
-  }
-
-  // setup the connection event End Time relative to the timestamp
-  // Note: Per the spec, this an be as late as 150us (i.e. T_IFS) before the
-  //       next connection event. However, we need to end before that to allow
-  //       time to post-process. Also, Extended Data could potentially require
-  //       us to end the connection event at least 4.54ms before. In any case,
-  //       to allow some build time flexibility, the amount of back-off can
-  //       be set at build time using llConfig.connEvtCutoff.
-    linkParam[connPtr->connId].endTime =
-      ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
-      (2 * RAT_TICKS_IN_150US);
-
-
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL Start Time = 0x%08X", linkCmd[connPtr->connId].rfOpCmd.startTime );
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL TO Time    = 0x%08X", linkCmd[connPtr->connId].rfOpCmd.startTime+linkParam[connPtr->connId].timeoutTime );
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL End Time   = 0x%08X", linkCmd[connPtr->connId].rfOpCmd.startTime+linkParam[connPtr->connId].endTime );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-  // check if one packet per event is enabled
-  // Note: Only one Peripheral connection allowed.
-  if ( onePktPerEvt == TRUE )
-  {
-    // set limit for the number of packets to transmit before it ends
-    linkParam[connPtr->connId].maxTxPkt = ONE_PKT_PER_EVENT;
-  }
-  else // one packet per event is disabled
-  {
-    // so restore configured max number of packets
-    linkParam[connPtr->connId].maxTxPkt =
-      llConfigTable.maxPktsPerEvtPtr->maxSlvPktsPerEvt;
-  }
-#endif //USE_RCL
-
   // set Tx power for this command
   // Note: A value of zero means use default Tx power from Radio Setup.
   llSetPower((uint32 *)&linkCmd[connPtr->connId], curTxPowerVal, RfBleDpl_getTxPower(curTxPowerVal));
@@ -1337,15 +1066,14 @@ uint8 llSetupNextPeripheralEvent( void )
  */
 uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
 {
-  uint8 status = USUCCESS;
-
-  LL_ASSERT( connPtr != NULL );
-
-  if (connPtr == NULL)
+  // Sanity Check
+  if ( connPtr == NULL )
   {
-      status =  UFAILURE;
+    LL_ASSERT( connPtr != NULL );
+    return UFAILURE;
   }
 
+  uint8 status = USUCCESS;
   // check if there are any control packets ready for processing
   while (( status == USUCCESS ) && ( connPtr->ctrlPktInfo.ctrlPktCount > 0 ))
   {
@@ -1360,11 +1088,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         if ( connPtr->ctrlPktInfo.ctrlPktActive == TRUE )
         {
           // we have already place packet on TX FIFO, so check if its been ACK'ed
-#ifdef USE_RCL
           if ( connOutput.nTxCtlAck )
-#else
-          if ( connOutput.nTxCtrlAck )
-#endif
           {
             // yes, so process the termination
             // Note: No need to cleanup control packet info as we are done.
@@ -1406,7 +1130,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupTermInd( connPtr );
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_TERMINATE_IND);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -1440,7 +1164,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
 #ifdef LL_TEST_MODE
           if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BV_14 )
           {
-            llSetupVersionIndReq( connPtr );
+            MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND);
           }
           else if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_09 )
           {
@@ -1459,11 +1183,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
 
           // yes, so check if it has been transmitted yet
           // Note: This does not mean this packet has been ACK'ed or NACK'ed.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // set flag to discard all incoming data transmissions
             connPtr->rxDataEnabled = FALSE;
@@ -1516,11 +1236,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupEncRsp( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_ENC_RSP);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -1553,11 +1269,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           // yes, so check if it has been transmitted yet
           // Note: This only means the packet has been transmitted, not that it
           //       has been ACK'ed or NACK'ed.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // enable encryption once start encryption request is sent
             // Note: We can not receive data once the encryption control
@@ -1625,7 +1337,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           if ( connPtr->encInfo.SKValid == TRUE )
           {
             // so try to begin the last step of the encryption procedure
-            if ( MAP_llSetupStartEncReq( connPtr ) == TRUE )
+            if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_START_ENC_REQ) == TRUE )
             {
               // ready the flag that indicates that we've received the response
               connPtr->encInfo.startEncRspRcved = FALSE;
@@ -1684,11 +1396,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           // yes, so check if it has been transmitted yet
           // Note: This only means the packet has been transmitted, not that it
           //       has been ACK'ed or NACK'ed.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // packet TX'ed, so we are done with the encryption procedure
 
@@ -1812,11 +1520,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupStartEncRsp( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_START_ENC_RSP);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -1893,7 +1597,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           // so try to put it there
           // Note: All pending transmissions must also be finished before this
           //       packet is placed in the TX FIFO.
-          if ( MAP_llSetupPauseEncRsp( connPtr ) == TRUE )
+          if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PAUSE_ENC_RSP) == TRUE )
           {
             // clear the flag that indicates an Encryption Request has been
             // received, which is used by this control procedure to restart the
@@ -1937,11 +1641,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           //       the confirmed transmission of this will be used to qualify
           //       the related flags, but a new procedure will not be able to
           //       begin until this procedure completes, per the spec.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // disable encryption
             // Note: Never really enabled so this isn't necessary.
@@ -1949,7 +1649,6 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
 
             /**** UPDATE DEBUG INFO MODULE ****/
             (void)MAP_DbgInf_addConnEst(connPtr->connId, HCI_EVT_PERIPHERAL_ROLE, UFALSE);
-
 
             // set flag to allow outgoing data transmissions
             connPtr->txDataEnabled = TRUE;
@@ -1962,11 +1661,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           }
 
           // we have already place packet on TX FIFO, so check if its been ACK'ed
-#ifdef USE_RCL
           if ( connOutput.nTxCtlAck )
-#else
-          if ( connOutput.nTxCtrlAck )
-#endif
           {
             // done with this control packet, so remove from the processing
             // queue and drop through
@@ -2007,11 +1702,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupRejectInd( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_REJECT_IND);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2042,11 +1733,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         {
           // yes, so check if it has been transmitted yet
           // Note: This does not mean this packet has been ACK'ed or NACK'ed.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // enable SL
             connPtr->peripheralLatency = connPtr->peripheralLatencyValue;
@@ -2091,11 +1778,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           // so try to put it there; being active depends on a success
           // Note: There is no control procedure timeout associated with this
           //       control packet.
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupFeatureSetRsp( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_FEATURE_RSP);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2176,11 +1859,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupFeatureSetReq( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PERIPHERAL_FEATURE_REQ);
 
           // set flag while we wait for response
           // Note: It is okay to repeatedly set this flag in the event the
@@ -2279,11 +1958,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           connPtr->verExchange.verInfoSent = TRUE;
 
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupVersionIndReq( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_VERSION_IND);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2313,11 +1988,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         {
           // yes, so check if it has been transmitted yet
           // Note: This does not mean this packet has been ACK'ed or NACK'ed.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // it has been sent, so dequeue this control procedure
             MAP_llDequeueCtrlPkt( connPtr );
@@ -2344,11 +2015,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupPingReq( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PING_REQ);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2381,7 +2048,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           {
             // Sanity Check:
             // The rejected opcode should be LL_CTRL_CONNECTION_PARAM_REQ.
-            LL_ASSERT( connPtr->rejectIndExt.rejectOpcode == LL_CTRL_CONNECTION_PARAM_REQ );
+            LL_ASSERT( (connPtr->rejectIndExt).rejectOpcode == LL_CTRL_CONNECTION_PARAM_REQ );
 
             // clear reject indication extended received flag
             connPtr->connParamReqFlags.rejectIndExtRcved = FALSE;
@@ -2440,11 +2107,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupConnParamReq( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_CONNECTION_PARAM_REQ);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2521,11 +2184,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupConnParamRsp( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_CONNECTION_PARAM_RSP);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2562,11 +2221,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           //       the confirmed transmission of this will be used to qualify
           //       the related flags, but a new procedure will not be able to
           //       begin until this procedure completes, per the spec.
-#ifdef USE_RCL
           if ( connOutput.nTxCtl )
-#else
-          if ( connOutput.nTxCtrl )
-#endif
           {
             // disable encryption
             // Note: Never really enabled so this isn't necessary.
@@ -2586,11 +2241,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
           }
 
           // we have already place packet on TX FIFO, so check if its been ACK'ed
-#ifdef USE_RCL
           if ( connOutput.nTxCtlAck )
-#else
-          if ( connOutput.nTxCtrlAck )
-#endif
           {
             // remove control packet from processing queue and drop through
             MAP_llDequeueCtrlPkt( connPtr );
@@ -2617,11 +2268,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupRejectIndExt( connPtr );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_REJECT_EXT_IND);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2720,12 +2367,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupPhyCtrlPkt( connPtr,
-                                                                      LL_CTRL_PHY_REQ );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PHY_REQ);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2784,12 +2426,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupPhyCtrlPkt( connPtr,
-                                                                      LL_CTRL_PHY_RSP );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_PHY_RSP);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2873,12 +2510,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         else // control packet has not been put on the TX FIFO yet
         {
           // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupLenCtrlPkt( connPtr,
-                                                                      LL_CTRL_LENGTH_REQ );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
+          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCtrlPkt( connPtr, LL_CTRL_LENGTH_REQ);
 
           // Note: Two cases are possible:
           //       a) We successfully placed the packet in the TX FIFO.
@@ -2967,7 +2599,7 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         // try to place control packet in the TX FIFO
         // Note: Since there are no dependencies for this control packet, we
         //       do not have to bother with the active flag.
-        if ( MAP_llSetupUnknownRsp( connPtr ) == TRUE )
+        if ( MAP_llSetupCtrlPkt( connPtr, LL_CTRL_UNKNOWN_RSP) == TRUE )
         {
           // all we have to do is put this control packet on the TX FIFO, so
           // remove control packet from the processing queue and drop through
@@ -2995,7 +2627,8 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
       */
       case LL_CTRL_DUMMY_PLACE_HOLDER_TX_PENDING:
         // replace place holder with transmit place holder
-        MAP_llReplaceCtrlPkt( connPtr, connPtr->ctrlPktInfo.ctrlPktPending,
+        MAP_llReplaceCtrlPkt( connPtr,
+                              connPtr->ctrlPktInfo.ctrlPktPending,
                               LL_CTRL_UNDEFINED_PKT );
 
         // and make it active
@@ -3037,7 +2670,8 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
             // Note: All other types of collisions have already been handled.
 
             // replace place holder with control packet
-            MAP_llReplaceCtrlPkt( connPtr, connPtr->ctrlPktInfo.ctrlPktPending,
+            MAP_llReplaceCtrlPkt( connPtr,
+                                  connPtr->ctrlPktInfo.ctrlPktPending,
                                   LL_CTRL_UNDEFINED_PKT );
 
             // and indicate this packet has already been sent

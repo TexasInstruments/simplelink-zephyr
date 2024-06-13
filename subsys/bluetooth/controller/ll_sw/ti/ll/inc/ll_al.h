@@ -34,9 +34,6 @@
  * INCLUDES
  */
 
-#ifndef USE_RCL
-#include "rf_hal.h"
-#endif
 #include "bcomdef.h"
 #include "ll.h"
 #include "ll_config.h"
@@ -49,55 +46,43 @@
 // Note: Assumes alEntryFlags = accept list entry's flags.
 
 #define CLR_AL_ENTRY( alEntryFlags )                                           \
-  (alEntryFlags) = 0;
+  ((alEntryFlags) = 0)
 
 #define SET_AL_ENTRY_FREE( alEntryFlags )                                      \
-  (alEntryFlags) &= ~BV(0)
+  ((alEntryFlags) &= ~BV(0))
 
 #define SET_AL_ENTRY_BUSY( alEntryFlags )                                      \
-  (alEntryFlags) |= BV(0)
+  ((alEntryFlags) |= BV(0))
 
 #define IS_AL_ENTRY_FREE( alEntryFlags )                                       \
-  ((alEntryFlags) & BV(0)) == 0
+  (((alEntryFlags) & BV(0)) == 0)
 
 #define IS_AL_ENTRY_BUSY( alEntryFlags )                                       \
-  ((alEntryFlags) & BV(0)) == 1
+  (((alEntryFlags) & BV(0)) == 1)
 
 #define SET_AL_ENTRY_PUBLIC( alEntryFlags )                                    \
-  (alEntryFlags) &= ~BV(1)
+  ((alEntryFlags) &= ~BV(1))
 
 #define SET_AL_ENTRY_RANDOM( alEntryFlags )                                    \
-  (alEntryFlags) |= BV(1)
+  ((alEntryFlags) |= BV(1))
 
 #define GET_AL_ENTRY_ADDR_TYPE( alEntryFlags )                                 \
-  (((alEntryFlags) & BV(1)) >> 1)
+  ((((alEntryFlags) & BV(1)) >> 1))
 
 #define CLR_AL_ENTRY_IGNORE( alEntryFlags )                                    \
-  (alEntryFlags) &= ~BV(2)
+  ((alEntryFlags) &= ~BV(2))
 
 #define SET_AL_ENTRY_IGNORE( alEntryFlags )                                    \
-  (alEntryFlags) |= BV(2)
+  ((alEntryFlags) |= BV(2))
 
-#ifdef USE_RCL
 #define SET_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  (alEntryFlags) |= BV(3)
+  ((alEntryFlags) |= BV(3))
 
 #define CLR_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  (alEntryFlags) &= ~BV(3)
+  ((alEntryFlags) &= ~BV(3))
 
 #define GET_AL_TABLE_POINTER( pAlEntry )                                       \
     ((alTable_t *)((uint8 *)(pAlEntry) - sizeof(alTable_t) + sizeof(uint32_t)))
-
-#else
-#define SET_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  (alEntryFlags) |= BV(4)
-
-#define CLR_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  (alEntryFlags) &= ~BV(4)
-
-#define GET_AL_TABLE_POINTER( pAlEntry )                                       \
-    ((alTable_t *)((uint8 *)(pAlEntry) - sizeof(alTable_t)))
-#endif
 
 /*******************************************************************************
  * CONSTANTS
@@ -116,7 +101,7 @@
 #define BLE_MAX_NUM_AL_SCAN_ENTRIES    15
 #else
 #define BLE_MAX_NUM_AL_SCAN_ENTRIES    BLE_MAX_NUM_AL_ENTRIES
-#endif // USE_RCL
+#endif
 
 #define BLE_NUM_AL_ENTRIES_ZERO        0   // Error return value for number of accept list entries
 
@@ -129,7 +114,7 @@
 /*******************************************************************************
  * TYPEDEFS
  */
-#ifdef USE_RCL
+
 // BLE Filter List Flags
 // | 15..4 |        3       |        2          |      1       |      0       |
 // |  N/A  | Privacy Ignore | Duplicate Ignored | Address Type | Entry In Use |
@@ -156,35 +141,6 @@ PACKED_TYPEDEF_STRUCT
   // all 16 entries located here while pAlEntries will point to them
   // while the RCL filterList will point to the numEntries (start of the RCL_FilterList)
 } alTable_t;
-
-#else
-// BLE Accept List Flags
-// | 7..5 |        4       |  3  |        2         |      1       |      0       |
-// |  N/A | Privacy Ignore | N/A | AL Entry Ignored | Address Type | Entry In Use |
-//
-typedef uint8 alFlgs_t;
-
-// Accept List Entry
-// Note: The layout of this structure can not be changed.
-PACKED_TYPEDEF_STRUCT
-{
-  uint8    numEntries;                 // W:  number of accept list entries
-  alFlgs_t alFlags;                    // W:  accept list flags (RW for bit 2)
-  uint8    devAddr[BLE_BDADDR_SIZE];   // W:  BLE address
-} alEntry_t;
-
-// Accept List Entry Table
-// Note: The layout of this structure can be changed as long as pAlEntries is
-//       aligned on a word boundary.
-PACKED_TYPEDEF_STRUCT
-{
-  uint8     numAlEntries;
-  uint8     numBusyAlEntries;
-  uint16    reserve;
-  alEntry_t *pAlEntries;
-} alTable_t;
-
-#endif
 
 /*******************************************************************************
  * LOCAL VARIABLES

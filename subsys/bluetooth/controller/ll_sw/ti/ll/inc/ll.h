@@ -78,13 +78,8 @@ extern "C"
   (((uint32)(apto)) < ((uint32)(1+(sl))) * ((uint32)(ci)))
 
 /* Tx Power apis */
-#ifdef USE_RCL
 #define RFBLEDPL_TX_POWER_TYPE     RCL_Command_TxPower
 #define RFBLEDPL_TX_POWER_HW_TYPE  RCL_Command_TxPower
-#else
-#define RFBLEDPL_TX_POWER_TYPE     uint8
-#define RFBLEDPL_TX_POWER_HW_TYPE  uint16
-#endif //USE_RCL
 
 /*******************************************************************************
  * CONSTANTS
@@ -705,7 +700,6 @@ typedef struct
  */
 extern void LL_Init( uint8 taskId );
 
-
 /*******************************************************************************
  * @fn          LL_ProcessEvent
  *
@@ -725,7 +719,6 @@ extern void LL_Init( uint8 taskId );
 extern uint16 LL_ProcessEvent( uint8  task_id,
                                uint16 events );
 
-
 /*******************************************************************************
  * @fn          LL_IsRLActiveTasksRunning
  *
@@ -744,7 +737,6 @@ extern uint16 LL_ProcessEvent( uint8  task_id,
  */
 extern uint8 LL_IsRLActiveTasksRunning( void );
 
-
 /*******************************************************************************
  * @fn          LL_IsResolvingListInUsed
  *
@@ -762,7 +754,6 @@ extern uint8 LL_IsRLActiveTasksRunning( void );
  *              O.W return False.
  */
 extern uint8 LL_IsResolvingListInUsed( void );
-
 
 /*******************************************************************************
  * LL API for HCI
@@ -788,7 +779,6 @@ extern uint8 LL_IsResolvingListInUsed( void );
  */
 extern void *LL_TX_bm_alloc( uint16 size );
 
-
 /*******************************************************************************
  * @fn          LL_TX_bm_free API
  *
@@ -806,7 +796,6 @@ extern void *LL_TX_bm_alloc( uint16 size );
  * @return      None.
  */
 extern void LL_TX_bm_free( uint8* pBuf );
-
 
 /*******************************************************************************
  * @fn          LL_RX_bm_alloc API
@@ -827,7 +816,6 @@ extern void LL_TX_bm_free( uint8* pBuf );
  * @return      Pointer to buffer, or NULL.
  */
 extern void *LL_RX_bm_alloc( uint16 size );
-
 
 /*******************************************************************************
  * @fn          LL_Reset API
@@ -888,7 +876,6 @@ extern llStatus_t LL_initRNGNoise( void );
  */
 extern llStatus_t LL_ReadBDADDR( uint8 *bdAddr );
 
-
 /*******************************************************************************
  *
  * @fn          LL_SetRandomAddress API
@@ -944,7 +931,6 @@ extern llStatus_t LL_IsRandomAddressConfigured ( void );
  */
 extern llStatus_t LL_ClearAcceptList( void );
 
-
 /*******************************************************************************
  * @fn          LL_AddAcceptListDevice API
  *
@@ -988,7 +974,6 @@ extern llStatus_t LL_AddAcceptListDevice( uint8 *devAddr,
 extern llStatus_t  LL_RemoveAcceptListDevice( uint8 *devAddr,
                                             uint8  addrType );
 
-
 /*******************************************************************************
  * @fn          LL_ReadAlSize API
  *
@@ -1007,7 +992,6 @@ extern llStatus_t  LL_RemoveAcceptListDevice( uint8 *devAddr,
  */
 extern llStatus_t LL_ReadAlSize( uint8 *numEntries );
 
-
 /*******************************************************************************
  * @fn          LL_NumEmptyAlEntries API
  *
@@ -1025,7 +1009,6 @@ extern llStatus_t LL_ReadAlSize( uint8 *numEntries );
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_NumEmptyAlEntries( uint8 *numEmptyEntries );
-
 
 /*******************************************************************************
  * @fn          LL_Encrypt API
@@ -1053,7 +1036,6 @@ extern llStatus_t LL_Encrypt( uint8 *key,
                               uint8 *plaintextData,
                               uint8 *encryptedData );
 
-
 /*******************************************************************************
  * @fn          LL_Rand API
  *
@@ -1074,7 +1056,6 @@ extern llStatus_t LL_Encrypt( uint8 *key,
  */
 extern llStatus_t LL_Rand( uint8 *randData,
                            uint8  dataLen );
-
 
 /*******************************************************************************
  * @fn          LL_PseudoRand API
@@ -1097,7 +1078,6 @@ extern llStatus_t LL_Rand( uint8 *randData,
 extern llStatus_t LL_PseudoRand( uint8 *randData,
                                  uint8  dataLen );
 
-
 /*******************************************************************************
  * @fn          LL_ReadSupportedStates API
  *
@@ -1115,7 +1095,6 @@ extern llStatus_t LL_PseudoRand( uint8 *randData,
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_ReadSupportedStates( uint8 *states );
-
 
 /*******************************************************************************
  * @fn          LL_ReadLocalSupportedFeatures API
@@ -1137,7 +1116,6 @@ extern llStatus_t LL_ReadSupportedStates( uint8 *states );
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_ReadLocalSupportedFeatures( uint8 *featureSet );
-
 
 /*******************************************************************************
  * @fn          LL_ReadLocalVersionInfo API
@@ -1162,7 +1140,6 @@ extern llStatus_t LL_ReadLocalSupportedFeatures( uint8 *featureSet );
 extern llStatus_t LL_ReadLocalVersionInfo( uint8  *verNum,
                                            uint16 *comId,
                                            uint16 *subverNum );
-
 
 /*******************************************************************************
  * @fn          LL_CtrlToHostFlowControl API
@@ -1210,7 +1187,6 @@ extern llStatus_t LL_CtrlToHostFlowControl( uint8 mode );
  */
 extern llStatus_t LL_ReadRemoteVersionInfo( uint16 connId );
 
-
 /*******************************************************************************
  * @fn          LL_ReadTxPowerLevel
  *
@@ -1236,7 +1212,6 @@ llStatus_t LL_ReadTxPowerLevel( uint8  connId,
                                 uint8  type,
                                 int8  *txPower );
 
-
 /*******************************************************************************
  * @fn          LL_ReadChanMap API
  *
@@ -1258,7 +1233,6 @@ llStatus_t LL_ReadTxPowerLevel( uint8  connId,
  */
 extern llStatus_t LL_ReadChanMap( uint8  connId,
                                   uint8 *chanMap );
-
 
 /*******************************************************************************
  * @fn          LL_ReadRssi API
@@ -1285,7 +1259,6 @@ extern llStatus_t LL_ReadChanMap( uint8  connId,
 extern llStatus_t LL_ReadRssi( uint16  connId,
                                int8   *lastRssi );
 
-
 /*******************************************************************************
  * @fn          LL_Disconnect API
  *
@@ -1306,7 +1279,6 @@ extern llStatus_t LL_ReadRssi( uint16  connId,
  */
 extern llStatus_t LL_Disconnect( uint16 connId,
                                  uint8  reason );
-
 
 /*******************************************************************************
  * @fn          LL_TxData API
@@ -1367,7 +1339,6 @@ extern llStatus_t LL_TxData( uint16  connId,
                              uint16  len,
                              uint8   fragFlag );
 
-
 /*******************************************************************************
  * @fn          LL_DirectTestTxTest API
  *
@@ -1398,7 +1369,6 @@ extern llStatus_t LL_DirectTestTxTest( uint8 txChan,
                                        uint8 payloadType,
                                        uint8 txPhy );
 
-
 /*******************************************************************************
  * @fn          LL_DirectTestRxTest API
  *
@@ -1425,7 +1395,6 @@ extern llStatus_t LL_DirectTestTxTest( uint8 txChan,
 extern llStatus_t LL_DirectTestRxTest( uint8 rxChan,
                                        uint8 rxPhy );
 
-
 /*******************************************************************************
  * @fn          LL_DirectTestEnd API
  *
@@ -1448,7 +1417,6 @@ extern llStatus_t LL_DirectTestRxTest( uint8 rxChan,
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE
  */
 extern llStatus_t LL_DirectTestEnd( void );
-
 
 /*******************************************************************************
  * @fn          LL_SetAdvParam API
@@ -1486,7 +1454,6 @@ extern llStatus_t LL_SetAdvParam( uint16  advIntervalMin,
                                   uint8   advChanMap,
                                   uint8   advAlPolicy );
 
-
 /*******************************************************************************
  * @fn          LL_SetAdvData API
  *
@@ -1513,7 +1480,6 @@ extern llStatus_t LL_SetAdvParam( uint16  advIntervalMin,
 extern llStatus_t LL_SetAdvData( uint8  advDataLen,
                                  uint8 *advData );
 
-
 /*******************************************************************************
  * @fn          LL_SetScanRspData API
  *
@@ -1538,7 +1504,6 @@ extern llStatus_t LL_SetAdvData( uint8  advDataLen,
 extern llStatus_t LL_SetScanRspData( uint8  scanRspLen,
                                      uint8 *scanRspData );
 
-
 /*******************************************************************************
  * @fn          LL_SetAdvControl API
  *
@@ -1560,7 +1525,6 @@ extern llStatus_t LL_SetScanRspData( uint8  scanRspLen,
  */
 extern llStatus_t LL_SetAdvControl( uint8 advMode );
 
-
 /*******************************************************************************
  * @fn          LL_ReadAdvChanTxPower
  *
@@ -1580,7 +1544,6 @@ extern llStatus_t LL_SetAdvControl( uint8 advMode );
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_PARAM_OUT_OF_RANGE
  */
 extern llStatus_t LL_ReadAdvChanTxPower( int8 *txPower );
-
 
 /*******************************************************************************
  * @fn          LL_SetScanParam API
@@ -1610,7 +1573,6 @@ extern llStatus_t LL_SetScanParam( uint8  scanType,
                                    uint8  ownAddrType,
                                    uint8  advAlPolicy );
 
-
 /*******************************************************************************
  * @fn          LL_SetScanControl API
  *
@@ -1637,7 +1599,6 @@ extern llStatus_t LL_SetScanParam( uint8  scanType,
 extern llStatus_t LL_SetScanControl( uint8 scanMode,
                                      uint8 filterReports );
 
-
 /*******************************************************************************
  * @fn          LL_EncLtkReply API
  *
@@ -1662,7 +1623,6 @@ extern llStatus_t LL_SetScanControl( uint8 scanMode,
  */
 extern llStatus_t LL_EncLtkReply( uint16  connId,
                                   uint8  *key );
-
 
 /*******************************************************************************
  * @fn          LL_EncLtkNegReply API
@@ -1689,7 +1649,6 @@ extern llStatus_t LL_EncLtkReply( uint16  connId,
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_EncLtkNegReply( uint16 connId );
-
 
 /*******************************************************************************
  * @fn          LL_CreateConn API
@@ -1732,7 +1691,6 @@ extern llStatus_t LL_CreateConn( uint16  scanInterval,
                                  uint16  minLength,
                                  uint16  maxLength );
 
-
 /*******************************************************************************
  * @fn          LL_CreateConnCancel API
  *
@@ -1753,7 +1711,6 @@ extern llStatus_t LL_CreateConn( uint16  scanInterval,
  */
 extern llStatus_t LL_CreateConnCancel( void );
 
-
 /*******************************************************************************
  * @fn          LL_ConnActive
  *
@@ -1772,7 +1729,6 @@ extern llStatus_t LL_CreateConnCancel( void );
  *              LL_STATUS_ERROR_INACTIVE_CONNECTION
  */
 extern llStatus_t LL_ConnActive( uint16 connId );
-
 
 /*******************************************************************************
  * @fn          LL_ConnUpdate API
@@ -1807,7 +1763,6 @@ extern llStatus_t LL_ConnUpdate( uint16 connId,
                                  uint16 minLength,
                                  uint16 maxLength );
 
-
 /*******************************************************************************
  * @fn          LL_ChanMapUpdate API
  *
@@ -1832,7 +1787,6 @@ extern llStatus_t LL_ConnUpdate( uint16 connId,
  *              LL_STATUS_ERROR_ILLEGAL_PARAM_COMBINATION
  */
 extern llStatus_t LL_ChanMapUpdate( uint8 *chanMap , uint16 connID );
-
 
 /*******************************************************************************
  * @fn          LL_StartEncrypt API
@@ -1863,7 +1817,6 @@ extern llStatus_t LL_StartEncrypt( uint16  connId,
                                    uint8  *eDiv,
                                    uint8  *ltk );
 
-
 /*******************************************************************************
  * @fn          LL_ReadRemoteUsedFeatures API
  *
@@ -1881,7 +1834,6 @@ extern llStatus_t LL_StartEncrypt( uint16  connId,
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_ReadRemoteUsedFeatures( uint16 connId );
-
 
 /*******************************************************************************
  * @fn          LL_ReadAuthPayloadTimeout API
@@ -1902,7 +1854,6 @@ extern llStatus_t LL_ReadRemoteUsedFeatures( uint16 connId );
 extern llStatus_t LL_ReadAuthPayloadTimeout( uint16  connId,
                                              uint16 *apto );
 
-
 /*******************************************************************************
  * @fn          LL_WriteAuthPayloadTimeout API
  *
@@ -1922,7 +1873,6 @@ extern llStatus_t LL_ReadAuthPayloadTimeout( uint16  connId,
  */
 extern llStatus_t LL_WriteAuthPayloadTimeout( uint16 connId,
                                               uint16 apto );
-
 
 /*******************************************************************************
  * @fn          LL_RemoteConnParamReqReply API
@@ -1975,7 +1925,6 @@ extern llStatus_t LL_RemoteConnParamReqReply( uint16 connHandle,
 extern llStatus_t LL_RemoteConnParamReqNegReply( uint16 connHandle,
                                                  uint8  reason );
 
-
 /*******************************************************************************
  * @fn          LL_GetNumActiveConns API
  *
@@ -1993,7 +1942,6 @@ extern llStatus_t LL_RemoteConnParamReqNegReply( uint16 connHandle,
  * @return      llStatus_t
  */
 extern llStatus_t LL_GetNumActiveConns( uint8 *numActiveConns );
-
 
 // V4.2 - Extended Data Length
 
@@ -2019,7 +1967,6 @@ extern llStatus_t LL_SetDataLen( uint16 connHandle,
                                  uint16 txOctets,
                                  uint16 txTime);
 
-
 /*******************************************************************************
  * @fn          LL_ReadDefaultDataLen API
  *
@@ -2041,7 +1988,6 @@ extern llStatus_t LL_SetDataLen( uint16 connHandle,
 extern llStatus_t LL_ReadDefaultDataLen( uint16 *txOctets,
                                          uint16 *txTime );
 
-
 /*******************************************************************************
  * @fn          LL_WriteDefaultDataLen API
  *
@@ -2062,7 +2008,6 @@ extern llStatus_t LL_ReadDefaultDataLen( uint16 *txOctets,
  */
 extern llStatus_t LL_WriteDefaultDataLen( uint16 txOctets,
                                           uint16 txTime);
-
 
 /*******************************************************************************
  * @fn          LL_ReadMaxDataLen API
@@ -2138,7 +2083,6 @@ extern llStatus_t LL_AddDeviceToResolvingList( uint8  peerIdAddrType,
 extern llStatus_t LL_RemoveDeviceFromResolvingList( uint8  peerIdAddrType,
                                                     uint8 *peerIdAddr );
 
-
 /*******************************************************************************
  * @fn          LL_ClearResolvingList API
  *
@@ -2158,7 +2102,6 @@ extern llStatus_t LL_RemoveDeviceFromResolvingList( uint8  peerIdAddrType,
  */
 extern llStatus_t LL_ClearResolvingList( void );
 
-
 /*******************************************************************************
  * @fn          LL_ReadResolvingListSize API
  *
@@ -2177,7 +2120,6 @@ extern llStatus_t LL_ClearResolvingList( void );
  * @return      llStatus_t
  */
 extern llStatus_t LL_ReadResolvingListSize( uint8 *resolvingListSize );
-
 
 /*******************************************************************************
  * @fn          LL_ReadPeerResolvableAddress API
@@ -2205,7 +2147,6 @@ extern llStatus_t LL_ReadPeerResolvableAddress( uint8  peerIdAddrType,
                                                 uint8 *peerIdAddr,
                                                 uint8 *peerRPA );
 
-
 /*******************************************************************************
  * @fn          LL_ReadLocalResolvableAddress API
  *
@@ -2232,7 +2173,6 @@ extern llStatus_t LL_ReadLocalResolvableAddress( uint8  localIdAddrType,
                                                  uint8 *localIdAddr,
                                                  uint8 *localRPA );
 
-
 /*******************************************************************************
  * @fn          LL_SetAddressResolutionEnable API
  *
@@ -2253,7 +2193,6 @@ extern llStatus_t LL_ReadLocalResolvableAddress( uint8  localIdAddrType,
  * @return      llStatus_t
  */
 extern llStatus_t LL_SetAddressResolutionEnable( uint8 addrResolutionEnable );
-
 
 /*******************************************************************************
  * @fn          LL_SetResolvablePrivateAddressTimeout API
@@ -2276,7 +2215,6 @@ extern llStatus_t LL_SetAddressResolutionEnable( uint8 addrResolutionEnable );
  * @return      llStatus_t
  */
 extern llStatus_t LL_SetResolvablePrivateAddressTimeout( uint16 rpaTimeout );
-
 
 /*******************************************************************************
  * @fn          LL_SetPrivacyMode API
@@ -2303,7 +2241,6 @@ extern llStatus_t LL_SetPrivacyMode( uint8  peerIdAddrType,
                                      uint8 *peerIdAddr,
                                      uint8  privacyMode );
 
-
 // V4.2 - Secure Connections
 
 /*******************************************************************************
@@ -2328,7 +2265,6 @@ extern llStatus_t LL_SetPrivacyMode( uint8  peerIdAddrType,
  * @return      hciStatus_t
  */
 extern llStatus_t LL_ReadLocalP256PublicKeyCmd( void );
-
 
 /*******************************************************************************
  * @fn          LL_GenerateDHKeyCmd API
@@ -2355,7 +2291,6 @@ extern llStatus_t LL_ReadLocalP256PublicKeyCmd( void );
  */
 extern llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey );
 
-
 // V5.0 - 2M and Coded PHY
 
 /*******************************************************************************
@@ -2379,7 +2314,6 @@ extern llStatus_t LL_ReadPhy( uint16  connHandle,
                               uint8  *txPhy,
                               uint8  *rxPhy );
 
-
 /*******************************************************************************
  * @fn          LL_SetDefaultPhy API
  *
@@ -2402,7 +2336,6 @@ extern llStatus_t LL_ReadPhy( uint16  connHandle,
 extern llStatus_t LL_SetDefaultPhy( uint8 allPhys,
                                     uint8 txPhy,
                                     uint8 rxPhy );
-
 
 /*******************************************************************************
  * @fn          LL_SetPhy API
@@ -2430,7 +2363,6 @@ extern llStatus_t LL_SetPhy( uint16 connHandle,
                              uint8  rxPhy,
                              uint16 phyOpts );
 
-
 /*******************************************************************************
  * @fn          LL_EnhancedRxTest API
  *
@@ -2454,7 +2386,6 @@ extern llStatus_t LL_SetPhy( uint16 connHandle,
 extern llStatus_t LL_EnhancedRxTest( uint8 rxChan,
                                      uint8 rxPhy,
                                      uint8 modIndex );
-
 
 /*******************************************************************************
  * @fn          LL_EnhancedTxTest API
@@ -2514,7 +2445,6 @@ extern llStatus_t LL_EnhancedCteRxTest( uint8 rxChan,
                                         uint8 slotDurations,
                                         uint8 length,
                                         uint8 *pAntenna);
-
 
 /*******************************************************************************
  * @fn          LL_EnhancedCteTxTest API
@@ -2612,7 +2542,6 @@ extern llStatus_t LE_ReadRfPathCompCmd( int16 *txPathParam,
  */
 extern llStatus_t LE_WriteRfPathCompCmd( int16 txPathParam,
                                          int16 rxPathParam );
-
 
 /*******************************************************************************
  * @fn          LE_SetConnectionCteReceiveParams API
@@ -2859,7 +2788,6 @@ extern llStatus_t LE_SetConnectionlessCteTransmitParams( uint8 advHandle,
                                                          uint8 length,
                                                          uint8 *pAntenna);
 
-
 /*********************************************************************
  * @fn      LE_SetConnectionlessCteTransmitEnable
  *
@@ -3082,7 +3010,6 @@ extern llStatus_t LE_SetConnectionlessIqSamplingEnable( uint16 syncHandle,
 extern llStatus_t LL_EXT_SetRxGain( uint8  rxGain,
                                     uint8 *cmdComplete );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetTxPower Vendor Specific API
  *
@@ -3162,7 +3089,6 @@ extern llStatus_t LL_EXT_SetTxPowerDbm( int8   txPowerDbm,
  */
 extern llStatus_t LL_EXT_OnePacketPerEvent( uint8 control );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_ClkDivOnHalt Vendor Specific API
  *
@@ -3184,7 +3110,6 @@ extern llStatus_t LL_EXT_OnePacketPerEvent( uint8 control );
  */
 extern llStatus_t LL_EXT_ClkDivOnHalt( uint8 control );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_DeclareNvUsage Vendor Specific API
  *
@@ -3203,7 +3128,6 @@ extern llStatus_t LL_EXT_ClkDivOnHalt( uint8 control );
  *              LL_STATUS_ERROR_COMMAND_DISALLOWED
  */
 extern llStatus_t LL_EXT_DeclareNvUsage( uint8 mode );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_Decrypt API
@@ -3231,7 +3155,6 @@ extern llStatus_t LL_EXT_Decrypt( uint8 *key,
                                   uint8 *encryptedData,
                                   uint8 *plaintextData );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetLocalSupportedFeatures API
  *
@@ -3254,7 +3177,6 @@ extern llStatus_t LL_EXT_Decrypt( uint8 *key,
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_EXT_SetLocalSupportedFeatures( uint8 *featureSet );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_SetFastTxResponseTime API
@@ -3281,7 +3203,6 @@ extern llStatus_t LL_EXT_SetLocalSupportedFeatures( uint8 *featureSet );
  */
 extern llStatus_t LL_EXT_SetFastTxResponseTime( uint8 control );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetPeripheralLatencyOverride API
  *
@@ -3303,7 +3224,6 @@ extern llStatus_t LL_EXT_SetFastTxResponseTime( uint8 control );
  *              LL_STATUS_ERROR_BAD_PARAMETER
  */
 extern llStatus_t LL_EXT_SetPeripheralLatencyOverride( uint8 control );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_ModemTestTx
@@ -3334,7 +3254,6 @@ extern llStatus_t LL_EXT_SetPeripheralLatencyOverride( uint8 control );
 extern llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
                                       uint8 rfChan );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_ModemHopTestTx
  *
@@ -3362,7 +3281,6 @@ extern llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
  */
 extern llStatus_t LL_EXT_ModemHopTestTx( void );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_ModemTestRx
  *
@@ -3389,7 +3307,6 @@ extern llStatus_t LL_EXT_ModemHopTestTx( void );
  *              LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE
  */
 extern llStatus_t LL_EXT_ModemTestRx( uint8 rxChan );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_EnhancedModemTestTx
@@ -3426,7 +3343,6 @@ extern llStatus_t LL_EXT_EnhancedModemTestTx( uint8 cwMode,
                                               uint8 rfPhy,
                                               uint8 rfChan );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_EnhancedModemHopTestTx
  *
@@ -3461,7 +3377,6 @@ extern llStatus_t LL_EXT_EnhancedModemHopTestTx( uint8 payloadLen,
                                                  uint8 payloadType,
                                                  uint8 rfPhy );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_EnhancedModemTestRx
  *
@@ -3492,7 +3407,6 @@ extern llStatus_t LL_EXT_EnhancedModemHopTestTx( uint8 payloadLen,
 extern llStatus_t LL_EXT_EnhancedModemTestRx( uint8 rfPhy,
                                               uint8 rfChan );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_EndModemTest
  *
@@ -3510,7 +3424,6 @@ extern llStatus_t LL_EXT_EnhancedModemTestRx( uint8 rfPhy,
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE
  */
 extern llStatus_t LL_EXT_EndModemTest( void );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_SetBDADDR
@@ -3534,7 +3447,6 @@ extern llStatus_t LL_EXT_EndModemTest( void );
  *              LL_STATUS_ERROR_COMMAND_DISALLOWED
  */
 extern llStatus_t LL_EXT_SetBDADDR( uint8 *bdAddr );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_SetSCA
@@ -3565,7 +3477,6 @@ extern llStatus_t LL_EXT_SetBDADDR( uint8 *bdAddr );
  */
 extern llStatus_t LL_EXT_SetSCA( uint16 scaInPPM );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetFreqTune
  *
@@ -3587,7 +3498,6 @@ extern llStatus_t LL_EXT_SetSCA( uint16 scaInPPM );
  */
 extern llStatus_t LL_EXT_SetFreqTune( uint8 step );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SaveFreqTune
  *
@@ -3607,7 +3517,6 @@ extern llStatus_t LL_EXT_SetFreqTune( uint8 step );
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_COMMAND_DISALLOWED
  */
 extern llStatus_t LL_EXT_SaveFreqTune( void );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_SetMaxDtmTxPower Vendor Specific API
@@ -3715,7 +3624,6 @@ extern llStatus_t LL_EXT_SetMaxDtmTxPowerDbm( int8   txPowerDbm,
 extern llStatus_t LL_EXT_MapPmIoPort( uint8 ioPort,
                                       uint8 ioPin );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_DisconnectImmed Vendor Specific API
  *
@@ -3736,7 +3644,6 @@ extern llStatus_t LL_EXT_MapPmIoPort( uint8 ioPort,
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_INACTIVE_CONNECTION
  */
 extern llStatus_t LL_EXT_DisconnectImmed( uint16 connId );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_PacketErrorRate Vendor Specific API
@@ -3763,7 +3670,6 @@ extern llStatus_t LL_EXT_DisconnectImmed( uint16 connId );
  */
 extern llStatus_t LL_EXT_PacketErrorRate( uint16 connId,
                                           uint8  command );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_PERbyChan Vendor Specific API
@@ -3795,7 +3701,6 @@ extern llStatus_t LL_EXT_PacketErrorRate( uint16 connId,
 extern llStatus_t LL_EXT_PERbyChan( uint16       connId,
                                     perByChan_t *perByChan );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_ExtendRfRange Vendor Specific API
  *
@@ -3813,7 +3718,6 @@ extern llStatus_t LL_EXT_PERbyChan( uint16       connId,
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_EXT_ExtendRfRange( uint8 *cmdComplete );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_HaltDuringRf Vendor Specific API
@@ -3834,7 +3738,6 @@ extern llStatus_t LL_EXT_ExtendRfRange( uint8 *cmdComplete );
  *              LL_STATUS_ERROR_BAD_PARAMETER
  */
 extern llStatus_t LL_EXT_HaltDuringRf( uint8 mode );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_BuildRevision Vendor Specific API
@@ -3859,7 +3762,6 @@ extern llStatus_t LL_EXT_BuildRevision( uint8   mode,
                                         uint16  userRevNum,
                                         uint8  *buildRev );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_ResetSystem Vendor Specific API
  *
@@ -3876,7 +3778,6 @@ extern llStatus_t LL_EXT_BuildRevision( uint8   mode,
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_BAD_PARAMETER
  */
 extern llStatus_t LL_EXT_ResetSystem( uint8 mode );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_LLTestMode Vendor Specific API
@@ -3895,7 +3796,6 @@ extern llStatus_t LL_EXT_ResetSystem( uint8 mode );
  */
 extern llStatus_t LL_EXT_LLTestMode( uint8 testCase );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_OverlappedProcessing Vendor Specific API
  *
@@ -3913,7 +3813,6 @@ extern llStatus_t LL_EXT_LLTestMode( uint8 testCase );
  * @return      LL_STATUS_SUCCESS, LL_ERROR_CODE_INVALID_HCI_CMD_PARAMS
  */
 extern llStatus_t LL_EXT_OverlappedProcessing( uint8 mode );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_NumComplPktsLimit Vendor Specific API
@@ -3939,7 +3838,6 @@ extern llStatus_t LL_EXT_OverlappedProcessing( uint8 mode );
  */
 extern llStatus_t LL_EXT_NumComplPktsLimit( uint8 limit,
                                             uint8 flushOnEvt );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_GetConnInfo Vendor Specific API
@@ -4146,7 +4044,6 @@ extern llStatus_t LL_EXT_SetMaxDataLen( uint16 txOctets,
                                         uint16 rxOctets,
                                         uint16 rxTime );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetDtmTxPktCnt API
  *
@@ -4163,7 +4060,6 @@ extern llStatus_t LL_EXT_SetMaxDataLen( uint16 txOctets,
  * @return      llStatus_t
  */
 extern llStatus_t LL_EXT_SetDtmTxPktCnt( uint16 txPktCnt );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_ReadRandomAddress API
@@ -4204,8 +4100,6 @@ extern llStatus_t LL_EXT_ReadRandomAddress( uint8 *bdAddr );
  *
  * @return      LL_STATUS_SUCCESS
  */
-
-
 extern llStatus_t LL_EXT_SetVirtualAdvAddr( uint8 advHandle , uint8 *bdAddr );
 
 /*******************************************************************************
@@ -4317,7 +4211,6 @@ extern llStatus_t LL_EXT_GetTxStats( uint16 connId, uint8 command );
  */
 extern llStatus_t LL_EXT_GetCoexStats( uint8 command );
 
-
 /*
 **  LL Callbacks to HCI
 */
@@ -4351,16 +4244,11 @@ extern llStatus_t LL_EXT_GetCoexStats( uint8 command );
  *
  * @return      None.
  */
-extern void LL_ConnectionCompleteCback( uint8   reasonCode,
-                                        uint16  connId,
-                                        uint8   role,
-                                        uint8   peerAddrType,
-                                        uint8  *peerAddr,
-                                        uint16  connInterval,
-                                        uint16  peripheralLatency,
-                                        uint16  connTimeout,
-                                        uint8   clockAccuracy );
-
+void LL_ConnectionCompleteCback( uint8 reasonCode, uint16 connHandle,
+                                 uint8 role, uint8 peerAddrType,
+                                 uint8 *peerAddr, uint16 connInterval,
+                                 uint16 peripheralLatency, uint16 connTimeout,
+                                 uint8 clockAccuracy );
 
 /*******************************************************************************
  * @fn          LL_EnhancedConnectionCompleteCback Callback
@@ -4396,18 +4284,13 @@ extern void LL_ConnectionCompleteCback( uint8   reasonCode,
  *
  * @return      None.
  */
-extern void LL_EnhancedConnectionCompleteCback( uint8   reasonCode,
-                                                uint16  connId,
-                                                uint8   role,
-                                                uint8   peerAddrType,
-                                                uint8  *peerAddr,
-                                                uint8  *localRPA,
-                                                uint8  *peerRPA,
-                                                uint16  connInterval,
-                                                uint16  peripheralLatency,
-                                                uint16  connTimeout,
-                                                uint8   clockAccuracy );
-
+void LL_EnhancedConnectionCompleteCback( uint8 reasonCode, uint16 connHandle,
+                                         uint8 role, uint8 peerAddrType,
+                                         uint8 *peerAddr, uint8 *localRPA,
+                                         uint8 *peerRPA, uint16 connInterval,
+                                         uint16 peripheralLatency,
+                                         uint16 connTimeout,
+                                         uint8 clockAccuracy );
 
 /*******************************************************************************
  * @fn          LL_DisconnectCback Callback
@@ -4427,9 +4310,7 @@ extern void LL_EnhancedConnectionCompleteCback( uint8   reasonCode,
  *
  * @return      None.
  */
-extern void LL_DisconnectCback( uint16 connId,
-                                uint8  reason );
-
+void LL_DisconnectCback( uint16 connHandle, uint8 reasonCode );
 
 /*******************************************************************************
  * @fn          LL_ConnParamUpdateCback Callback
@@ -4457,11 +4338,10 @@ extern void LL_DisconnectCback( uint16 connId,
  *
  * @return      None.
  */
-extern void LL_ConnParamUpdateCback( llStatus_t status,
-                                     uint16     connId,
-                                     uint16     connInterval,
-                                     uint16     connLatency,
-                                     uint16     connTimeout );
+void LL_ConnParamUpdateCback( llStatus_t status, uint16 connHandle,
+                              uint16 connInterval, uint16 connLatency,
+                              uint16 connTimeout );
+
 /*******************************************************************************
  * @fn          LL_ConnParamUpdateRejectCback Callback
  *
@@ -4484,11 +4364,9 @@ extern void LL_ConnParamUpdateCback( llStatus_t status,
  *
  * @return      None.
  */
-extern void LL_ConnParamUpdateRejectCback(  llStatus_t status,
-                                            uint16     connHandle,
-                                            uint16     connInterval,
-                                            uint16     connLatency,
-                                            uint16     connTimeout );
+void LL_ConnParamUpdateRejectCback( llStatus_t status, uint16 connHandle,
+                                    uint16 connInterval, uint16 connLatency,
+                                    uint16 connTimeout );
 
 /*******************************************************************************
  * @fn          LL_ReadRemoteVersionInfoCback Callback
@@ -4512,12 +4390,9 @@ extern void LL_ConnParamUpdateRejectCback(  llStatus_t status,
  *
  * @return      None.
  */
-extern void LL_ReadRemoteVersionInfoCback( uint8  status,
-                                           uint16 connId,
-                                           uint8  verNum,
-                                           uint16 comId,
-                                           uint16 subverNum );
-
+void LL_ReadRemoteVersionInfoCback( uint8 status, uint16 connHandle,
+                                    uint8 verNum, uint16 comId,
+                                    uint16 subverNum );
 
 /*******************************************************************************
  * @fn          LL_EncChangeCback Callback
@@ -4542,10 +4417,7 @@ extern void LL_ReadRemoteVersionInfoCback( uint8  status,
  *
  * @return      None.
  */
-extern void LL_EncChangeCback( uint16 connId,
-                               uint8  reason,
-                               uint8  encEnab );
-
+void LL_EncChangeCback( uint16 connHandle, uint8 reason, uint8 encEnab );
 
 /*******************************************************************************
  * @fn          LL_EncKeyRefreshCback Callback
@@ -4566,9 +4438,7 @@ extern void LL_EncChangeCback( uint16 connId,
  *
  * @return      None.
  */
-extern void LL_EncKeyRefreshCback( uint16 connId,
-                                   uint8  reason );
-
+void LL_EncKeyRefreshCback( uint16 connHandle, uint8 reason );
 
 /*******************************************************************************
  * @fn          LL_AdvReportCback Callback
@@ -4592,13 +4462,8 @@ extern void LL_EncKeyRefreshCback( uint16 connId,
  *
  * @return      None.
  */
-extern void LL_AdvReportCback( uint8  eventType,
-                               uint8  advAddrType,
-                               uint8 *advAddr,
-                               uint8  dataLen,
-                               uint8 *data,
-                               int8   rssi );
-
+void LL_AdvReportCback( uint8 advEvt, uint8 advAddrType, uint8 *advAddr,
+                        uint8 dataLen, uint8 *advData, int8 rssi );
 
 /*******************************************************************************
  * @fn          LL_ReadRemoteUsedFeaturesCompleteCback Callback
@@ -4618,10 +4483,9 @@ extern void LL_AdvReportCback( uint8  eventType,
  *
  * @return      None.
  */
-extern void LL_ReadRemoteUsedFeaturesCompleteCback( uint8   status,
-                                                    uint16  connId,
-                                                    uint8  *featureSet );
-
+void LL_ReadRemoteUsedFeaturesCompleteCback( uint8 status,
+                                             uint16 connHandle,
+                                             uint8 *featureSet );
 
 /*******************************************************************************
  * @fn          LL_EncLtkReqCback Callback
@@ -4642,10 +4506,7 @@ extern void LL_ReadRemoteUsedFeaturesCompleteCback( uint8   status,
  *
  * @return      None.
  */
-extern void LL_EncLtkReqCback( uint16  connId,
-                               uint8  *randNum,
-                               uint8  *encDiv );
-
+void LL_EncLtkReqCback( uint16 connHandle, uint8 *randNum, uint8 *encDiv );
 
 /*******************************************************************************
  * @fn          LL_DirectTestEndDone Callback
@@ -4665,9 +4526,7 @@ extern void LL_EncLtkReqCback( uint16  connId,
  *
  * @return      LL_STATUS_SUCCESS
  */
-extern void LL_DirectTestEndDoneCback( uint16 numPackets,
-                                       uint8  mode );
-
+void LL_DirectTestEndDoneCback( uint16 numPackets, uint8 mode );
 
 /*******************************************************************************
  * @fn          LL_TxDataCompleteCback Callback
@@ -4688,7 +4547,6 @@ extern void LL_DirectTestEndDoneCback( uint16 numPackets,
  ******************************************************************************/
 extern void LL_TxDataCompleteCback( uint16  connId,
                                     uint8  *pBuf );
-
 
 /*******************************************************************************
  * @fn          LL_RxDataCompleteCback Callback
@@ -4723,7 +4581,6 @@ extern void LL_RxDataCompleteCback( uint16  connId,
                                     uint8   fragFlag,
                                     int8    rssi );
 
-
 /*******************************************************************************
  * @fn          LL_RandCback API
  *
@@ -4744,7 +4601,6 @@ extern void LL_RxDataCompleteCback( uint16  connId,
  */
 extern void LL_RandCback( uint8 *randData );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetRxGainCback Callback
  *
@@ -4763,7 +4619,6 @@ extern void LL_RandCback( uint8 *randData );
  */
 extern void LL_EXT_SetRxGainCback( void );
 
-
 /*******************************************************************************
  * @fn          LL_EXT_SetTxPowerCback Callback
  *
@@ -4781,7 +4636,6 @@ extern void LL_EXT_SetRxGainCback( void );
  * @return      None.
  */
 extern void LL_EXT_SetTxPowerCback( void );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_PacketErrorRateCback Callback
@@ -4809,7 +4663,6 @@ extern void LL_EXT_PacketErrorRateCback( uint16 numPkts,
                                          uint16 numCrcErr,
                                          uint16 numEvents,
                                          uint16 numMissedEvts );
-
 
 /*******************************************************************************
  * @fn          LL_EXT_ExtendRfRangeCback Callback
@@ -4849,7 +4702,7 @@ extern void LL_EXT_ExtendRfRangeCback( void );
  *
  * @return      None.
  */
-extern void LL_DataLenExceedEventCback( uint8 status, uint16 connHandle, uint16 cid );
+void LL_DataLenExceedEventCback( uint8 status, uint16 connHandle, uint16 cid );
 
 /*******************************************************************************
  * @fn          LL_AuthPayloadTimeoutExpiredCback Callback
@@ -4867,8 +4720,7 @@ extern void LL_DataLenExceedEventCback( uint8 status, uint16 connHandle, uint16 
  *
  * @return      None.
  */
-extern void LL_AuthPayloadTimeoutExpiredCback( uint16 connId );
-
+void LL_AuthPayloadTimeoutExpiredCback( uint16 connHandle );
 
 /*******************************************************************************
  * @fn          LL_RemoteConnParamReqCback Callback
@@ -4894,12 +4746,9 @@ extern void LL_AuthPayloadTimeoutExpiredCback( uint16 connId );
  *
  * @return      None.
  */
-extern void LL_RemoteConnParamReqCback( uint16 connHandle,
-                                        uint16 Interval_Min,
-                                        uint16 Interval_Max,
-                                        uint16 Latency,
-                                        uint16 Timeout );
-
+void LL_RemoteConnParamReqCback( uint16 connHandle, uint16 Interval_Min,
+                                 uint16 Interval_Max, uint16 Latency,
+                                 uint16 Timeout );
 
 /*******************************************************************************
  * @fn          LL_PhyUpdateCompleteEventCback Callback
@@ -4921,11 +4770,8 @@ extern void LL_RemoteConnParamReqCback( uint16 connHandle,
  *
  * @return      None.
  */
-extern void LL_PhyUpdateCompleteEventCback( llStatus_t status,
-                                            uint16     connHandle,
-                                            uint8      txPhy,
-                                            uint8      rxPhy );
-
+void LL_PhyUpdateCompleteEventCback( llStatus_t status, uint16 connHandle,
+                                     uint8 txPhy, uint8 rxPhy );
 
 /*******************************************************************************
  * @fn          LL_DataLengthChangeEventCback Callback
@@ -4950,12 +4796,9 @@ extern void LL_PhyUpdateCompleteEventCback( llStatus_t status,
  *
  * @return      None.
  */
-extern void LL_DataLengthChangeEventCback( uint16 connHandle,
-                                           uint16 maxTxOctets,
-                                           uint16 maxTxTime,
-                                           uint16 maxRxOctets,
-                                           uint16 maxRxTime );
-
+void LL_DataLengthChangeEventCback( uint16 connHandle, uint16 maxTxOctets,
+                                    uint16 maxTxTime, uint16 maxRxOctets,
+                                    uint16 maxRxTime );
 
 /*******************************************************************************
  * @fn          LL_ReadLocalP256PublicKeyCompleteEventCback Callback
@@ -4975,9 +4818,8 @@ extern void LL_DataLengthChangeEventCback( uint16 connHandle,
  *
  * @return      None.
  */
-extern void LL_ReadLocalP256PublicKeyCompleteEventCback( uint8  status,
-                                                         uint8 *p256KeyX,
-                                                         uint8 *p256KeyY );
+void LL_ReadLocalP256PublicKeyCompleteEventCback( uint8 status, uint8 *p256KeyX,
+                                                  uint8 *p256KeyY );
 
 /*******************************************************************************
  * @fn          LL_GenerateDHKeyCompleteEventCback Callback
@@ -4996,8 +4838,7 @@ extern void LL_ReadLocalP256PublicKeyCompleteEventCback( uint8  status,
  *
  * @return      None.
  */
-extern void LL_GenerateDHKeyCompleteEventCback( uint8  status,
-                                                uint8 *dhKey );
+void LL_GenerateDHKeyCompleteEventCback( uint8 status, uint8 *dhKey );
 
 /*******************************************************************************
  * @fn          LL_ChannelSelectionAlgorithmCback Callback
@@ -5016,8 +4857,7 @@ extern void LL_GenerateDHKeyCompleteEventCback( uint8  status,
  *
  * @return      None.
  */
-extern void LL_ChannelSelectionAlgorithmCback( uint16 connHandle,
-                                               uint8  chSelAlgo );
+void LL_ChannelSelectionAlgorithmCback( uint16 connHandle, uint8 chSelAlgo );
 
 /*******************************************************************************
  * @fn          LL_EXT_ScanReqReportCback Callback
@@ -5244,7 +5084,6 @@ extern void HCI_ConnectionIqReportEvent( uint16 connHandle,
 extern void HCI_CteRequestFailedEvent( uint8  status,
                                        uint16 connHandle);
 
-
 /*******************************************************************************
  * @fn          HCI_ExtConnectionIqReportEvent Callback
  *
@@ -5373,14 +5212,11 @@ extern void HCI_ConnectionlessIqReportEvent(uint16 syncHandle,
  *
  * @return  void
  */
-extern void HCI_PeriodicAdvSyncEstablishedEvent( uint8  status,
-                                                 uint16 syncHandle,
-                                                 uint8  advSid,
-                                                 uint8  advAddrType,
-                                                 uint8  *advAddress,
-                                                 uint8  advPhy,
-                                                 uint16 periodicAdvInt,
-                                                 uint8  advClockAccuracy );
+void HCI_PeriodicAdvSyncEstablishedEvent( uint8 status, uint16 syncHandle,
+                                          uint8 advSid, uint8 advAddrType,
+                                          uint8 *advAddress, uint8 advPhy,
+                                          uint16 periodicAdvInt,
+                                          uint8 advClockAccuracy );
 
 /*********************************************************************
  * @fn      HCI_PeriodicAdvReportEvent
@@ -5408,13 +5244,9 @@ extern void HCI_PeriodicAdvSyncEstablishedEvent( uint8  status,
  *
  * @return  void
  */
-extern void HCI_PeriodicAdvReportEvent( uint16 syncHandle,
-                                        int8   txPower,
-                                        int8   rssi,
-                                        uint8  cteType,
-                                        uint8  dataStatus,
-                                        uint8  dataLen,
-                                        uint8  *data );
+void HCI_PeriodicAdvReportEvent( uint16 syncHandle, int8 txPower, int8 rssi,
+                                 uint8 cteType, uint8 dataStatus, uint8 dataLen,
+                                 uint8 *data );
 
 /*********************************************************************
  * @fn      HCI_PeriodicAdvSyncLostEvent
@@ -5429,7 +5261,7 @@ extern void HCI_PeriodicAdvReportEvent( uint16 syncHandle,
  *
  * @return  void
  */
-extern void HCI_PeriodicAdvSyncLostEvent( uint16 syncHandle );
+void HCI_PeriodicAdvSyncLostEvent( uint16 syncHandle );
 
 /*******************************************************************************
  * @fn          LL_EXT_ChanMapUpdateCback Callback
@@ -5449,9 +5281,8 @@ extern void HCI_PeriodicAdvSyncLostEvent( uint16 syncHandle );
  *
  * @return      None.
  */
-extern void LL_EXT_ChanMapUpdateCback(uint16 connHandle,
-                                      uint8 *newChanMap,
-                                      uint8 nextDataChan);
+void LL_EXT_ChanMapUpdateCback( uint16 connHandle, uint8 *newChanMap,
+                                uint8 nextDataChan );
 
 /*******************************************************************************
  * @fn          HCI_ExtConnectionlessIqReportEvent Callback

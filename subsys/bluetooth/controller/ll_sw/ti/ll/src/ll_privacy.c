@@ -427,7 +427,7 @@ uint8 LL_PRIV_IsIDA( uint8 rxAddrType, uint8 *rxAddr )
  * input parameters
  *
  * @param       rpa           - A 48 bit Resolvable Private Address.
- * @param       resolvingList - The Resolving List (RL).
+ * @param       pResolvingList - The Resolving List (RL).
  *
  * output parameters
  *
@@ -436,7 +436,7 @@ uint8 LL_PRIV_IsIDA( uint8 rxAddrType, uint8 *rxAddr )
  * @return      0..BLE_RESOLVING_LIST_SIZE: Index of resolved RPA in RL.
  *              INVALID_RESOLVE_LIST_INDEX: The RPA could not be resolved.
  */
-uint8 LL_PRIV_IsResolvable( uint8 *rpa, rlEntry_t *resolvingList )
+uint8 LL_PRIV_IsResolvable( uint8 *rpa, rlEntry_t *pResolvingList )
 {
   uint8 i;
 
@@ -444,10 +444,10 @@ uint8 LL_PRIV_IsResolvable( uint8 *rpa, rlEntry_t *resolvingList )
   for (i=0; i<=BLE_RESOLVING_LIST_SIZE; i++)
   {
     // check if the Resolving List entry is valid
-    if ( resolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+    if ( pResolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
     {
       // check if the RPA is in the Resolving List
-      if ( MAP_LL_PRIV_ResolveRPA( rpa, resolvingList[i].IRK ) ) return(i);
+      if ( MAP_LL_PRIV_ResolveRPA( rpa, pResolvingList[i].IRK ) ) return(i);
     }
   }
 
@@ -500,7 +500,7 @@ uint8 LL_PRIV_IsZeroIRK( uint8 *irk )
  *
  * input parameters
  *
- * @param       resolvingList - The Resolving List (RL).
+ * @param       pResolvingList - The Resolving List (RL).
  * @param       peerAddrType  - LL_DEV_ADDR_TYPE_PUBLIC,
  *                              LL_DEV_ADDR_TYPE_RANDOM,
  * @param       peerAddr      - A 48 bit Address.
@@ -512,7 +512,7 @@ uint8 LL_PRIV_IsZeroIRK( uint8 *irk )
  * @return      1..BLE_RESOLVING_LIST_SIZE: RL index of peer.
  *              INVALID_RESOLVE_LIST_INDEX: Unable to locate the peer in the RL.
  */
-uint8 LL_PRIV_FindPeerInRL( rlEntry_t *resolvingList,
+uint8 LL_PRIV_FindPeerInRL( rlEntry_t *pResolvingList,
                             uint8      peerAddrType,
                             uint8     *peerAddr )
 {
@@ -524,10 +524,10 @@ uint8 LL_PRIV_FindPeerInRL( rlEntry_t *resolvingList,
     for (i=1; i<=BLE_RESOLVING_LIST_SIZE; i++)
     {
       // check if the Resolving List entry is valid
-      if ( resolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+      if ( pResolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
       {
         // check if there's an ID match
-        if ( MAP_osal_memcmp(peerAddr, resolvingList[i].RPA, B_ADDR_LEN) )
+        if ( MAP_osal_memcmp(peerAddr, pResolvingList[i].RPA, B_ADDR_LEN) )
         {
           // there is, so return the index
           return( i );
@@ -540,11 +540,11 @@ uint8 LL_PRIV_FindPeerInRL( rlEntry_t *resolvingList,
     for (i=1; i<=BLE_RESOLVING_LIST_SIZE; i++)
     {
       // check if the Resolving List entry is valid
-      if ( resolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+      if ( pResolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
       {
         // check if there's an ID match
-        if ( (peerAddrType == resolvingList[i].idAddrType) &&
-             MAP_osal_memcmp(peerAddr, resolvingList[i].idAddr, B_ADDR_LEN) )
+        if ( (peerAddrType == pResolvingList[i].idAddrType) &&
+             MAP_osal_memcmp(peerAddr, pResolvingList[i].idAddr, B_ADDR_LEN) )
         {
           // there is, so return the index
           return( i );
@@ -572,7 +572,7 @@ uint8 LL_PRIV_FindPeerInRL( rlEntry_t *resolvingList,
  *
  * input parameters
  *
- * @param       resolvingList - The Resolving List (RL).
+ * @param       pResolvingList - The Resolving List (RL).
  *
  * output parameters
  *
@@ -580,20 +580,20 @@ uint8 LL_PRIV_FindPeerInRL( rlEntry_t *resolvingList,
  *
  * @return      None.
  */
-void LL_PRIV_UpdateRL( rlEntry_t *resolvingList )
+void LL_PRIV_UpdateRL( rlEntry_t *pResolvingList )
 {
   // update each entries RPA
   for (uint8 i=0; i<=BLE_RESOLVING_LIST_SIZE; i++)
   {
     // check if the Resolving List entry is valid
-    if ( resolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+    if ( pResolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
     {
       // check if the Local IRK is valid (i.e. not equal to zero)
-      if ( !MAP_LL_PRIV_IsZeroIRK( resolvingList[i].IRK ) )
+      if ( !MAP_LL_PRIV_IsZeroIRK( pResolvingList[i].IRK ) )
       {
         // IRK is valid, so update the RPA
-        MAP_LL_PRIV_GenerateRPA( resolvingList[i].IRK,
-                                 resolvingList[i].RPA );
+        MAP_LL_PRIV_GenerateRPA( pResolvingList[i].IRK,
+                             pResolvingList[i].RPA );
       }
     }
   }
@@ -610,7 +610,7 @@ void LL_PRIV_UpdateRL( rlEntry_t *resolvingList )
  *
  * input parameters
  *
- * @param       resolvingList - The Resolving List (RL).
+ * @param       pResolvingList - The Resolving List (RL).
  *
  * output parameters
  *
@@ -618,7 +618,7 @@ void LL_PRIV_UpdateRL( rlEntry_t *resolvingList )
  *
  * @return      0..BLE_RESOLVING_LIST_SIZE
  */
-uint8 LL_PRIV_NumberPeerRLEntries( rlEntry_t *resolvingList )
+uint8 LL_PRIV_NumberPeerRLEntries( rlEntry_t *pResolvingList )
 {
   uint8 i;
 
@@ -626,7 +626,7 @@ uint8 LL_PRIV_NumberPeerRLEntries( rlEntry_t *resolvingList )
   for (i=1; i<=BLE_RESOLVING_LIST_SIZE; i++)
   {
     // check if the Resolving List entry is valid
-    if ( resolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+    if ( pResolvingList[i].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
     {
       return( TRUE );
     }
@@ -646,7 +646,7 @@ uint8 LL_PRIV_NumberPeerRLEntries( rlEntry_t *resolvingList )
  *
  * input parameters
  *
- * @param       resolvingList - The Resolving List (RL).
+ * @param       pResolvingList - The Resolving List (RL).
  * @param       pAlTable      - Pointer to accept list table.
  *
  * output parameters
@@ -655,7 +655,7 @@ uint8 LL_PRIV_NumberPeerRLEntries( rlEntry_t *resolvingList )
  *
  * @return      None.
  */
-void LL_PRIV_CheckRLPeerId( rlEntry_t *resolvingList,
+void LL_PRIV_CheckRLPeerId( rlEntry_t *pResolvingList,
                             alTable_t *pAlTable )
 {
   uint8 rlIndex;
@@ -664,9 +664,9 @@ void LL_PRIV_CheckRLPeerId( rlEntry_t *resolvingList,
   for (rlIndex=1; rlIndex<=BLE_RESOLVING_LIST_SIZE; rlIndex++)
   {
     // check if the Resolving List entry is valid
-    if ( resolvingList[rlIndex].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
+    if ( pResolvingList[rlIndex].idAddrType != EMPTY_RESOLVE_LIST_ENTRY )
     {
-      MAP_LL_PRIV_CheckRLPeerIdEntry( &resolvingList[rlIndex],
+      MAP_LL_PRIV_CheckRLPeerIdEntry( &pResolvingList[rlIndex],
                                       pAlTable );
     }
   }
@@ -684,7 +684,7 @@ void LL_PRIV_CheckRLPeerId( rlEntry_t *resolvingList,
  *
  * input parameters
  *
- * @param       resolvingList - Pointer to a valid Resolving List (RL) entry.
+ * @param       pResolvingList - Pointer to a valid Resolving List (RL) entry.
  * @param       pAlTable      - Pointer to accept list table.
  *
  * output parameters
@@ -693,17 +693,17 @@ void LL_PRIV_CheckRLPeerId( rlEntry_t *resolvingList,
  *
  * @return      None.
  */
-void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *resolvingList,
+void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *pResolvingList,
                                  alTable_t *pAlTable )
 {
   // check if the IRK is valid and using Network Privacy Mode
-  if ( !MAP_LL_PRIV_IsZeroIRK( resolvingList->IRK ) &&
-       (resolvingList->privMode == LL_NETWORK_PRIVACY_MODE) )
+  if ( !MAP_LL_PRIV_IsZeroIRK( pResolvingList->IRK ) &&
+       (pResolvingList->privMode == LL_NETWORK_PRIVACY_MODE) )
   {
     // invalid Peer ID; check if already in the AL
     uint8 alIndex = MAP_AL_FindEntry( pAlTable,
-                                      resolvingList->idAddr,
-                                      resolvingList->idAddrType );
+                                      pResolvingList->idAddr,
+                                      pResolvingList->idAddrType );
 
     if ( alIndex != BLE_MAX_NUM_AL_ENTRIES )
     {
@@ -714,8 +714,8 @@ void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *resolvingList,
     {
       // so add the Peer ID to the extended accept list
       alIndex = MAP_LL_PRIV_AddExtALEntry( pAlTable,
-                                           resolvingList->idAddr,
-                                           resolvingList->idAddrType,
+                                       pResolvingList->idAddr,
+                                     pResolvingList->idAddrType,
                                            PRIV_IGNORE_AL_ENTRY );
 
       // make sure the accept list index is valid
@@ -733,7 +733,7 @@ void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *resolvingList,
 #ifdef CC23X0
     // add RPA to ExtAL
     MAP_LL_PRIV_AddExtALEntry( pAlTable,
-                                resolvingList->RPA,
+                            pResolvingList->RPA,
                                 LL_DEV_ADDR_TYPE_RANDOM,
                                 PRIV_USE_AL_ENTRY );
 #endif

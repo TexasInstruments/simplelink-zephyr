@@ -39,6 +39,13 @@ extern "C"
 #define HCI_LEGACY_CMD_STATUS_BT4_SCAN             3
 #define HCI_LEGACY_CMD_STATUS_BT5_SCAN             4
 
+// HCI status codes
+#define HCI_STATUS_SUCCESS                        (0)
+#define HCI_STATUS_ERROR_OUT_OF_MEMORY            (-1)
+#define HCI_STATUS_ERROR_INVALID_PACKET_LENGTH    (-2)
+#define HCI_STATUS_ERROR_INVALID_PACKET_TYPE      (-3)
+#define HCI_STATUS_ERROR_INVALID_PACKET_BUFFER    (-4)
+
 #ifdef BLE3_CMD
 // Advertising event types
 #define GAP_ADTYPE_ADV_IND                0x00  //!< Connectable undirected advertisement
@@ -201,11 +208,24 @@ extern uint8_t HCI_TL_compareAppLastOpcodeSent(uint16_t opcode);
  * @brief   Translate seriall buffer into it's corresponding function and
  *          parameterize the arguments to send to the Stack.
  *
- * @param   msgToParse - pointer to a serialized HCI command or data packet.
+ * @param   pHciMsg - pointer to a serialized HCI command (hciPacket_t) or data packet (hciDataPacket_t) message structure.
  *
  * @return  none.
  */
-extern void HCI_TL_SendToStack(uint8_t *msgToParse);
+extern void HCI_TL_SendToStack(uint8_t *pHciMsg);
+
+/*********************************************************************
+ * @fn      HCI_HostToController
+ *
+ * @brief   Translate HCI raw packet buffer into it's corresponding function and
+ *          parameterize the arguments to send to the controller only.
+ *
+ * @param   pHciPkt - pointer to a raw buffer of HCI command or data packet.
+ * @param   pktLen - the hci packet length
+ *
+ * @return  0 for success, negative number for error.
+ */
+extern int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen);
 
 /*********************************************************************
  * @fn      HCI_TL_processStructuredEvent

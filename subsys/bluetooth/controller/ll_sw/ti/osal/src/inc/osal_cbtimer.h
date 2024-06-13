@@ -43,7 +43,6 @@ extern "C"
 /*********************************************************************
  * MACROS
  */
-#ifndef CONFIG_SOC_CC2340R5
 #if ( OSAL_CBTIMER_NUM_TASKS == 0 )
   #error'Callback Timer module shouldnt be included (no callback timer is needed)!'
 #elif ( OSAL_CBTIMER_NUM_TASKS == 1 )
@@ -52,7 +51,6 @@ extern "C"
   #define OSAL_CBTIMER_PROCESS_EVENT( a )          ( a ), ( a )
 #else
   #error Maximum of 2 callback timer tasks are supported! Modify it here.
-#endif
 #endif
 
 /*********************************************************************
