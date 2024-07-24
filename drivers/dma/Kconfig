@@ -76,4 +76,6 @@ source "drivers/dma/Kconfig.emul"
 
 source "drivers/dma/Kconfig.nxp_edma"
 
+source "drivers/dma/Kconfig.ti_cc23x0"
+
 endif # DMA

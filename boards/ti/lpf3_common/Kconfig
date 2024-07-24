@@ -1,0 +1,25 @@
+# Copyright (c) 2024 Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config TI_MCUMGR_BT_OTA_DFU
+	bool "MCUMgr OTA DFU over Bluetooth"
+	select NET_BUF
+	select ZCBOR
+	select CRC
+	select MCUMGR
+	select MCUMGR_TRANSPORT_BT
+	select MCUMGR_TRANSPORT_BT_REASSEMBLY
+	select IMG_MANAGER
+	select MCUMGR_GRP_IMG
+	select FLASH
+	select FLASH_MAP
+	select STREAM_FLASH
+	imply MCUMGR_GRP_OS
+	imply MCUMGR_GRP_OS_MCUMGR_PARAMS
+	imply MCUMGR_GRP_OS_BOOTLOADER_INFO
+	depends on BT
+	depends on BT_SMP
+	depends on BT_PERIPHERAL
+	depends on BOOTLOADER_MCUBOOT
+	default n

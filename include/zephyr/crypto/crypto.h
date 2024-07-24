@@ -351,6 +351,37 @@ static inline int cipher_gcm_op(struct cipher_ctx *ctx,
 	return ctx->ops.gcm_crypt_hndlr(ctx, pkt, nonce);
 }
 
+/**
+ * @brief Perform Counter-Deterministic Random Bit Generator (CTR-DRBG) mode crypto operation.
+ *		CTR-DRBG is not a standalone algorithm but a mechanism to generate random numbers
+ *		using an existing block cipher algorithm like AES in CTR mode. While AES is a
+ *		block cipher used for encryption and decryption, CTR-DRBG leverages the properties
+ *		of AES in CTR mode to produce pseudorandom numbers.
+ *
+ * @param  ctx       Pointer to the crypto context of this op.
+ * @param  pkt   Structure holding the input/output buffer pointers (input buffer is not used).
+ * @param  iv        Initialization Vector (IV) for the operation. We use a
+ *			 split counter formed by appending IV and ctr.
+ *			 Consequently  ivlen = keylen - ctrlen. 'ctrlen' is
+ *			 specified during session setup through the
+ *			 'ctx.mode_params.ctr_drbg_params.ctr_len' parameter. IV
+ *			 should not be reused across multiple operations
+ *			 (within a session context) for security. The non-IV
+ *			 part of the split counter is transparent to the caller
+ *			 and is fully managed by the crypto provider.
+ *
+ * @return 0 on success, negative errno code on fail.
+ */
+static inline int cipher_ctr_drbg_op(struct cipher_ctx *ctx,
+				     struct cipher_pkt *pkt, uint8_t *iv)
+{
+	__ASSERT(ctx->ops.cipher_mode == CRYPTO_CIPHER_MODE_CTR_DRBG, "CTR-DRBG mode "
+		 "session invoking a different mode handler");
+
+	pkt->ctx = ctx;
+	return ctx->ops.ctr_drbg_crypt_hndlr(ctx, pkt, iv);
+}
+
 
 /**
  * @}

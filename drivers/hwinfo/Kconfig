@@ -56,6 +56,13 @@ endchoice
 
 endif
 
+config HWINFO_CC23X0
+	bool "CC23X0 hwinfo"
+	default y
+	depends on SOC_SERIES_CC23X0
+	help
+	  Enable CC23X0 hwinfo driver.
+
 config HWINFO_STM32
 	bool "STM32 hwinfo"
 	default y
