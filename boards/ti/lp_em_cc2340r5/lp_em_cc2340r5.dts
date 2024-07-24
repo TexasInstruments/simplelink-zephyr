@@ -83,3 +83,7 @@
 		     &spi0_cs_default>;
 	pinctrl-names = "default";
 };
+
+&aes {
+	status = "okay";
+};
