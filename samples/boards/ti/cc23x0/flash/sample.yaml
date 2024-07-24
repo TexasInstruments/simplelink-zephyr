@@ -1,0 +1,30 @@
+sample:
+  name: SoC Flash on CC23x0
+tests:
+  sample.drivers.flash.soc_flash_cc23x0:
+    platform_allow:
+      - lp_em_cc2340r5
+    integration_platforms:
+      - lp_em_cc2340r5
+    tags:
+      - flash
+      - drivers
+    harness: console
+    harness_config:
+      fixture: external_flash
+      type: multi_line
+      ordered: true
+      regex:
+        - "Flash erase succeeded"
+        - "Data read: 1234"
+        - "Data read matches data written. Good!"
+        - "Flash erase succeeded"
+        - "Data read: 1122"
+        - "Data read matches data written. Good!"
+        - "Flash erase succeeded"
+        - "Data read: 1234"
+        - "Data read: 1234"
+        - "Data read matches data written. Good!"
+        - "SoC flash consists of \\d+ pages."
+        - "write-block-size = 1"
+        - "Finished!"

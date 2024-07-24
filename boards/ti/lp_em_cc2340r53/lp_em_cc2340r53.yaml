@@ -1,0 +1,14 @@
+identifier: lp_em_cc2340r53
+name: TI SimpleLink CC2340R53 LaunchPad
+type: mcu
+arch: arm
+ram: 64
+flash: 512
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio
+  - adc
+vendor: ti

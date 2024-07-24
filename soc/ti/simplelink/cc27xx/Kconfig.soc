@@ -1,0 +1,29 @@
+# Copyright (c) 2025 Texas Instruments Incorporated
+# Copyright (c) 2024 BayLibre, SAS
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_SERIES_CC27XX
+	bool
+	select SOC_FAMILY_TI_SIMPLELINK
+	help
+	  Enable support for TI SimpleLink CC27XX series SOCs.
+
+config SOC_CC2745R10_Q1
+	bool
+	select SOC_SERIES_CC27XX
+	help
+	  CC2745R10_Q1
+
+config SOC_CC2755R10
+	bool
+	select SOC_SERIES_CC27XX
+	help
+	  CC2755R10
+
+config SOC_SERIES
+	default "cc27xx" if SOC_SERIES_CC27XX
+
+config SOC
+	default "cc2745r10_q1" if SOC_CC2745R10_Q1
+	default "cc2755r10" if SOC_CC2755R10

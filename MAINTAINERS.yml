@@ -897,7 +897,6 @@ Documentation:
     - doc/releases/
     - doc/security/
     - doc/safety/
-    - README.rst
     - doc/substitutions.txt
     - doc/images/Zephyr-Kite-in-tree.png
     - doc/index-tex.rst
@@ -4620,6 +4619,14 @@ West:
   status: maintained
   maintainers:
     - vaishnavachath
+  files: []
+  labels:
+    - "platform: TI"
+
+"West project: simplelink-hal_ti":
+  status: maintained
+  maintainers:
+    - ti
   files: []
   labels:
     - "platform: TI"
