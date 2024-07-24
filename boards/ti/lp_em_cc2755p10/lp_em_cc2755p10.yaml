@@ -1,0 +1,17 @@
+identifier: lp_em_cc2755p10
+name: TI SimpleLink CC2755P10 LaunchPad
+type: mcu
+arch: arm
+ram: 162
+flash: 1024
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio
+  - dma
+  - crypto
+  - spi
+  - watchdog
+vendor: ti

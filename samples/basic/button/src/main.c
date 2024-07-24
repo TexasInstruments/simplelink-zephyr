@@ -37,6 +37,27 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 {
 	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
 }
+int booster_pack_gpios[] = {9, 10, 14, 15};
+
+#define GPIO_NODE	DT_NODELABEL(gpio0)
+
+const struct device *dev = DEVICE_DT_GET(GPIO_NODE);;
+
+#define CHECK_MODE(_flags, _x) #_x, _flags&_x?"YES":"NO"
+
+void print_gpio(uint32_t pin, uint32_t flags) {
+	printk("PIN [%d]\n", pin);
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_INPUT));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_OUTPUT));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_OUTPUT_INIT_HIGH));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_OUTPUT_INIT_LOW));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_PULL_UP));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_PULL_DOWN));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_INT_EDGE_RISING));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_INT_EDGE_FALLING));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_INT_DISABLE));
+	printk(" %20.20s\t[%3.3s]\n", CHECK_MODE(flags, GPIO_OPEN_SOURCE));
+}
 
 int main(void)
 {
@@ -80,6 +101,18 @@ int main(void)
 			led.port = NULL;
 		} else {
 			printk("Set up LED at %s pin %d\n", led.port->name, led.pin);
+		}
+	}
+
+	uint32_t flags = 0;
+
+	for (int i = 0 ; i < (sizeof(booster_pack_gpios) / sizeof(int)) ; i++) {
+		ret = gpio_pin_get_config(dev, booster_pack_gpios[i], &flags);
+		if (ret != 0) {
+			printk("Error %d: failed to configure %d\n", ret, booster_pack_gpios[i]);
+			return 0;
+		} else {
+			print_gpio(booster_pack_gpios[i], flags);
 		}
 	}
 

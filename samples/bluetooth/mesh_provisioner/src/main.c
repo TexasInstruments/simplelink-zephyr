@@ -20,6 +20,7 @@ static uint8_t node_uuid[16];
 
 K_SEM_DEFINE(sem_unprov_beacon, 0, 1);
 K_SEM_DEFINE(sem_node_added, 0, 1);
+K_SEM_DEFINE(sem_bt_ready, 0, 1);
 #if DT_NODE_HAS_STATUS(SW0_NODE, okay)
 K_SEM_DEFINE(sem_button_pressed, 0, 1);
 #endif
@@ -239,8 +240,20 @@ static void unprovisioned_beacon(uint8_t uuid[16],
 				 bt_mesh_prov_oob_info_t oob_info,
 				 uint32_t *uri_hash)
 {
-	memcpy(node_uuid, uuid, 16);
-	k_sem_give(&sem_unprov_beacon);
+	uint8_t i = 0;
+
+	/* Check if UUID is already set */
+	for (i = 0; i < sizeof(uuid); i++) {
+		if (node_uuid[i] != 0) {
+			break;
+		}
+	}
+
+	/* Only set a new UUID if not currently set */
+	if (i == sizeof(uuid)) {
+		memcpy(node_uuid, uuid, 16);
+		k_sem_give(&sem_unprov_beacon);
+	}
 }
 
 static void node_added(uint16_t idx, uint8_t uuid[16], uint16_t addr, uint8_t num_elem)
@@ -249,21 +262,58 @@ static void node_added(uint16_t idx, uint8_t uuid[16], uint16_t addr, uint8_t nu
 	k_sem_give(&sem_node_added);
 }
 
+static void node_capabilities(const struct bt_mesh_dev_capabilities *cap)
+{
+	printk("Node capabilities received:\n");
+	printk("  Elem Count: %u\n", cap->elem_count);
+	printk("  Algorithms: %u\n", cap->algorithms);
+	printk("  Pub Key Type: %u\n", cap->pub_key_type);
+	printk("  OOB Type: %u\n", cap->oob_type);
+	printk("  Output Actions: %u\n", cap->output_actions);
+	printk("  Input Actions: %u\n", cap->input_actions);
+	printk("  Output Size: %u\n", cap->output_size);
+	printk("  Input Size: %u\n", cap->input_size);
+
+	/* By default use no authentication (this is not secure or recommended for production)
+	 * Alternatively call one of the corresponding bt_mesh_auth_method_set_<*> methods
+	 * based on the node capabilities.
+	 */
+	bt_mesh_auth_method_set_none();
+}
+
+static void link_open(bt_mesh_prov_bearer_t bearer)
+{
+	printk("Provisioning link opened on (bearer %d)\n", bearer);
+}
+
+static void link_close(bt_mesh_prov_bearer_t bearer)
+{
+	printk("Provisioning link closed on (bearer %d)\n", bearer);
+}
+
 static const struct bt_mesh_prov prov = {
 	.uuid = dev_uuid,
 	.unprovisioned_beacon = unprovisioned_beacon,
 	.node_added = node_added,
+	.link_open = link_open,
+	.link_close = link_close,
+	.capabilities = node_capabilities,
 };
 
-static int bt_ready(void)
+static void bt_ready(int err)
 {
 	uint8_t net_key[16], dev_key[16];
-	int err;
+	if (err) {
+		printk("Bluetooth init failed (err %d)\n", err);
+		return;
+	}
+
+	printk("Bluetooth initialized\n");
 
 	err = bt_mesh_init(&prov, &mesh_comp);
 	if (err) {
 		printk("Initializing mesh failed (err %d)\n", err);
-		return err;
+		return;
 	}
 
 	printk("Mesh initialized\n");
@@ -280,7 +330,7 @@ static int bt_ready(void)
 		printk("Using stored CDB\n");
 	} else if (err) {
 		printk("Failed to create CDB (err %d)\n", err);
-		return err;
+		return;
 	} else {
 		printk("Created CDB\n");
 		setup_cdb();
@@ -294,12 +344,12 @@ static int bt_ready(void)
 		printk("Using stored settings\n");
 	} else if (err) {
 		printk("Provisioning failed (err %d)\n", err);
-		return err;
+		return;
 	} else {
 		printk("Provisioning completed\n");
 	}
 
-	return 0;
+	k_sem_give(&sem_bt_ready);
 }
 
 static uint8_t check_unconfigured(struct bt_mesh_cdb_node *node, void *data)
@@ -357,20 +407,21 @@ int main(void)
 	printk("Initializing...\n");
 
 	/* Initialize the Bluetooth Subsystem */
-	err = bt_enable(NULL);
+	err = bt_enable(bt_ready);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 		return 0;
 	}
 
-	printk("Bluetooth initialized\n");
-	bt_ready();
-
 #if DT_NODE_HAS_STATUS(SW0_NODE, okay)
 	button_init();
 #endif
 
+	/* Wait for BT ready */
+	k_sem_take(&sem_bt_ready, K_FOREVER);
+
 	while (1) {
+		memset(node_uuid, 0, sizeof(node_uuid));
 		k_sem_reset(&sem_unprov_beacon);
 		k_sem_reset(&sem_node_added);
 		bt_mesh_cdb_node_foreach(check_unconfigured, NULL);
@@ -394,14 +445,14 @@ int main(void)
 #endif
 
 		printk("Provisioning %s\n", uuid_hex_str);
-		err = bt_mesh_provision_adv(node_uuid, net_idx, 0, 0);
+		err = bt_mesh_provision_adv(node_uuid, net_idx, 0, 10);
 		if (err < 0) {
 			printk("Provisioning failed (err %d)\n", err);
 			continue;
 		}
 
 		printk("Waiting for node to be added...\n");
-		err = k_sem_take(&sem_node_added, K_SECONDS(10));
+		err = k_sem_take(&sem_node_added, K_SECONDS(30));
 		if (err == -EAGAIN) {
 			printk("Timeout waiting for node to be added\n");
 			continue;

@@ -53,6 +53,10 @@ struct counter_alarm_cfg alarm_cfg;
 #define TIMER DT_NODELABEL(timer0)
 #elif defined(CONFIG_COUNTER_TIMER_RPI_PICO)
 #define TIMER DT_NODELABEL(timer)
+#elif defined(CONFIG_COUNTER_CC23X0_RTC)
+#define TIMER DT_NODELABEL(rtc0)
+#elif defined(CONFIG_COUNTER_CC35XX_LGPT)
+#define	TIMER DT_NODELABEL(timer0)
 #else
 #error Unable to find a counter device node in devicetree
 #endif

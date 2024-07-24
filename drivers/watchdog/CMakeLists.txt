@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/watchdog.h)
-
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_IWDG_STM32 wdt_iwdg_stm32.c)
@@ -14,6 +13,7 @@ zephyr_library_sources_ifdef(CONFIG_WDOG_CMSDK_APB wdt_cmsdk_apb.c)
 
 zephyr_library_sources_ifdef(CONFIG_WDT_CC32XX wdt_cc32xx.c)
 zephyr_library_sources_ifdef(CONFIG_WDT_CC13XX_CC26XX wdt_cc13xx_cc26xx.c)
+zephyr_library_sources_ifdef(CONFIG_WDT_LPF3 wdt_lpf3.c)
 zephyr_library_sources_ifdef(CONFIG_WDT_ESP32 wdt_esp32.c)
 zephyr_library_sources_ifdef(CONFIG_WDT_XT_ESP32 xt_wdt_esp32.c)
 zephyr_library_sources_ifdef(CONFIG_WDT_GECKO wdt_gecko.c)

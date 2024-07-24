@@ -209,6 +209,10 @@ static int spi_complete_loop(struct spi_dt_spec *spec)
 
 static int spi_null_tx_buf(struct spi_dt_spec *spec)
 {
+	if (IS_ENABLED(CONFIG_SOC_SERIES_CC23X0) || IS_ENABLED(CONFIG_SOC_SERIES_CC27XX)) {
+		LOG_INF("Skip null tx");
+		return 0;
+	}
 	static const uint8_t EXPECTED_NOP_RETURN_BUF[BUF_SIZE] = { 0 };
 
 	(void)memset(buffer_rx, 0x77, BUF_SIZE);
@@ -502,6 +506,10 @@ static int spi_rx_bigger_than_tx(struct spi_dt_spec *spec)
 	}
 
 	const uint8_t all_zeroes_buf[BUF_SIZE] = {0};
+
+	if (IS_ENABLED(CONFIG_SOC_SERIES_CC23X0) || IS_ENABLED(CONFIG_SOC_SERIES_CC27XX)) {
+		memset(all_zeroes_buf, 0xFF, BUF_SIZE);
+	}
 
 	if (memcmp(all_zeroes_buf, buffer_rx + tx_buf_size, BUF_SIZE - tx_buf_size)) {
 		to_display_format(

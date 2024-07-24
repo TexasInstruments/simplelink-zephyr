@@ -98,4 +98,10 @@ source "drivers/counter/Kconfig.rpi_pico"
 
 source "drivers/counter/Kconfig.nxp_mrt"
 
+source "drivers/counter/Kconfig.cc23x0_rtc"
+
+source "drivers/counter/Kconfig.cc23x0_lgpt"
+
+source "drivers/counter/Kconfig.cc35xx"
+
 endif # COUNTER

@@ -1,0 +1,17 @@
+# Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  TI Simplelink DMA controller for the cc35xx chip family.
+
+compatible: "ti,cc35xx-dma"
+
+include: dma-controller.yaml
+
+properties:
+  "#dma-cells":
+    const: 1
+
+dma-cells:
+  - channel
