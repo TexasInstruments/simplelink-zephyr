@@ -37,7 +37,8 @@
 #include "ll_config.h"
 #include "hal_gpio_wrapper.h"
 #include "ll_ae.h"
-//
+#include "cs/ll_cs_ctrl_pkt_mgr.h"
+#include "cs/ll_cs_procedure.h"
 #include "rom_jt.h"
 
 // SW Tracer
@@ -484,6 +485,11 @@ void llCentral_TaskEnd( void )
     return;
   }
 
+  // Check if it's time to build the CS StepList
+  MAP_llCsStartStepListGen(connPtr);
+  // Check if it's time to begin the CS procedure
+  MAP_llCsStartProcedure(connPtr);
+
   // procoessing Tx data (if any)
   MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_POST_PROCESSING );
 
@@ -706,6 +712,12 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
       BLE_LOG_INT_INT(0, BLE_LOG_MODULE_CTRL, "CTRL: llProcessCentralControlProcedures: connId=%d, ctrlType=0x%x\n", connPtr->connId, connPtr->ctrlPktInfo.ctrlPkts[0]);
     }
     // processing based on control packet type at the head of the queue
+    // first, check if it's a CS packet
+    if ((connPtr->ctrlPktInfo.ctrlPkts[0] >= LL_CTRL_CS_SEC_RSP) &&
+        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_SEC_REQ) )
+    {
+        return MAP_llCsProcessCsCtrlProcedures(connPtr, connPtr->ctrlPktInfo.ctrlPkts[0]);
+    }
     switch( connPtr->ctrlPktInfo.ctrlPkts[0] )
     {
       /*

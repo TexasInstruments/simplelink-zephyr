@@ -650,9 +650,6 @@ static uint8 processICallLL(uint16 opCode, ICall_CmdMsg *msg_ptr,
     /*
      * HCI Vendor Specific Commands: Link Layer Extensions
      */
-    case HCI_EXT_SET_TX_POWER:
-      stat = HCI_EXT_SetTxPowerCmd(msg_ptr->hciParams.param1);
-      break;
 
     case HCI_EXT_SET_TX_POWER_DBM:
       stat = HCI_EXT_SetTxPowerDbmCmd(msg_ptr->hciParams.param1,
@@ -714,10 +711,6 @@ static uint8 processICallLL(uint16 opCode, ICall_CmdMsg *msg_ptr,
 
     case HCI_EXT_ENABLE_PTM:
       stat = HCI_EXT_EnablePTMCmd();
-      break;
-
-    case HCI_EXT_SET_MAX_DTM_TX_POWER:
-      stat = HCI_EXT_SetMaxDtmTxPowerCmd(msg_ptr->hciParams.param1);
       break;
 
     case HCI_EXT_SET_MAX_DTM_TX_POWER_DBM:

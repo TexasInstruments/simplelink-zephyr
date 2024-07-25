@@ -151,6 +151,29 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
   extern uint8 * osal_msg_allocate(uint16 len );
 
 /**
+* @brief
+*
+* This function is called by a task to allocate a message buffer
+* into which the task will encode the particular message it wishes
+* to send.  This common buffer scheme is used to strictly limit the
+* creation of message buffers within the system due to RAM size
+* limitations on the microprocessor.   Note that all message buffers
+* are a fixed size (at least initially).  The parameter len is kept
+* in case a message pool with varying fixed message sizes is later
+* created (for example, a pool of message buffers of size LARGE,
+* MEDIUM and SMALL could be maintained and allocated based on request
+* from the tasks).
+* Note that this function will first check if there is enough heap
+* memory left after the allocation.
+*
+* @param   uint8 len  - wanted buffer length
+*
+* @return  pointer to allocated buffer
+* @return  NULL if allocation failed.
+*/
+  extern uint8 * osal_msg_allocateLimited(uint16 len );
+
+/**
  * @brief  Deallocate Message
  *
  * This function is used to deallocate a message buffer. This function
@@ -595,19 +618,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  * @return  uint32
  */
   extern uint32 osal_build_uint32( uint8 *swapped, uint8 len );
-
-/**
- * @brief Convert a long unsigned int to a string.
- *
- * @param  l long to convert
- * @param  buf buffer to convert to
- * @param  radix 10 dec, 16 hex
- *
- * @return pointer to buffer
- */
-  #if !defined ( ZBIT ) && !defined ( ZBIT2 ) && !defined (UBIT)
-    extern uint8 *_ltoa( uint32 l, uint8 * buf, uint8 radix );
-  #endif
 
 /**
  * @brief  Random number generator

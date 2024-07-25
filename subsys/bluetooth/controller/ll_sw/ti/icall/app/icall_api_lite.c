@@ -19,7 +19,12 @@
 /*******************************************************************************
  * INCLUDES
  */
+#include <stdint.h>
+
+#ifndef CONTROLLER_ONLY
 #include "gatt.h"
+#endif
+
 #include "ble_dispatch.h"
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #ifndef CC23X0

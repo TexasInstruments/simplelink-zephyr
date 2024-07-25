@@ -1351,7 +1351,7 @@ void HCI_PeriodicAdvReportEvent( uint16 syncHandle,
       if ((data != NULL) && (dataLen > 0))
       {
         msg->data = ((uint8 *)(msg)) + sizeof( hciEvt_BLEPeriodicAdvReport_t );
-        memcpy( msg->data, data, dataLen );
+        MAP_osal_memcpy( msg->data, data, dataLen );
       }
 
       // send the message

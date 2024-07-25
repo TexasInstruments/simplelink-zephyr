@@ -175,6 +175,7 @@ llUserCfg_t llUserConfig            =
   .advReportIncChannel   = ADV_RPT_INC_CHANNEL,  // include channel index in advertising report
   .lrfTxPowerTablePtr     = NULL,
   .lrfConfigPtr           = NULL,
+  .lrfConfigCsPtr         = NULL,
   .defaultTxPowerDbm      = 0,
   .defaultTxPowerFraction = 0,
   .rclPhyFeature1MBPS     = 0,

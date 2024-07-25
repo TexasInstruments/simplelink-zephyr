@@ -19,6 +19,7 @@
 
 #include "ll_common.h"
 #include "hci_event.h"
+#include "ll_ae.h"
 
 // Link Layer
 #define MAP_LL_AddDeviceToResolvingList                              LL_AddDeviceToResolvingList
@@ -192,6 +193,7 @@
 #define MAP_LL_SetScanControl                                        LL_SetScanControl
 #define MAP_LL_SetScanParam                                          LL_SetScanParam
 #define MAP_LL_SetScanRspData                                        LL_SetScanRspData
+#define MAP_LL_SetHostFeature                                        LL_SetHostFeature
 #define MAP_LL_StartEncrypt                                          LL_StartEncrypt
 #define MAP_LL_TX_bm_alloc                                           LL_TX_bm_alloc
 #define MAP_LL_TX_bm_free                                            LL_TX_bm_free
@@ -328,6 +330,7 @@
 #define MAP_llSetupRfHal                                             llSetupRfHal
 #define MAP_llSetupScan                                              llSetupScan
 #define MAP_llSetupScanDataEntryQueue                                llSetupScanDataEntryQueue
+#define MAP_llSetupPeriodicScanDataEntryQueue                        llSetupPeriodicScanDataEntryQueue
 #define MAP_llSetupCtrlPkt                                           llSetupCtrlPkt
 #define MAP_llShellSortActiveConns                                   llShellSortActiveConns
 #define MAP_llSortActiveConns                                        llSortActiveConns
@@ -370,6 +373,7 @@
 #define MAP_ll_eccInit                                               ll_eccInit
 #define MAP_ll_ReadLocalP256PublicKey                                ll_ReadLocalP256PublicKey
 #define MAP_ll_GenerateDHKey                                         ll_GenerateDHKey
+#define MAP_llSetupDataEntry                                         llSetupDataEntry
 
 // V5.0
 #define MAP_LL_ReadPhy                                               LL_ReadPhy
@@ -418,11 +422,9 @@
 #define MAP_HCI_EXT_SetFreqTuneCmd                                   HCI_EXT_SetFreqTuneCmd
 #define MAP_HCI_EXT_SetLocalSupportedFeaturesCmd                     HCI_EXT_SetLocalSupportedFeaturesCmd
 #define MAP_HCI_EXT_SetMaxDataLenCmd                                 HCI_EXT_SetMaxDataLenCmd
-#define MAP_HCI_EXT_SetMaxDtmTxPowerCmd                              HCI_EXT_SetMaxDtmTxPowerCmd
 #define MAP_HCI_EXT_SetRxGainCmd                                     HCI_EXT_SetRxGainCmd
 #define MAP_HCI_EXT_SetSCACmd                                        HCI_EXT_SetSCACmd
 #define MAP_HCI_EXT_SetPeripheralLatencyOverrideCmd                  HCI_EXT_SetPeripheralLatencyOverrideCmd
-#define MAP_HCI_EXT_SetTxPowerCmd                                    HCI_EXT_SetTxPowerCmd
 #define MAP_HCI_EXT_SetTxPowerDbmCmd                                 HCI_EXT_SetTxPowerDbmCmd
 #define MAP_HCI_EXT_SetVirtualAdvAddrCmd                             HCI_EXT_SetVirtualAdvAddrCmd
 #define MAP_HCI_EXT_ReadRandAddr                                     HCI_EXT_ReadRandAddr
@@ -553,7 +555,6 @@
 #define MAP_llRemoveAdvSortedEntry                                   llRemoveAdvSortedEntry
 #define MAP_llAllocRfMem                                             llAllocRfMem
 #define MAP_llSetupExtAdvLegacy                                      llSetupExtAdvLegacy
-#define MAP_llBuildExtAdvPacket                                      llBuildExtAdvPacket
 #define MAP_llSetupExtScan                                           llSetupExtScan
 #define MAP_llSetupExtInit                                           llSetupExtInit
 #define MAP_llSetupExtHdr                                            llSetupExtHdr
@@ -1137,6 +1138,7 @@
 #define MAP_osal_isbufset                                            osal_isbufset
 #define MAP_osal_pwrmgr_task_state                                   osal_pwrmgr_task_state
 #define MAP_osal_msg_allocate                                        osal_msg_allocate
+#define MAP_osal_msg_allocateLimited                                 osal_msg_allocateLimited
 #define MAP_osal_msg_deallocate                                      osal_msg_deallocate
 #define MAP_osal_msg_send                                            osal_msg_send
 #define MAP_osal_msg_receive                                         osal_msg_receive
@@ -1220,12 +1222,14 @@ extern uint8 MAP_llRxEntryDoneEventHandleConnectRequest( void *,uint8 *,uint8 ,u
 extern uint8 MAP_llRxIgnoreEventHandleConnectRequest( void *,uint8 *,uint8 ,uint8 );
 extern uint8 MAP_llAbortEventHandleStateAdv( uint8 );
 extern uint8 MAP_llLastCmdDoneEventHandleStateAdv( void );
+extern uint8 MAP_llLastCmdDoneEventHandleStatePeriodicAdv( void );
 extern uint8 MAP_llTxDoneEventHandleStateAdv( void );
 extern uint8 MAP_llRxIgnoreEventHandleStateAdv( void );
 extern uint8 MAP_llRxEmptyEventHandleStateAdv( void );
 extern uint8 MAP_llRxEntryDoneEventHandleStateAdv( void );
 extern uint8 MAP_llAbortEventHandleStateScan( uint8 );
 extern uint8 MAP_llLastCmdDoneEventHandleStateScan( void );
+extern uint8 MAP_llLastCmdDoneEventHandleStatePeriodicScan( void );
 extern uint8 MAP_llRxIgnoreEventHandleStateScan( void );
 extern uint8 MAP_llRxIgnoreEventHandleConnectResponse( uint8 *, uint8, uint8 *, uint8 );
 extern uint8 MAP_llAbortEventHandleStateInit( uint8 );
@@ -1374,7 +1378,7 @@ extern uint8 MAP_LE_SetConnectionlessCteTransmitParams( uint8 advHandle, uint8 c
                                                         uint8 length, uint8 *pAntenna );
 extern uint8 MAP_LE_SetConnectionlessCteTransmitEnable( uint8 advHandle, uint8 enable );
 extern void *MAP_llGetPeriodicAdv( uint8 handle );
-extern void MAP_llUpdatePeriodicAdvChainPacket( void );
+extern void MAP_llUpdatePeriodicAdvChainPacket(  void *pPeriodicAdv );
 extern void MAP_llSetPeriodicAdvChmapUpdate( uint8 set );
 extern void MAP_llPeriodicAdv_PostProcess( void );
 extern uint8 MAP_llTrigPeriodicAdv( void *pAdvSet, void *pPeriodicAdv );
@@ -1418,13 +1422,14 @@ extern void MAP_llPeriodicScan_PostProcess( void );
 extern void MAP_llProcessPeriodicScanRxFIFO( void );
 extern void *MAP_llFindNextPeriodicScan( void );
 extern void MAP_llTerminatePeriodicScan( void );
+extern void MAP_llClearPeriodicScanSets( void );
 extern void *MAP_llGetCurrentPeriodicScan( uint8 state );
 extern void *MAP_llGetPeriodicScan( uint16 handle );
 extern uint8 MAP_llGetPeriodicScanCteTasks( void );
 extern uint8_t MAP_gapScan_periodicAdvCmdCompleteCBs( void *pMsg );
 extern uint8_t MAP_gapScan_periodicAdvCmdStatusCBs( void *pMsg );
 extern uint8_t MAP_gapScan_processBLEPeriodicAdvCBs( void *pMsg );
-extern void MAP_llClearPeriodicScanSets( void );
+
 extern void MAP_llUpdateExtScanAcceptSyncInfo( void );
 
 /*******************************************************************************
@@ -1441,6 +1446,9 @@ extern uint8_t LE_SetExtScanRspData_hook( void * pMsg);
 extern uint8_t LE_SetExtAdvEnable_hook(void *pMsg );
 extern uint8 MAP_gapAdv_handleAdvHciCmdComplete( void *pMsg );
 extern void  MAP_llInitFeatureSet( void );
+extern uint8 MAP_llAddExtAdvPacketToTx(void *pAdvSet, uint8 pktType, uint8 payloadLen);
+extern uint8 MAP_llBuildExtAdvPacket(void *pPkt, void *comPkt, uint8 pktType, uint8 payloadLen, uint8 peerAddrType, uint8 ownAddrType);
+extern uint8 MAP_llAddPeriodicAdvPacketToTx(void *pPeriodicAdv, uint8 pktType, uint8 payloadLen);
 
 /*******************************************************************************
  * Health check
@@ -1565,6 +1573,47 @@ void MAP_llBuildCtrlPktPeri(llConnState_t *connPtr, uint8 *pData, uint8_t ctrlPk
 void MAP_llBuildCtrlPktCent(llConnState_t *connPtr, uint8 *pData, uint8_t ctrlPkt);
 void MAP_llPostSetupCtrlPktPeri(llConnState_t *connPtr, uint8_t ctrlPkt);
 void MAP_llPostSetupCtrlPktCent(llConnState_t *connPtr, uint8_t ctrlPkt);
+
+/*******************************************************************************
+ * Channel Sounding
+ */
+
+// CS APIs
+extern uint8 MAP_LL_CS_ReadLocalSupportedCapabilites(void *);
+extern uint8 MAP_LL_CS_ReadRemoteSupportedCapabilities(uint16);
+extern uint8 MAP_LL_CS_CreateConfig(uint16, void *, uint8);
+extern uint8 MAP_LL_CS_RemoveConfig(uint16, uint8);
+extern uint8 MAP_LL_CS_SecurityEnable(uint16);
+extern uint8 MAP_LL_CS_SetDefaultSettings(uint16, void *);
+extern uint8 MAP_LL_CS_ReadLocalFAETable(void *);
+extern uint8 MAP_LL_CS_ReadRemoteFAETable(uint16);
+extern uint8 MAP_LL_CS_WriteRemoteFAETable(uint16, void *);
+extern uint8 MAP_LL_CS_SetChannelClassification(void *);
+extern uint8 MAP_LL_CS_SetProcedureParameters(uint16, uint8, void *);
+extern uint8 MAP_LL_CS_ProcedureEnable(uint16, uint8, uint8);
+extern void MAP_HCI_CS_ReadRemoteSupportedCapabilitiesCback(uint8, uint16, void *);
+extern void MAP_HCI_CS_ConfigCompleteCback(uint8, uint16, void *);
+extern void MAP_HCI_CS_ReadRemoteFAETableCompleteCback(uint8, uint16, void *);
+extern void MAP_HCI_CS_SecurityEnableCompleteCback(uint8, uint16);
+extern void MAP_HCI_CS_ProcedureEnableCompleteCback(uint8, uint16, uint8, void *);
+extern void MAP_HCI_CS_SubeventResultCback(void*, uint16);
+extern void MAP_HCI_CS_SubeventResultContinueCback(void *, void *, uint16);
+
+// CS LL PKT MGR
+extern uint8 MAP_llCsProcessCsControlPacket(uint8, void *, void *);
+extern uint8 MAP_llCsProcessCsCtrlProcedures(void *, uint8);
+
+// CS PROCEDURES
+extern uint8 MAP_llCsInit(void);
+extern void MAP_llCsClearConnProcedures(uint16);
+extern void MAP_llCsFreeAll(void);
+extern void MAP_llCsSetFeatureBit(void);
+extern uint8 MAP_llCsStartProcedure(void *);
+extern uint8 MAP_llCsStartStepListGen(void *);
+extern void MAP_llCsSubevent_PostProcess(void);
+extern void MAP_llCsSteps_PostProcess(void);
+extern void *MAP_llScheduler_getHandle(uint16);
+extern uint32 MAP_llScheduler_getSwitchTime(uint16);
 
 /*******************************************************************************/
 #endif // MAP_DIRECT_H

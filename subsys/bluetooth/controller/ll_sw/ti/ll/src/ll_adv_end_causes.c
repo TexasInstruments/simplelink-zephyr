@@ -182,11 +182,12 @@ void llAdv_TaskConnect( void )
     ** Process the CONNECT_IND/AUX_CONNNECT_REQ message parameters.
     */
     RCL_Buffer_DataEntry *rxEntry = RCL_MultiBuffer_RxEntry_get(&((aeRf_t *)pAdvSet->pRfCmds)->advParam.rxBuffers, NULL);
+    pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
+
     // check if this will be a legacy advertisement
     if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
       /* Read parameters out of CONNECT_IND message */
-      pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
       // get the timestamp to the start of the CONNECT_IND
       connPtr->llTask->anchorPoint = ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.connectPktTime +
                                      RAT_TICKS_FOR_CONNECT_IND;
@@ -194,9 +195,7 @@ void llAdv_TaskConnect( void )
 #ifdef USE_AE
     else // !legacy
     {
-      /* Read parameters out of AUX_CONNECT_REQ message */
       uint16 connReqPhy;
-      pData = (uint8 *)&rxEntry->data[ADV_DATA_INDEX];
 
       // get the timestamp to the start of the AUX_CONNECT_REQ
       connPtr->llTask->anchorPoint = ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.connectPktTime;
@@ -505,7 +504,8 @@ void llAdv_TaskConnect( void )
     // check if this is a connection from a legacy advertisement
     if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
-      timeToNextEvt = (uint32)LL_LINK_MIN_WIN_OFFSET;
+      // Legacy has a constant Transmit Window Delay time
+      timeToNextEvt = (uint32)LL_TRANSMIT_WIN_DELAY_LEGACY;
     }
 #ifdef USE_AE
     else // !legacy
@@ -513,14 +513,15 @@ void llAdv_TaskConnect( void )
       uint8 secPhy;
       // Takes the secondary Phy from the Adv Set.
       secPhy = pAdvSet->pAdvParam->secPhy & BLE5_PHY_MASK;
-      // Coded and Uncoded has different Window Offset
-      if((secPhy & BLE5_CODED_PHY) == 0U)
+
+      // Coded and Uncoded has different Transmit Window Delay
+      if( secPhy == AE_PHY_CODED )
       {
-        timeToNextEvt = (uint32)LL_LINK_MIN_WIN_OFFSET_AE_UNCODED;
+        timeToNextEvt = (uint32)LL_TRANSMIT_WIN_DELAY_LEGACY_AE_CODED;
       }
       else // Coded
       {
-        timeToNextEvt = (uint32)LL_LINK_MIN_WIN_OFFSET_AE_CODED;
+        timeToNextEvt = (uint32)LL_TRANSMIT_WIN_DELAY_AE_UNCODED;
       }
     }
 #endif
@@ -617,14 +618,6 @@ void llAdv_TaskConnect( void )
     // make this new connection be the current connection for the scheduler
     llConns.currentConn = connPtr->connId;
 
-    // send the Adv Set End callback, if enabled
-    MAP_llSendAdvSetEndEvent( pAdvSet );
-
-    // send the LE Advertisement Set Terminated Event
-    MAP_llSendAdvSetTermEvent( pAdvSet,
-                               LL_STATUS_SUCCESS,
-                               connPtr->connId );
-
     // callback function for scheduler
     connPtr->llTask->setup = MAP_llLinkSchedSetup;
     // Set callback function and events
@@ -708,6 +701,26 @@ void llExtAdv_PostProcess( void )
       } while( pDataEntry!=NULL);
     }
 #endif
+
+    // Sync info could be only on AUX_ADV_IND in not connactable and not scannable mode
+    if ((!TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps)) &&
+        (!TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps)))
+    {
+#ifdef USE_PERIODIC_ADV
+      llPeriodicAdvSet_t *pPeriodicAdv = NULL;
+      pPeriodicAdv = MAP_llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
+
+      // Check if there a pending periodic adv set
+      if ((pPeriodicAdv != NULL) &&
+          (TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO)) &&
+          (pPeriodicAdv->state == PERIODIC_ADV_STATE_PENDING_TRIGGER))
+      {
+        // Trigger pending periodic advertisement set
+        MAP_llTrigPeriodicAdv(pAdvSet, pPeriodicAdv);
+      }
+#endif // USE_PERIODIC_ADV
+    }
+
     // check if still active
     if ( pAdvSet->advMode == LL_ADV_MODE_OFF )
     {
@@ -893,6 +906,7 @@ void llExtAdv_PostProcess( void )
  *              command.
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -908,16 +922,38 @@ void llPeriodicAdv_PostProcess( void )
 {
   llPeriodicAdvSet_t *pPeriodicAdv = llPeriodicAdv.currentAdv;
   uint8 dataUpdated = FALSE;
-  uint8 chmapUpdated;
+  uint8 chmapUpdated = FALSE;
+  periodicRf_t *pRf = NULL;
 
-  // check if need to terminate the current periodic adv set
+  // Check if it is valid, otherwise, nothing to do here
+  if (pPeriodicAdv == NULL)
+  {
+    // Schedule next task
+    MAP_llScheduler();
+
+    return;
+  }
+
+  /* Clear TX queue before preparing the next periodic advertising.
+   * Needed only because we constantly changing the
+   * data in each txBuffer
+   */
+  RCL_Buffer_TxBuffer *pDataEntry;
+
+  do
+  {
+    pDataEntry = RCL_TxBuffer_get(&((pPeriodicAdv->pRfCmds)->perAdvParam.txBuffers));
+  } while( pDataEntry!=NULL);
+
+  // Check if need to terminate the current periodic adv set
   if (pPeriodicAdv->pendingDisable)
   {
     MAP_llEndPeriodicAdvTask(pPeriodicAdv);
   }
   else if (pPeriodicAdv->state != PERIODIC_ADV_STATE_DISABLE)
   {
-    // check for add or remove CTE
+#ifdef RTLS_CTE
+    // Check for add or remove CTE
     if (pPeriodicAdv->cteInfo.pending == PERIODIC_ADV_CTE_PENDING_ENABLE)
     {
       pPeriodicAdv->cteInfo.enable = TRUE;
@@ -930,46 +966,47 @@ void llPeriodicAdv_PostProcess( void )
       pPeriodicAdv->cteInfo.pending = PERIODIC_ADV_CTE_NO_PENDING;
       dataUpdated = TRUE;
     }
+#endif
 
-    // check if host update the periodic data
+    // Check if host update the periodic data
     if (pPeriodicAdv->dataUpdated == TRUE)
     {
       llSetPeriodicAdvData(pPeriodicAdv);
       dataUpdated = TRUE;
     }
-    // check if host update the channel map
+    // Check if host update the channel map
     if (llPeriodicAdv.chanMap.updated)
     {
       switch (pPeriodicAdv->pendingChanUpdate)
       {
         case PERIODIC_ADV_CHANMAP_UPDATE_NOT_PENDING:
-          // move the channel map state to pending
+          // Move the channel map state to pending
           pPeriodicAdv->pendingChanUpdate = PERIODIC_ADV_CHANMAP_UPDATE_PENDING;
-          // apply the new channel map in 6 periodic events
+          // Apply the new channel map in 6 periodic events
           pPeriodicAdv->chanMapUpdateEvent = pPeriodicAdv->eventCounter + PERIODIC_ADV_CHANMAP_UPDATE_NUM_EVENTS;
           pPeriodicAdv->maxAvailData = (AE_MAX_ADV_PAYLOAD_LEN - (EXTHDR_FLAG_CTEINFO_SIZE + EXTHDR_FLAG_AUXPTR_SIZE +
                                         EXTHDR_FLAG_TXPWR_SIZE + EXTHDR_FLAG_ACAD_SIZE + EXTHDR_INFO_SIZE + EXTHDR_FLAGS_SIZE + 1));
-          // call this function only to update the frags because the max header size was increased
+          // Call this function only to update the frags because the max header size was increased
           llSetPeriodicAdvData(pPeriodicAdv);
           dataUpdated = TRUE;
         break;
         case PERIODIC_ADV_CHANMAP_UPDATE_PENDING:
           if (pPeriodicAdv->chanMapUpdateEvent <= ((pPeriodicAdv->eventCounter + 1) & 0xFFFF))
           {
-            // move the channel map state to applied
+            // Move the channel map state to applied
             pPeriodicAdv->pendingChanUpdate = PERIODIC_ADV_CHANMAP_UPDATE_APPLIED;
-            // update the new channel map
+            // Update the new channel map
             pPeriodicAdv->pChanMap = &llPeriodicAdv.chanMap.next;
             pPeriodicAdv->maxAvailData = (AE_MAX_ADV_PAYLOAD_LEN - (EXTHDR_FLAG_CTEINFO_SIZE + EXTHDR_FLAG_AUXPTR_SIZE +
                                           EXTHDR_FLAG_TXPWR_SIZE + EXTHDR_INFO_SIZE + EXTHDR_FLAGS_SIZE + 1));
-            // call this function only to update the frags because the max header size was decreased
+            // Call this function only to update the frags because the max header size was decreased
             llSetPeriodicAdvData(pPeriodicAdv);
             dataUpdated = TRUE;
           }
         break;
         case PERIODIC_ADV_CHANMAP_UPDATE_APPLIED:
         {
-          // check that all periodics updated the channel map
+          // Check that all periodics updated the channel map
           llPeriodicAdvSet_t *pTmpPeriodicAdv = llPeriodicAdv.advList;
 
           chmapUpdated = TRUE;
@@ -981,25 +1018,25 @@ void llPeriodicAdv_PostProcess( void )
               chmapUpdated = FALSE;
               break;
             }
-            // advance to next entry
+            // Advance to next entry
             pTmpPeriodicAdv = pTmpPeriodicAdv->next;
           }
           if (chmapUpdated)
           {
-            // all periodics finished the channel map update procedure
-            // disable the channel map update flag
+            // All periodics finished the channel map update procedure
+            // Disable the channel map update flag
             MAP_llSetPeriodicAdvChmapUpdate(FALSE);
-            // copy the new channel map to the current
+            // Copy the new channel map to the current
             MAP_osal_memcpy(&llPeriodicAdv.chanMap.current,&llPeriodicAdv.chanMap.next,sizeof(llPeriodicChanMap_t));
-            // update all periodics
+            // Update all periodics
             pTmpPeriodicAdv = llPeriodicAdv.advList;
             while( pTmpPeriodicAdv != NULL )
             {
-              // move status to not pending
+              // Move status to not pending
               pTmpPeriodicAdv->pendingChanUpdate = PERIODIC_ADV_CHANMAP_UPDATE_NOT_PENDING;
-              // update the new channel map
+              // Update the new channel map
               pPeriodicAdv->pChanMap = &llPeriodicAdv.chanMap.current;
-              // advance to next entry
+              // Advance to next entry
               pTmpPeriodicAdv = pTmpPeriodicAdv->next;
             }
           }
@@ -1007,8 +1044,12 @@ void llPeriodicAdv_PostProcess( void )
         break;
       }
     }
-    // update the missed packets counter
-    if (taskEndStatus == BLESTAT_DONE_OK)
+
+    // Pointer to the RCL command
+    pRf = pPeriodicAdv->pRfCmds;
+
+    // Update the missed packets counter
+    if ( pRf->perAdvCmd.common.status == RCL_CommandStatus_Finished )
     {
       pPeriodicAdv->numMissed = 0;
     }
@@ -1016,62 +1057,71 @@ void llPeriodicAdv_PostProcess( void )
     {
       pPeriodicAdv->numMissed++;
     }
-    pPeriodicAdv->txCount = 0;
-    // initialize the command status
-    pPeriodicAdv->rfCmd.rfOpCmd.status  = RFSTAT_IDLE;
-    // update event counter
-    pPeriodicAdv->eventCounter++;
-    // find secondary channel index
-    pPeriodicAdv->currentChan = llSetNextPeriodicAdvChan( pPeriodicAdv->pChanMap, pPeriodicAdv->syncInfo.accessAddr, pPeriodicAdv->eventCounter );
-    // update the next data channel before setup the periodic header (llSetupPeriodicHdr)
-    pPeriodicAdv->rfCmd.chan = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
 
-    // check if need to update the sync indication packet
+    // Clear Tx Counter
+    pPeriodicAdv->txCount = 0;
+    // Update event counter
+    pPeriodicAdv->eventCounter++;
+    // Find secondary channel index
+    pPeriodicAdv->currentChan = llSetNextPeriodicAdvChan( pPeriodicAdv->pChanMap, pPeriodicAdv->syncInfo.accessAddr, pPeriodicAdv->eventCounter );
+    // Update the next data channel before setup the periodic header (llSetupPeriodicHdr)
+    pRf->perAdvCmd.channel = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
+
+    // Check if need to update the sync indication packet
     if ((dataUpdated) || (pPeriodicAdv->numChains > 1) || (pPeriodicAdv->totalOtaTime == PERIODIC_ADV_MARGIN_TIME_RAT_TICKS))
     {
       pPeriodicAdv->extHdrSize = llSetPeriodicHdrFlags(pPeriodicAdv);
 
-      SET_EXTHDR_LEN( pPeriodicAdv->rfPkt.extHdrInfo,pPeriodicAdv->extHdrSize );
+      SET_EXTHDR_LEN( pRf->comPkt.extHdrInfo ,pPeriodicAdv->extHdrSize );
       llSetupPeriodicHdr(pPeriodicAdv);
-      pPeriodicAdv->rfPkt.advDataLen = pPeriodicAdv->fragLen;
-      pPeriodicAdv->rfPkt.pAdvData = pPeriodicAdv->pData;
+      pRf->comPkt.advDataLen = pPeriodicAdv->fragLen;
+      pRf->comPkt.pAdvData = pPeriodicAdv->pData;
       if (pPeriodicAdv->numMissed == 0)
       {
-        // calculate the total OTA according to the OTA of the last chain packet
-        pPeriodicAdv->totalOtaTime = MAP_llTimeDelta( pPeriodicAdv->rfCmd.rfOpCmd.startTime, pPeriodicAdv->startTime ) +
-                                     US_TO_RAT_TICKS(pPeriodicAdv->otaTime) + PERIODIC_ADV_MARGIN_TIME_RAT_TICKS;
+        // Calculate the total OTA according to the OTA of the last chain packet
+        pPeriodicAdv->totalOtaTime = MAP_llTimeDelta( pRf->perAdvCmd.common.timing.absStartTime, pPeriodicAdv->startTime ) +
+                                                      US_TO_RAT_TICKS(pPeriodicAdv->otaTime) + PERIODIC_ADV_MARGIN_TIME_RAT_TICKS;
       }
-      // calculate the OTA of the first chain packet
-      pPeriodicAdv->otaTime =  MAP_llOctets2Time( pPeriodicAdv->rfCmd.phyMode & 0x03,      // first two bits only
-                                                 (pPeriodicAdv->rfCmd.phyMode>>2) & 0x01, // scheme
+      // Calculate the OTA of the first chain packet
+      pPeriodicAdv->otaTime =  MAP_llOctets2Time( pRf->phyFeatures & 0x03,      // first two bits only
+                                                 (pRf->phyFeatures>>2) & 0x01, // scheme
                                                  (pPeriodicAdv->extHdrSize + EXTHDR_INFO_SIZE + pPeriodicAdv->fragLen),MIC_NOT_ENABLED );
+#ifdef RTLS_CTE
       pPeriodicAdv->otaTime += (pPeriodicAdv->cteInfo.enable)?(pPeriodicAdv->cteInfo.len * 8):0;
 
-      // calculate number of chunks according to the max value of periodic data or CTE count
+      // Calculate number of chunks according to the max value of periodic data or CTE count
       pPeriodicAdv->numChains = MAX(pPeriodicAdv->numFrags,
                                    (pPeriodicAdv->cteInfo.enable)?
                                     pPeriodicAdv->cteInfo.count:0);
+#else
+      pPeriodicAdv->numChains = pPeriodicAdv->numFrags;
+#endif //RTLS_CTE
+
       if (pPeriodicAdv->numChains > 1)
       {
         pPeriodicAdv->otaTime += AE_MIN_T_MAFS_IN_US;
       }
     }
-    // update the next start time event
+
+    // Update the next start time event
     pPeriodicAdv->startTime = pPeriodicAdv->startTime + (pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS );
-    pPeriodicAdv->rfCmd.rfOpCmd.startTime = pPeriodicAdv->startTime;
-    // initialize the counter command status
-    pPeriodicAdv->rfCount.rfOpCmd.status = RFSTAT_IDLE;
-    // set the counter based on the number of additional aux packets needed
-    // Note: If the numFrags=0, then there is no secondary channel packet, so
-    //       this counter will never be used.
-    pPeriodicAdv->rfCount.counter = pPeriodicAdv->numChains;
-    // update chain start time
-    pPeriodicAdv->rfParam.auxPtrTgtTime = pPeriodicAdv->rfCmd.rfOpCmd.startTime +
-        US_TO_RAT_TICKS(pPeriodicAdv->otaTime + START_SYNTH_TO_RAT_OFFSET);
-    pPeriodicAdv->rfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
+    pRf->perAdvCmd.common.timing.absStartTime = pPeriodicAdv->startTime;
+
+    // Build AUX_SYNC_IND packet and add it to the command TX queue
+    pPeriodicAdv->extHdrSize = MAP_llGetExtHdrLen(pRf->comPkt.extHdrFlags);
+    uint8_t payloadLen = 1 + pPeriodicAdv->extHdrSize + pRf->comPkt.advDataLen;
+    pRf->buffNo = 0;
+    MAP_llAddPeriodicAdvPacketToTx( pPeriodicAdv, LL_PKT_TYPE_AUX_SYNC_IND, payloadLen );
+
+    // Update the chain packet if there is chain packet
+    if (pPeriodicAdv->numChains > 1)
+    {
+      MAP_llUpdatePeriodicAdvChainPacket( pPeriodicAdv );
+    }
   }
-  // schedule this task
+  // Schedule this task
   MAP_llScheduler();
+
   return;
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
@@ -1126,22 +1176,25 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
       if ((pPeriodicAdv->state == PERIODIC_ADV_STATE_ENABLE) && (!TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags, EXTHDR_FLAG_SYNCINFO)))
       {
         SET_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
+        MAP_llSetupExtHdr( pAdvSet, pAdvSet->auxHdrFlags, AE_AUX_OFFSET_AUTO_INSERT );
       }
       else if (pPeriodicAdv->state == PERIODIC_ADV_STATE_PENDING_ENABLE)
       {
-        // set the sync info flag
+        // Set the sync info flag
         SET_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
-        // set auxPtr and ADI flags in extHdrFlags
+        // Set auxPtr and ADI flags in extHdrFlags
         SET_EXTHDR_FLAG( pAdvSet->extHdrFlags,EXTHDR_FLAG_AUXPTR | EXTHDR_FLAG_ADI );
-        MAP_llSetupExtAdv( pAdvSet );
+        // Update the adv set in order to add the sync info
+        MAP_llSetupExtHdr( pAdvSet, pAdvSet->auxHdrFlags, AE_AUX_OFFSET_AUTO_INSERT );
         MAP_llSetupPeriodicAdv(pAdvSet);
       }
       else if ((pPeriodicAdv->state == PERIODIC_ADV_STATE_DISABLE) ||
               (pPeriodicAdv->pendingDisable))
       {
-        // clear the sync info flag
+        // Clear the sync info flag
         CLR_EXTHDR_FLAG( pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO );
-        // check if we need to clear the auxPtr and ADI flags in extHdrFlags
+
+        // Check if we need to clear the auxPtr and ADI flags in extHdrFlags
         if ((pAdvSet->pAdvData == NULL) && (pAdvSet->pScanRspData == NULL) &&
             (pAdvSet->pAdvParam->primPhy != AE_PHY_CODED_S2) && (pAdvSet->pAdvParam->primPhy != AE_PHY_CODED_S8))
         {
@@ -1154,8 +1207,9 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
             CLR_EXTHDR_FLAG( pAdvSet->extHdrFlags,EXTHDR_FLAG_ADI );
           }
         }
-        // update the adv set in order to clear the sync info
-        MAP_llSetupExtAdv( pAdvSet );
+
+        // Update the adv set in order to clear the sync info
+        MAP_llSetupExtHdr( pAdvSet, pAdvSet->auxHdrFlags, AE_AUX_OFFSET_AUTO_INSERT );
       }
     }
 #endif
@@ -1193,8 +1247,7 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
   pAdvSet->extHdrSize = MAP_llGetExtHdrLen(pAdvSet->extHdrFlags);
   uint8_t payloadLen = 1 + pAdvSet->extHdrSize;
   pRf->buffNo = 0;
-
-  status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_ADV_EXT_IND, payloadLen, NULL, 0);
+  status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_ADV_EXT_IND, payloadLen);
 
   // If AUX pointer included, build the AUX pointer Packet
   if ( TST_EXTHDR_FLAG(pAdvSet->extHdrFlags, EXTHDR_FLAG_AUXPTR) )
@@ -1238,7 +1291,6 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
       pktSize += pAdvSet->fragLen;
     }
 
-
     // Setup EXT_ADV_IND extended header flags
     pRf->comPkt.extHdrFlags = pAdvSet->auxHdrFlags;
 
@@ -1256,8 +1308,7 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
 
     pktSize += pAdvSet->auxExtHdrSize+ 1U;
     payloadLen = pktSize;
-
-    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_ADV_IND, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+    status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_ADV_IND, payloadLen);
   }
 
   /*
@@ -1296,11 +1347,12 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
       payloadLen = 1U + scanRspExtHdrSize + pRf->comPkt.advDataLen;
 
       // AUX_SCAN_RSP pkt in need to be sent as NC/NS mode
-      SET_ADV_MODE( pAdvSet->extHdrInfo,
+      SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                     AE_ADV_MODE_NONCONN_NONSCAN );
-      status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_SCAN_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+      // Build ae packet and add it to the command TX queue
+      status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_SCAN_RSP, payloadLen);
       // Change adv mode back to scannable
-      SET_ADV_MODE( pAdvSet->extHdrInfo,
+      SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                     AE_ADV_MODE_SCANNABLE );
   }
 
@@ -1327,11 +1379,12 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
     payloadLen = 1U + connRspExtHdrSize + pRf->comPkt.advDataLen;
 
     // AUX_CONN_RSP pkt is needed to be sent as NC/NS mode
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_NONCONN_NONSCAN );
-    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_CONNECT_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+    // Build ae packet and add it to the command TX queue
+    status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_CONNECT_RSP, payloadLen);
     // Change adv_mode back to connectable
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_CONNECTABLE );
   }
 

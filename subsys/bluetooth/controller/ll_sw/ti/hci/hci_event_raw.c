@@ -27,6 +27,10 @@
 
 #include "rom_jt.h"
 
+#include "cs/ll_cs_mgr.h"
+#include "cs/ll_cs_db.h"
+#include "cs/ll_cs_common.h"
+
 /*******************************************************************************
  * MACROS
  */
@@ -805,6 +809,350 @@ void HCI_AeScanCback( uint8 event, void *pData )
   }
 }
 
+/*******************************************************************************
+ * @fn          HCI_CS_ReadRemoteSupportedCapabilitiesCback
+ *
+ * @brief       Callback for reading the remote CS capabilities.
+ *
+ * input parameters
+ *
+ * @param       status - status
+ * @param       connHandle - connection handle
+ * @param       peerCapabilities- peerCapabilities
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_ReadRemoteSupportedCapabilitiesCback(
+  uint8 status, uint16 connHandle, csCapabilities_t* peerCapabilities)
+{
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt = hciAllocAndPrepHciLeEvtPkt(
+    &pData, HCI_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT,
+    HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT_LEN);
+
+  if (pEvt)
+  {
+    *pData++ = status;                // status
+    *pData++ = LO_UINT16(connHandle); // connection handle (LSB)
+    *pData++ = HI_UINT16(connHandle); // connection handle (MSB)
+    *pData++ = peerCapabilities->numConfig;
+    *pData++ = LO_UINT16(peerCapabilities->maxProcedures);
+    *pData++ = HI_UINT16(peerCapabilities->maxProcedures);
+    *pData++ = peerCapabilities->numAntennas;
+    *pData++ = peerCapabilities->maxAntPath;
+    *pData++ = peerCapabilities->role;
+    *pData++ = peerCapabilities->optionalModes;
+    *pData++ = peerCapabilities->rttCap;
+    *pData++ = peerCapabilities->rttAAOnlyN;
+    *pData++ = peerCapabilities->rttSoundingN;
+    *pData++ = peerCapabilities->rttRandomPayloadN;
+    *pData++ = LO_UINT16(peerCapabilities->nadmSounding);
+    *pData++ = HI_UINT16(peerCapabilities->nadmSounding);
+    *pData++ = LO_UINT16(peerCapabilities->nadmRandomSeq);
+    *pData++ = HI_UINT16(peerCapabilities->nadmRandomSeq);
+    *pData++ = peerCapabilities->optionalCsSyncPhy;
+    *pData++ = LO_UINT16(
+      peerCapabilities->companionSignal | peerCapabilities->noFAE << 1 |
+      peerCapabilities->chSel3c << 2 | peerCapabilities->csBasedRanging << 3);
+    *pData++ = HI_UINT16(0);
+    *pData++ = LO_UINT16(peerCapabilities->tIp1Cap);
+    *pData++ = HI_UINT16(peerCapabilities->tIp1Cap);
+    *pData++ = LO_UINT16(peerCapabilities->tIp2Cap);
+    *pData++ = HI_UINT16(peerCapabilities->tIp2Cap);
+    *pData++ = LO_UINT16(peerCapabilities->tFcsCap);
+    *pData++ = HI_UINT16(peerCapabilities->tFcsCap);
+    *pData++ = LO_UINT16(peerCapabilities->tPmCsap);
+    *pData++ = HI_UINT16(peerCapabilities->tPmCsap);
+    *pData = peerCapabilities->tSwCap;
+
+    // Send message
+    HCI_SendEventToHost(pEvt);
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_ConfigCompleteCback
+ *
+ * @brief       Callback to send CS Config Complete event.
+ *
+ * input parameters
+ *
+ * @param       status     - status
+ * @param       connHandle - connection handle
+ * @param       csConfig   - peerCapabilities
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_ConfigCompleteCback(uint8 status, uint16 connHandle,
+                                csConfigurationSet_t* csConfig)
+{
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt = hciAllocAndPrepHciLeEvtPkt(&pData, HCI_CS_CONFIG_COMPLETE_EVENT,
+                                    HCI_LE_CS_CONFIG_COMPLETE_EVENT_LEN);
+
+  if (pEvt)
+  {
+    *pData++ = status;                // status
+    *pData++ = LO_UINT16(connHandle); // connection handle (LSB)
+    *pData++ = HI_UINT16(connHandle); // connection handle (MSB)
+    *pData++ = csConfig->configId;
+    *pData++ = csConfig->state;
+    *pData++ = csConfig->mainMode;
+    *pData++ = csConfig->subMode;
+    *pData++ = csConfig->mainModeMinSteps;
+    *pData++ = csConfig->mainModeMaxSteps;
+    *pData++ = csConfig->mainModeRepetition;
+    *pData++ = csConfig->modeZeroSteps;
+    *pData++ = csConfig->role;
+    *pData++ = csConfig->rttType;
+    *pData++ = csConfig->csSyncPhy;
+    pData = MAP_osal_memcpy(pData, &csConfig->channelMap, CS_CHM_SIZE);
+    *pData++ = csConfig->chMRepetition;
+    *pData++ = csConfig->chSel;
+    *pData++ = csConfig->ch3cShape;
+    *pData++ = csConfig->ch3CJump;
+    *pData++ = csConfig->companionSignal;
+    *pData++ = csConfig->tIP1;
+    *pData++ = csConfig->tIP2;
+    *pData++ = csConfig->tFCs;
+    *pData = csConfig->tPM;
+
+    // send the message
+    HCI_SendEventToHost(pEvt);
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_ReadRemoteFAETableCompleteCback
+ *
+ * @brief       callback function that returns the result of reading the remote
+ *              FAE table
+ *
+ * input parameters
+ *
+ * @param       status
+ * @param       connHandle connection handle
+ * @param       faeTable   pointer to remote FAE table
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_ReadRemoteFAETableCompleteCback(uint8 status, uint16 connHandle,
+                                            uint8* faeTable)
+{
+  uint8 eventLen = HCI_LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE_EVENT_LEN;
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt = hciAllocAndPrepHciLeEvtPkt(
+    &pData, HCI_LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE_EVENT, eventLen);
+
+  if (pEvt)
+  {
+    *pData++ = LO_UINT16(connHandle); // connection handle (LSB)
+    *pData++ = HI_UINT16(connHandle); // connection handle (MSB)
+    *pData++ = status;                // status
+    if (faeTable)
+    {
+      for (uint8 i = 0; i <= (eventLen - 4); i++)
+      {
+        *pData++ = *faeTable++;
+      }
+    }
+
+    // Send message
+    HCI_SendEventToHost(pEvt);
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_SecurityEnableCompleteCback
+ *
+ * @brief       Security Enable complete callback function.
+ *
+ * input parameters
+ *
+ * @param       status     - event status
+ * @param       connHanlde - connection identifier
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_SecurityEnableCompleteCback(uint8 status, uint16 connHandle)
+{
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt =
+    hciAllocAndPrepHciLeEvtPkt(&pData, HCI_LE_CS_SECURITY_ENABLE_COMPLETE_EVENT,
+                               HCI_LE_CS_SECURITY_ENABLE_COMPLETE_EVENT_LEN);
+
+  if (pEvt)
+  {
+    *pData++ = status;                // status
+    *pData++ = LO_UINT16(connHandle); // connection handle (LSB)
+    *pData = HI_UINT16(connHandle);   // connection handle (MSB)
+
+    // send the message
+    HCI_SendEventToHost(pEvt);
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_ProcedureEnableCompleteCback
+ *
+ * @brief       Procedure Enable Complete Event callback
+ *
+ * input parameters
+ *
+ * @param       status     - event status
+ * @param       connHanlde - connection identifier
+ * @param       enable     - indicates enable or disable
+ * @param       enableData - enable data
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_ProcedureEnableCompleteCback(uint8 status, uint16 connHandle,
+                                         uint8 enable,
+                                         csProcedureEnable_t* enableData)
+{
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt = hciAllocAndPrepHciLeEvtPkt(
+    &pData, HCI_LE_CS_PROCEDURE_ENABLE_COMPLETE_EVENT,
+    HCI_LE_CS_PROCEDURE_ENABLE_COMPLETE_EVENT_LEN);
+
+  if (pEvt)
+  {
+    *pData++ = status;
+    *pData++ = LO_UINT16(connHandle); // connection handle (LSB)
+    *pData++ = HI_UINT16(connHandle); // connection handle (MSB)
+    *pData++ = enableData->configId;  // config Id
+    *pData++ = enable;
+    *pData++ = enableData->ACI;
+    *pData++ = enableData->pwrDelta;
+    *pData++ = BREAK_UINT32(enableData->subEventLen, 0);
+    *pData++ = BREAK_UINT32(enableData->subEventLen, 1);
+    *pData++ = BREAK_UINT32(enableData->subEventLen, 2);
+    *pData++ = enableData->subEventsPerEvent;
+    *pData++ = LO_UINT16(enableData->subEventInterval);
+    *pData++ = HI_UINT16(enableData->subEventInterval);
+    *pData++ = LO_UINT16(enableData->eventInterval);
+    *pData++ = HI_UINT16(enableData->eventInterval);
+    *pData++ = LO_UINT16(enableData->procedureInterval);
+    *pData++ = HI_UINT16(enableData->procedureInterval);
+    *pData++ = LO_UINT16(enableData->procedureCount);
+    *pData = HI_UINT16(enableData->procedureCount);
+
+    // send the message
+    HCI_SendEventToHost(pEvt);
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_SubeventResultCback
+ *
+ * @brief       Subevent results callback
+ *
+ * input parameters
+ *
+ * @param       pRes - pointer to results data
+ * @param       dataLength - length of data
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_SubeventResultCback(void* pRes, uint16 dataLength)
+{
+  if (pRes)
+  {
+    uint8* pEvt;
+    // Pointer to data inside pEvt, that pointer point next slot to be filled
+    uint8* pData;
+
+    pEvt =
+      hciAllocAndPrepHciLeEvtPkt(&pData, HCI_LE_CS_SUBEVENT_RESULT, dataLength);
+
+    if (pEvt)
+    {
+      if (pData)
+      {
+        // Copy results into pData
+        MAP_osal_memcpy(pData--, pRes, dataLength);
+      }
+
+      // send the message
+      HCI_SendEventToHost(pEvt);
+    }
+  }
+}
+
+extern void HCI_CS_SubeventResultContinueCback(void* hdr, void* data,
+                                               uint16 dataLength)
+{
+  if (hdr && data)
+  {
+    uint8* pEvt;
+    // Pointer to data inside pEvt, that pointer point next slot to be filled
+    uint8* pData;
+    uint8* pHdr = (uint8*)hdr;
+
+    pEvt = hciAllocAndPrepHciLeEvtPkt(
+      &pData, HCI_LE_CS_SUBEVENT_CONTINUE_RESULT, dataLength);
+
+    // go a step back in pData
+    pData--;
+    if (pEvt)
+    {
+      if (pHdr)
+      {
+        /* Copy the header */
+        pData = MAP_osal_memcpy(pData, pHdr, CS_SUBEVENT_HDR_LEN);
+        /* Skip the irrelevant info and copy the relevant stuff */
+        pHdr += CS_SUBEVENT_HDR_LEN + CS_SUBEVENT_PROC_INFO_LEN;
+        pData = MAP_osal_memcpy(pData, pHdr, CS_SUBEVENT_CONT_IRR_INFO);
+        /* Copy the step results */
+        MAP_osal_memcpy(pData, data,
+                        dataLength - CS_SUBEVENT_HDR_LEN -
+                          CS_SUBEVENT_CONT_IRR_INFO);
+      }
+
+      // send the message
+      HCI_SendEventToHost(pEvt);
+    }
+  }
+}
 // In the hci_event.c, there are additional implementations for the following functions.
 #ifndef HOST_CONFIG
 
@@ -1958,8 +2306,6 @@ void LL_ConnParamUpdateRejectCback( llStatus_t status, uint16 connHandle,
   }
 }
 
-#endif //HOST_CONFIG
-
 #ifdef USE_PERIODIC_SCAN
 /*********************************************************************
  * @fn      HCI_PeriodicAdvSyncEstablishedEvent
@@ -2081,7 +2427,6 @@ void HCI_PeriodicAdvReportEvent( uint16 syncHandle, int8 txPower, int8 rssi,
     uint8 dataLength;
     uint8 eventLength;
     uint8 dataOffset = 0;
-    uint16 totalLength;
 
     do
     {
@@ -2157,6 +2502,7 @@ void HCI_PeriodicAdvSyncLostEvent( uint16 syncHandle )
   }
 }
 #endif // USE_PERIODIC_SCAN
+#endif //HOST_CONFIG
 
 #ifdef RTLS_CTE // Note: the follow events have duplicate implementation with/without host when CTE migrate to F3 needs to split it
 /*******************************************************************************
@@ -3426,7 +3772,10 @@ uint8* hciAllocAndPrepHciEvtPkt( uint8 **pData, uint8 hciEvtType,
   else // Out of heap!
   {
     *pData = NULL;
-    MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );
+    if (HCI_BLE_HARDWARE_ERROR_EVENT_CODE != hciEvtType)
+    {
+      MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );
+    }
   }
 
   // else pEvt == NUll
@@ -3737,8 +4086,9 @@ void hciCreateEventExtAdvReport( aeExtAdvRptEvt_t *pExtAdvRpt )
         dataLen = remainingLength;
       }
 
-      pEvt = hciAllocAndPrepHciLeEvtPkt( &pData, pExtAdvRpt->subCode,
-      HCI_AE_EVENT_LENGTH + dataLen );
+      pEvt = hciAllocAndPrepHciEvtPkt( &pData,
+                                       HCI_LE_EVENT_CODE,
+                                       HCI_AE_EVENT_LENGTH + dataLen );
 
       // Save head for update extType later
       uint8 *pHead = pData;
@@ -3746,6 +4096,7 @@ void hciCreateEventExtAdvReport( aeExtAdvRptEvt_t *pExtAdvRpt )
       if ( pEvt )
       {
         // We keep all the information the same across report, only the data type will change.
+        *pData++ = pExtAdvRpt->subCode;
         *pData++ = pExtAdvRpt->numRpts;
         *pData++ = LO_UINT16( pExtAdvRpt->evtType );
         *pData++ = HI_UINT16( pExtAdvRpt->evtType );
@@ -3754,8 +4105,8 @@ void hciCreateEventExtAdvReport( aeExtAdvRptEvt_t *pExtAdvRpt )
         if ( remainingLength > MAX_REPORT_DATA_SIZE )
         {
           // This is not the last packet
-          ((aeExtAdvRptEvt_t*) &(pHead))->evtType &= AE_EVT_TYPE_COMPLETE_MASK;
-          ((aeExtAdvRptEvt_t*) &(pHead))->evtType |= AE_EVT_TYPE_INCOMPLETE_MORE_TO_COME;
+          ((aeExtAdvRptEvt_t*) pHead)->evtType &= AE_EVT_TYPE_COMPLETE_MASK;
+          ((aeExtAdvRptEvt_t*) pHead)->evtType |= AE_EVT_TYPE_INCOMPLETE_MORE_TO_COME;
         }
 
         *pData++ = pExtAdvRpt->addrType;

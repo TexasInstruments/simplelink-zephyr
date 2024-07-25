@@ -297,6 +297,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_LE_REMOVE_DEVICE_FROM_PERIODIC_ADV_LIST       0x2048    //!< opcode of @ref HCI_LE_RemoveDeviceFromPeriodicAdvListCmd
 #define HCI_LE_CLEAR_PERIODIC_ADV_LIST                    0x2049    //!< opcode of @ref HCI_LE_ClearPeriodicAdvListCmd
 #define HCI_LE_READ_PERIODIC_ADV_LIST_SIZE                0x204A    //!< opcode of @ref HCI_LE_ReadPeriodicAdvListSizeCmd
+#define HCI_LE_SET_HOST_FEATURE                           0x2074    //!< opcode of @ref HCI_LE_SetHostFeature
 // @endcond // NODOC
 
 // V5.1
@@ -319,7 +320,9 @@ extern uint8 hciSmpTaskID;
 /// @endcond //NODOC
 // LE Vendor Specific LL Extension Commands
 #define HCI_EXT_SET_RX_GAIN                                 0xFC00    //!< opcode of @ref HCI_EXT_SetRxGainCmd
-#define HCI_EXT_SET_TX_POWER                                0xFC01    //!< opcode of @ref HCI_EXT_SetTxPowerCmd
+#define HCI_EXT_SET_TX_POWER                                0xFC01    //!< opcode of @ref HCI_EXT_SetTxPowerDbmCmd
+// Reserved and can be used: 0xFC2F
+// Reserved and can be used: 0xFC30
 
 #define HCI_EXT_ONE_PKT_PER_EVT                             0xFC02    //!< opcode of @ref HCI_EXT_OnePktPerEvtCmd
 /// @cond CC254X
@@ -340,7 +343,6 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_ENABLE_PTM                                  0xFC0E    //!< opcode of @ref HCI_EXT_EnablePTMCmd
 #define HCI_EXT_SET_FREQ_TUNE                               0xFC0F    //!< opcode of @ref HCI_EXT_SetFreqTuneCmd
 #define HCI_EXT_SAVE_FREQ_TUNE                              0xFC10    //!< opcode of @ref HCI_EXT_SaveFreqTuneCmd
-#define HCI_EXT_SET_MAX_DTM_TX_POWER                        0xFC11    //!< opcode of @ref HCI_EXT_SetMaxDtmTxPowerCmd
 /// @cond CC254X
 #define HCI_EXT_MAP_PM_IO_PORT                              0xFC12    //!< opcode of @ref HCI_EXT_MapPmIoPortCmd
 /// @endcond //CC254X
@@ -452,6 +454,17 @@ extern uint8 hciSmpTaskID;
 #define HCI_BLE_CONNECTION_IQ_REPORT_EVENT                0x16      //!< CTE sample connection report
 #define HCI_BLE_CTE_REQUEST_FAILED_EVENT                  0x17      //!< CTE sample failed
 
+// CS events
+#define HCI_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT 0x2C //!< CS event Remote capabilities complete
+#define HCI_LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE_EVENT           0x2D //!< CS event Read Remote FAE Table Complete
+#define HCI_LE_CS_SECURITY_ENABLE_COMPLETE_EVENT                 0x2E //!< CS Event  Security Enable Complete
+#define HCI_CS_CONFIG_COMPLETE_EVENT                             0x2F //!< CS event create config complete
+#define HCI_LE_CS_PROCEDURE_ENABLE_COMPLETE_EVENT                0x30 //!< CS Procedure Enable Complete
+#define HCI_LE_CS_SUBEVENT_RESULT                                0x31 //!< CS Subevent Result
+#define HCI_LE_CS_SUBEVENT_CONTINUE_RESULT                       0x32 //!< CS Subevent Result
+#define HCI_LE_CS_TEST_END_COMPLETE_EVENT                        0x33 //!< CS Test End Complete
+
+
 // VS Meta Event Codes - Texas Instruments Inc specific!
 #define HCI_BLE_SCAN_REQ_REPORT_EVENT                     0x80      //!< event of type @ref hciEvt_BLEScanReqReport_t
 #define HCI_BLE_EXT_CONNECTION_IQ_REPORT_EVENT            0x81      //!< event of type @ref hciEvt_BLEExtCteConnectionIqReport_t
@@ -464,7 +477,7 @@ extern uint8 hciSmpTaskID;
 
 // LE Vendor Specific LL Extension Events
 #define HCI_EXT_SET_RX_GAIN_EVENT                         0x0400    //!< event from @ref HCI_EXT_SetRxGainCmd
-#define HCI_EXT_SET_TX_POWER_EVENT                        0x0401    //!< event from @ref HCI_EXT_SetTxPowerCmd
+#define HCI_EXT_SET_TX_POWER_EVENT                        0x0401    //!< event from @ref HCI_EXT_SetTxPowerCmd that was removed and in use at HCI_EXT_SetTxPowerDbmCmd
 #define HCI_EXT_ONE_PKT_PER_EVT_EVENT                     0x0402    //!< event from @ref HCI_EXT_OnePktPerEvtCmd
 /// @cond CC254X
 #define HCI_EXT_CLK_DIVIDE_ON_HALT_EVENT                  0x0403    //!< event from @ref HCI_EXT_ClkDivOnHaltCmd
@@ -484,7 +497,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_ENABLE_PTM_EVENT                          0x040E    //!< event from @ref HCI_EXT_EnablePTMCmd
 #define HCI_EXT_SET_FREQ_TUNE_EVENT                       0x040F    //!< event from @ref HCI_EXT_SetFreqTuneCmd
 #define HCI_EXT_SAVE_FREQ_TUNE_EVENT                      0x0410    //!< event from @ref HCI_EXT_SaveFreqTuneCmd
-#define HCI_EXT_SET_MAX_DTM_TX_POWER_EVENT                0x0411    //!< event from @ref HCI_EXT_SetMaxDtmTxPowerCmd
+#define HCI_EXT_SET_MAX_DTM_TX_POWER_EVENT                0x0411    //!< event from @ref HCI_EXT_SetMaxDtmTxPowerCmd that was removed and in use at HCI_EXT_SetMaxDtmTxPowerCmdDbm
 /// @cond CC254X
 #define HCI_EXT_MAP_PM_IO_PORT_EVENT                      0x0412    //!< event from @ref HCI_EXT_MapPmIoPortCmd
 /// @endcond //CC254X
@@ -541,6 +554,22 @@ extern uint8 hciSmpTaskID;
 #define NO_FEATURES_ENABLED                               0x00      //!< No Features Enabled
 #define PEER_PARAM_REJECT_ENABLED                         0x01      //!< Peer Device Conn Param Reject Mask Enabled
 
+
+// Channel Sounding Commands
+#define HCI_LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES          0x2089    //!< opcode of @ref HCI_LE_CS_ReadLocalSupportedCapabilities
+#define HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES         0x208A    //!< opcode of @ref HCI_LE_CS_ReadRemoteSupportedCapabilities
+#define HCI_LE_CS_SECURITY_ENABLE                            0x208C    //!< opcode of @ref HCI_LE_CS_SecurityEnable
+#define HCI_LE_CS_SET_DEFAULT_SETTINGS                       0x208D    //!< opcode of @ref HCI_LE_CS_SetDefaultSettings
+#define HCI_LE_CS_READ_LOCAL_FAE_TABLE                       0x03F7    //!< opcode of @ref HCI_LE_CS_ReadLocalFAETable
+#define HCI_LE_CS_READ_REMOTE_FAE_TABLE                      0x208E    //!< opcode of @ref HCI_LE_CS_ReadRemoteFAETable
+#define HCI_LE_CS_WRITE_REMOTE_FAE_TABLE                     0x208F    //!< opcode of @ref HCI_LE_CS_WriteRemoteFAETable
+#define HCI_LE_CS_CREATE_CONFIG                              0x2090    //!< opcode of @ref HCI_LE_CS_CreateConfig
+#define HCI_LE_CS_REMOVE_CONFIG                              0x2091    //!< opcode of @ref HCI_LE_CS_RemoveConfig
+#define HCI_LE_CS_SET_CHANNEL_CLASSIFICATION                 0x2092    //!< opcode of @ref HCI_LE_CS_SetChannelClassification
+#define HCI_LE_CS_PROCEDURE_ENABLE                           0x2094    //!< opcode of @ref HCI_LE_CS_ProcedureEnable
+#define HCI_LE_CS_TEST                                       0x2095    //!< opcode of @ref HCI_LE_CS_Test
+#define HCI_LE_CS_TEST_END                                   0x2096    //!< opcode of @ref HCI_LE_CS_TestEnd
+#define HCI_LE_CS_SET_PROCEDURE_PARAMS                       0x2093    //!< opcode of @ref HCI_LE_CS_SetProcedureParameters
 /** @} */ // end of HCI_Constants
 
 /*******************************************************************************

@@ -56,6 +56,8 @@
 #include "ble_thermal_protection.h"
 #endif
 
+#include "cs/ll_cs_db.h"
+
 #if !defined(CC23X0) && !defined(CC33xx)
 #if !defined(DeviceFamily_CC13X4) && !defined(DeviceFamily_CC26X4)
 #if !defined(DeviceFamily_CC26X1)
@@ -184,20 +186,20 @@ static inline void  llBuildCtrlPkt(llConnState_t *connPtr, uint8_t *pData, uint8
 static inline void  llPostSetupCtrlPkt( llConnState_t *connPtr, uint8_t ctrlPkt);
 
 // Functions to handle specific control packet
-static inline void  llSetupUpdateParamReq( llConnState_t *connPtr, uint8_t *pData );     // C
-static inline void  llSetupUpdateChanReq( llConnState_t *connPtr, uint8_t *pData );      // C
+static inline void  llSetupUpdateParamReq( llConnState_t *connPtr, uint8_t *pData );                    // C
+static inline void  llSetupUpdateChanReq( llConnState_t *connPtr, uint8_t *pData );                     // C
 static inline void  llSetupTermInd( llConnState_t *connPtr, uint8_t *pData );
-static inline void  llSetupEncReq( llConnState_t *connPtr, uint8_t *pData );             // C
-static inline void  llSetupEncRsp( llConnState_t *connPtr, uint8_t *pData );             // P
+static inline void  llSetupEncReq( llConnState_t *connPtr, uint8_t *pData );                            // C
+static inline void  llSetupEncRsp( llConnState_t *connPtr, uint8_t *pData );                            // P
 static inline void  llSetupUnknownRsp( llConnState_t *connPtr, uint8_t *pData );
-static inline void  llSetupFeatureSetReq( llConnState_t *connPtr, uint8_t *pData );      // C, P
-static inline void  llSetupLenCtrlPkt( llConnState_t *connPtr, uint8_t *pData );         // C, P
-static inline void  llSetupConnParam( llConnState_t *connPtr,uint8_t *pData  );          // C, P
+static inline void  llSetupFeatureSetReq( llConnState_t *connPtr, uint8_t *pData );                     // C, P
+static inline void  llSetupLenCtrlPkt( llConnState_t *connPtr, uint8_t *pData );                        // C, P
+static inline void  llSetupConnParam( llConnState_t *connPtr,uint8_t *pData, uint8_t ctrlPkt);          // C, P
 static inline void  llSetupRejectIndExt(llConnState_t *connPtr, uint8_t *pData);
-static inline void  llSetupFeatureSetRsp( llConnState_t *connPtr,uint8_t *pData );       // C, P
+static inline void  llSetupFeatureSetRsp( llConnState_t *connPtr,uint8_t *pData );                      // C, P
 static inline void  llSetupVersionIndReq( llConnState_t *connPtr, uint8_t *pData );
 static inline void  llSetupRejectInd( llConnState_t *connPtr, uint8_t *pData );
-static inline void  llSetupPhyCtrlPkt( llConnState_t *connPtr, uint8_t *pData );         // C, P
+static inline void  llSetupPhyCtrlPkt( llConnState_t *connPtr, uint8_t *pData );                        // C, P
 
 // Service function to setup control packet
 static inline uint8_t llEncryptControlPkt(llConnState_t *connPtr, uint8_t ctrlPkt);
@@ -316,7 +318,20 @@ const uint8 ctrlPktLenTable[NUM_OF_CTRL_PKT] =
    LL_PHY_UPDATE_REQ_PAYLOAD_LEN,          //index 24 - LL_CTRL_PHY_UPDATE_REQ
    LL_MIN_USED_CHANNELS_IND_LEN,           //index 25 - LL_CTRL_MIN_USED_CHANNELS_IND
    LL_CTE_REQ_PAYLOAD_LEN,                 //index 26 - LL_CTRL_CTE_REQ
-   LL_CTE_RSP_PAYLOAD_LEN                  //index 27 - LL_CTRL_CTE_RSP
+   LL_CTE_RSP_PAYLOAD_LEN,                 //index 27 - LL_CTRL_CTE_RSP
+   LL_CS_SEC_RSP_PL_LEN,                   //index 28 - LL_CTRL_CS_CHANNEL_MAP_IND 
+   LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN,     //index 29 - LL_CTRL_CS_FAE_RSP         
+   LL_CS_CAPABILITIES_RSP_PAYLOAD_LEN,     //index 30 - LL_CTRL_CS_FAE_REQ         
+   LL_CS_CONFIG_REQ_PL_LEN,                //index 31 - LL_CTRL_CS_TERMINATE_IND   
+   LL_CS_CONFIG_RSP_PL_LEN,                //index 32 - LL_CTRL_CS_IND             
+   LL_CS_REQ_PL_LEN,                       //index 33 - LL_CTRL_CS_RSP             
+   LL_CS_RSP_PL_LEN,                       //index 34 - LL_CTRL_CS_REQ             
+   LL_CS_IND_PL_LEN,                       //index 35 - LL_CTRL_CS_CONFIG_RSP      
+   LL_CS_TERMINATE_IND_PL_LEN,             //index 36 - LL_CTRL_CS_CONFIG_REQ      
+   LL_CS_FAE_REQ_PL_LEN,                   //index 37 - LL_CTRL_CS_CAPABILITIES_RSP
+   LL_CS_FAE_RSP_PL_LEN,                   //index 38 - LL_CTRL_CS_CAPABILITIES_REQ
+   LL_CS_CHANNEL_MAP_IND_PL_LEN,           //index 39 - LL_CTRL_CS_SEC_RSP         
+   LL_CS_SEC_REQ_PL_LEN,                   //index 40 - LL_CTRL_CS_SEC_REQ         
 };
 
 void llPostRealignConn(llConnState_t *connPtr, uint32 timeToNextEvt);
@@ -2201,6 +2216,10 @@ void llReleaseConnId( llConnState_t *connPtr )
   // clear all CTE connection set
   MAP_osal_memset( &llCte[connPtr->connId], 0, sizeof( llCte_t ) );
 #endif // RTLS_CTE
+
+  // clear all CS data set
+  MAP_llCsClearConnProcedures(connPtr->connId);
+
   // Reset DMM threshold
   if ((llState == LL_STATE_CONN_CENTRAL) || (llState == LL_STATE_CONN_PERIPHERAL))
   {
@@ -2387,6 +2406,22 @@ uint16 llSelectConn(uint16 connId1, uint16 connId2)
   }
 
   /* NOTE: Increment Miss Count of the un-selected connection would be done in the RealignConn() function. */
+
+  /* TODO - As a first step return the connection that has CS running.
+   * When multiple connections will be supported instanses and timeouts
+   * need to be taken into consideration
+   */
+  /********************************************/
+  /************ Check CS Priority *************/
+  /********************************************/
+  if ( connPtr1->connPriority == LL_QOS_CS_PRIORITY )
+  {
+    return (connId1);
+  }
+  else if ( connPtr2->connPriority == LL_QOS_CS_PRIORITY )
+  {
+    return (connId2);
+  }
 
   /*  In this Stage - Both connections are active */
 
@@ -3810,8 +3845,13 @@ void llInitFeatureSet( void )
   deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_CHAN_ALGO_2;
 #endif // (ADV_CONN_CFG | INIT_CFG)
 
-#ifndef CC23X0
+  // add AE to supported feature set. if USE_AE is not defined, this feature support will be turned off later in rom_init.c
+#if defined(CTRL_V50_CONFIG) && (CTRL_V50_CONFIG & AE_CFG)
+  deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_EXTENDED_ADVERTISING;
+#endif // AE_CFG
+
   // set here and omit those features later in rom_init.c depends on defines
+#ifndef CC23X0
   deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_EXTENDED_ADVERTISING;
   deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_PERIODIC_ADVERTISING;
   deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTION_CTE_REQUEST;
@@ -3821,12 +3861,14 @@ void llInitFeatureSet( void )
   deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTIONLESS_CTE_TRANSMITTER;
   deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTIONLESS_CTE_RECEIVER;
 #endif // !CC23X0
-
+  deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_PERIODIC_ADVERTISING;
   deviceFeatureSet.featureSet[3] |= (uint8)LL_FEATURE_REMOTE_PUBLIC_KEY_VALIDATION;
+
+  // Set the CS Feature bit
+  MAP_llCsSetFeatureBit();
 
   return;
 }
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 /*******************************************************************************
@@ -7484,6 +7526,7 @@ void llProcessPeripheralConnectionCreated( void )
     }
   }
 
+  // The events must be ordered according to the test spec LL/CONN/ADV/BV-5-16
   MAP_LL_EnhancedConnectionCompleteCback( LL_STATUS_SUCCESS,                   // reasonCode
                                           (uint16)connPtr->connId,             // connection handle
                                           LL_LINK_CONNECT_COMPLETE_PERIPHERAL,      // role
@@ -7500,6 +7543,14 @@ void llProcessPeripheralConnectionCreated( void )
                                          (connPtr->pChSelAlgo == MAP_llGetNextDataChanAlgo1) ?
                                          LL_CHANNEL_SELECT_ALGO_1                            :
                                          LL_CHANNEL_SELECT_ALGO_2 );
+
+  // Send the Adv Set End callback, if enabled
+  MAP_llSendAdvSetEndEvent( pAdvSet );
+
+  // Send the LE Advertisement Set Terminated Event
+  MAP_llSendAdvSetTermEvent( pAdvSet,
+                             LL_STATUS_SUCCESS,
+                             connPtr->connId );
 
 #ifdef RTLS_CTE
   // init CTE sample rate
@@ -8404,6 +8455,38 @@ void llUpdateRxBuffersForActiveConnections(List_List *rxBuffers)
 }
 
 /*******************************************************************************
+ * @fn          llGetCsConnTaskID
+ *
+ * @brief       This function is used to search the device connection role of
+ *              the connection running with an active CS procedure
+ *
+ * input parameters
+ * @param       None
+ *
+ * output parameters
+ * @param		None.
+ *
+ * @return 	    Connection Handle
+ */
+uint16 llGetCsConnTaskID( void )
+{
+  int i;
+
+  for (i=0; i<maxNumConns; i++)
+  {
+    if ( llConns.llConnection[i].allocConn == TRUE )
+    {
+      if ( llConns.llConnection[i].connPriority == LL_QOS_CS_PRIORITY )
+      {
+        return llConns.llConnection[i].llTask->taskID;
+      }
+    }
+  }
+  return LL_TASK_ID_NONE;
+}
+
+
+/*******************************************************************************
  * @fn          llSetTxPower
  *
  * @brief       This routine is used to save the TX Power value provided by user,
@@ -8966,7 +9049,7 @@ static inline void llBuildCtrlPkt(llConnState_t *connPtr, uint8_t *pData,
     case LL_CTRL_CONNECTION_PARAM_REQ:
     case LL_CTRL_CONNECTION_PARAM_RSP:
     {
-      llSetupConnParam( connPtr, pData );
+      llSetupConnParam( connPtr, pData, ctrlPkt);
       break;
     }
     case LL_CTRL_REJECT_EXT_IND:
@@ -9293,10 +9376,10 @@ static inline void llSetupVersionIndReq(llConnState_t *connPtr, uint8_t *pData)
   // Fill verNum field
   *pCurData++ = verInfo.verNum;
 
-  size_t nextCmdSize = ( sizeof(connPtr->verInfo.comId) +
-                         sizeof(connPtr->verInfo.subverNum) );
+  size_t nextCmdSize = ( sizeof(verInfo.comId) +
+                         sizeof(verInfo.subverNum) );
 
-  uint8_t *pSrcAddress = (uint8_t*)&(connPtr->verInfo.comId);
+  uint8_t *pSrcAddress = (uint8_t*)&(verInfo.comId);
 
   // Fill comId field
   // Fill subverNum field
@@ -9346,7 +9429,7 @@ static inline void llSetupRejectInd(llConnState_t *connPtr, uint8_t *pData)
  *
  * @Output      pData - Packet's data payload
  */
-static inline void llSetupConnParam(llConnState_t *connPtr, uint8_t *pData)
+static inline void llSetupConnParam(llConnState_t *connPtr, uint8_t *pData, uint8_t ctrlPkt)
 {
   uint8_t *pCurData = pData;
 
@@ -9381,11 +9464,11 @@ static inline void llSetupConnParam(llConnState_t *connPtr, uint8_t *pData)
   memset( pCurData, 0xFF, nextCmdSize );
 
 #ifdef LL_TEST_MODE
-  if(connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CONNECTION_PARAM_RSP)
+  if(ctrlPkt == LL_CTRL_CONNECTION_PARAM_RSP)
   {
     llSetupConnParamRsp_testmode( connPtr, pData );
   }
-  if(connPtr->ctrlPktInfo.ctrlPkts[0] == LL_CTRL_CONNECTION_PARAM_REQ)
+  if(ctrlPkt == LL_CTRL_CONNECTION_PARAM_REQ)
   {
     llSetupConnParamReq_testmode( connPtr, pData );
   }

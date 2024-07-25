@@ -149,6 +149,7 @@
 #define IDX_HCI_LE_AddAcceptListCmd                   HCI_LE_AddAcceptListCmd
 #define IDX_HCI_LE_RemoveAcceptListCmd                HCI_LE_RemoveAcceptListCmd
 #define IDX_HCI_LE_SetHostChanClassificationCmd       HCI_LE_SetHostChanClassificationCmd
+#define IDX_HCI_LE_SetHostFeature                     HCI_LE_SetHostFeature
 #define IDX_HCI_LE_ReadChannelMapCmd                  HCI_LE_ReadChannelMapCmd
 #define IDX_HCI_LE_ReadRemoteUsedFeaturesCmd          HCI_LE_ReadRemoteUsedFeaturesCmd
 #define IDX_HCI_LE_EncryptCmd                         HCI_LE_EncryptCmd
@@ -188,7 +189,6 @@
 
 /* HCI Extended API */
 /********************/
-#define IDX_HCI_EXT_SetTxPowerCmd                        HCI_EXT_SetTxPowerCmd
 #define IDX_HCI_EXT_SetTxPowerDbmCmd                     HCI_EXT_SetTxPowerDbmCmd
 #define IDX_HCI_EXT_OnePktPerEvtCmd                      HCI_EXT_OnePktPerEvtCmd
 #define IDX_HCI_EXT_DecryptCmd                           HCI_EXT_DecryptCmd
@@ -205,7 +205,6 @@
 #define IDX_HCI_EXT_SetBDADDRCmd                         HCI_EXT_SetBDADDRCmd
 #define IDX_HCI_EXT_SetSCACmd                            HCI_EXT_SetSCACmd
 #define IDX_HCI_EXT_EnablePTMCmd                         HCI_EXT_EnablePTMCmd
-#define IDX_HCI_EXT_SetMaxDtmTxPowerCmd                  HCI_EXT_SetMaxDtmTxPowerCmd
 #define IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd               HCI_EXT_SetMaxDtmTxPowerDbmCmd
 #define IDX_HCI_EXT_DisconnectImmedCmd                   HCI_EXT_DisconnectImmedCmd
 #define IDX_HCI_EXT_PacketErrorRateCmd                   HCI_EXT_PacketErrorRateCmd
@@ -432,6 +431,23 @@
 /************/
 #define IDX_NPI_RegisterTask                          NPI_RegisterTask
 #define IDX_buildRevision                             buildRevision
+
+/* CS HCI API */
+/**************/
+#define IDX_HCI_LE_CS_ReadLocalSupportedCapabilities        HCI_LE_CS_ReadLocalSupportedCapabilities
+#define IDX_HCI_LE_CS_ReadRemoteSupportedCapabilities       HCI_LE_CS_ReadRemoteSupportedCapabilities
+#define IDX_HCI_LE_CS_CreateConfig                          HCI_LE_CS_CreateConfig
+#define IDX_HCI_LE_CS_SecurityEnable                        HCI_LE_CS_SecurityEnable
+#define IDX_HCI_LE_CS_SetDefaultSettings                    HCI_LE_CS_SetDefaultSettings
+#define IDX_HCI_LE_CS_ReadLocalFAETable                     HCI_LE_CS_ReadLocalFAETable
+#define IDX_HCI_LE_CS_ReadRemoteFAETable                    HCI_LE_CS_ReadRemoteFAETable
+#define IDX_HCI_LE_CS_WriteRemoteFAETable                   HCI_LE_CS_WriteRemoteFAETable
+#define IDX_HCI_LE_CS_RemoveConfig                          HCI_LE_CS_RemoveConfig
+#define IDX_HCI_LE_CS_SetChannelClassification              HCI_LE_CS_SetChannelClassification
+#define IDX_HCI_LE_CS_SetProcedureParameters                HCI_LE_CS_SetProcedureParameters
+#define IDX_HCI_LE_CS_ProcedureEnable                       HCI_LE_CS_ProcedureEnable
+#define IDX_HCI_LE_CS_Test                                  HCI_LE_CS_Test
+#define IDX_HCI_LE_CS_TestEnd                               HCI_LE_CS_TestEnd
 
 #endif /* !STACK_LIBRARY */
 

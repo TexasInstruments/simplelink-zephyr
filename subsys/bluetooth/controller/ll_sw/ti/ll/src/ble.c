@@ -33,6 +33,9 @@
 #include "ll_config.h"
 #include "hci_event.h"
 #include "hal_gpio_wrapper.h"
+#include "cs/ll_cs_ctrl_pkt_mgr.h"
+#include "cs/ll_cs_db.h"
+
 //
 #include "rom_jt.h"
 
@@ -135,9 +138,17 @@ struct
     uint32 reserved;
   };
 } scanDataEntry[ NUM_RX_SCAN_ENTRIES ];
-// Scan Data finished buffers
+
+// Scan  and Periodic Scan Data finished buffers
 List_List     scanDataQueue;
 
+#ifdef USE_PERIODIC_SCAN
+//
+// Periodic Scanner
+//
+
+
+#endif // USE_PERIODIC_SCAN
 #endif // SCAN_CFG
 
 //
@@ -264,20 +275,71 @@ void llReplaceRxBuffers( llConnState_t *connPtr )
 void *llSetupScanDataEntryQueue( void )
 {
   RCL_MultiBuffer *multiBuffer;
+
   // set the Scan receive buffers
   for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
   {
     multiBuffer = (RCL_MultiBuffer *)&scanDataEntry[i];
-    RCL_MultiBuffer_init(multiBuffer, sizeof(scanDataEntry[0]));
+
+    // Init scan buffers if they are not initialized yet
+    if(scanDataEntry[i].length == 0)
+    {
+      RCL_MultiBuffer_init(multiBuffer, sizeof(scanDataEntry[0]));
+    }
     RCL_MultiBuffer_put(&extScanParam.rxBuffers, multiBuffer);
   }
+
   /* Prepare list of RX buffers that are done */
   List_clearList(&scanDataQueue);
 
   return (multiBuffer);
 }
-#endif // SCAN_CFG
 
+#ifdef USE_PERIODIC_SCAN
+/*******************************************************************************
+ * @fn          llSetupPeriodicScanDataEntryQueue
+ *
+ * @brief       This routine is used to setup a static ring buffer
+ *              for the periodic Scanner. it will use the same buffers
+ *              as the Scan command to reduce memory use
+ *
+ * input parameters
+ *
+ * @param
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      Pointer to the Rx Data Entry Queue.
+ */
+void *llSetupPeriodicScanDataEntryQueue( void )
+{
+  RCL_MultiBuffer *multiBuffer;
+
+  // set the Scan receive buffers
+  for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
+  {
+    multiBuffer = (RCL_MultiBuffer *)&scanDataEntry[i];
+
+    // Init scan buffers if they are not initialized yet
+    if(scanDataEntry[i].length == 0)
+    {
+      RCL_MultiBuffer_init(multiBuffer, sizeof(scanDataEntry[0]));
+    }
+    RCL_MultiBuffer_put(&llPeriodicScan.rxBuffers, multiBuffer);
+  }
+
+  /* Prepare list of RX buffers that are done */
+
+  List_clearList(&scanDataQueue);
+
+  return (multiBuffer);
+
+}
+
+#endif // USE_PERIODIC_SCAN
+#endif // SCAN_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 /*******************************************************************************
@@ -754,6 +816,12 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
   uint8 status;
 
   // check the type of control packet
+  if ((opcode >= LL_CTRL_CS_SEC_RSP) &&
+      (opcode <= LL_CTRL_CS_SEC_REQ) )
+  {
+      MAP_llCsProcessCsControlPacket(opcode, connPtr, pBuf);
+      return;
+  }
   switch( opcode )
   {
     // Update Connection Parameters
@@ -2274,11 +2342,17 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 void llProcessCentralControlPacket( llConnState_t *connPtr,
                                    uint8         *pBuf )
 {
-  uint8 i;
+  uint8 i = 0;
   uint8 opcode = *pBuf++;
   uint8 status = 0;
 
   // check the type of control packet
+  if ((opcode >= LL_CTRL_CS_SEC_RSP) &&
+      (opcode <= LL_CTRL_CS_SEC_REQ) )
+  {
+      MAP_llCsProcessCsControlPacket(opcode, connPtr, pBuf);
+      return;
+  }
   switch( opcode )
   {
     // Encryption Response
@@ -3936,15 +4010,42 @@ void llClearScanDataQueue( uint8 clearAll )
 {
   RCL_MultiBuffer *multiBuffer;
   // set the Scan receive buffers
+
   for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
   {
     multiBuffer = (RCL_MultiBuffer *)&scanDataEntry[i];
+
     if ((clearAll == TRUE) || (multiBuffer->state == RCL_BufferStateFinished))
     {
       RCL_MultiBuffer_clear(multiBuffer);
     }
   }
 }
+#endif
+
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
+#ifdef USE_PERIODIC_SCAN
+/*******************************************************************************
+ * @fn          llClearPeriodicScanDataQueue API
+ *
+ * @brief       This function is used to clear all the periodic scan data entries so that the radio
+ *              can once again use it. It should be called after the scan command finished
+ *
+ * input parameters
+ *
+ * @param       clearAll - TRUE or FALSE in case of clear only finished buffer.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void llClearPeriodicScanDataQueue( uint8 clearAll )
+{
+    llClearScanDataQueue(clearAll);
+}
+#endif // USE_PERIODIC_SCAN
 #endif
 
 /*******************************************************************************

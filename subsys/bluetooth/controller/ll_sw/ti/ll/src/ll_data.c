@@ -26,6 +26,7 @@
 #include "ll_ae.h"
 #include "ll_al.h"
 #include "ll_privacy.h"
+#include "cs/ll_cs_db.h"
 //
 #include "rom_jt.h"
 
@@ -217,6 +218,9 @@ llStatus_t llDynamicAlloc( void )
     }
     // Connection Transmit Queue - one per connection
     txDataQ = (txDataQ_t *)MAP_osal_mem_alloc( sizeof(txDataQ_t) * maxNumConns );
+
+    // Init the CS DB
+    MAP_llCsInit();
   }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -442,6 +446,10 @@ void llDynamicFree( void )
     MAP_osal_mem_free( llCte );
   }
 #endif
+
+  // Channel Sounding
+  MAP_llCsFreeAll();
+
 
   // Free DMM allocations
   MAP_llDmmDynamicFree();

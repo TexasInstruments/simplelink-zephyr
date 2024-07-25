@@ -126,30 +126,48 @@ void llExtScan_PostProcess( void )
     MAP_llScheduler();
     return;
   }
+
+  // calculate if graceful stop time \ hard stop time has not been reached yet
+  // Note: True when first parameter is greater than the second.
+  uint8 isGracfulTimeNotReached = MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
+                                                    extScanCmd.common.timing.relGracefulStopTime, currentTime );
+  uint8 isHardStopTimeNotReached = MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
+                                                     extScanCmd.common.timing.relHardStopTime, currentTime );
+
   // check if there's more time before the end of the scan window and
-  // that end time is not before the current time
-  // Note: True when first parameter is greater than second.
-  if ( ((MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
-                          extScanCmd.common.timing.relGracefulStopTime, currentTime ) ) &&
-       (extScanCmd.common.timing.relHardStopTime == 0)) ||
-       ((extScanCmd.common.timing.relHardStopTime != 0) &&
-       (MAP_llTimeCompare(extScanCmd.common.timing.absStartTime +
-                          extScanCmd.common.timing.relHardStopTime, currentTime ))) )
+  // that end time is not before the current time.
+  // takes different cases into account, depends on which parameters we use (relHardStopTime, relGracefulStopTime or both)
+  // Note: zero value means that the parameter is not in use
+  if( (extScanCmd.common.timing.relHardStopTime == 0 && extScanCmd.common.timing.relGracefulStopTime != 0 && isGracfulTimeNotReached) ||
+      (extScanCmd.common.timing.relHardStopTime != 0 && extScanCmd.common.timing.relGracefulStopTime == 0 && isHardStopTimeNotReached) ||
+      (extScanCmd.common.timing.relHardStopTime != 0 && extScanCmd.common.timing.relGracefulStopTime != 0 && isHardStopTimeNotReached && isGracfulTimeNotReached)
+     )
   {
-    // Update start time to the future
-    uint32 timeDiff = currentTime - extScanCmd.common.timing.absStartTime;
-    extScanCmd.common.timing.absStartTime = currentTime;
 
-    // Update relGracefulStopTime and relHardStopTime with the time left to scan since the
-    // last command done received because the RCL stopped scanning after it finished receiving
-    // AUX packet and not because the scan window ended.
-    extScanCmd.common.timing.relGracefulStopTime -= timeDiff;
-    extScanCmd.common.timing.relHardStopTime -= timeDiff;
+      // Update start time to the future
+      uint32 timeDiff = currentTime - extScanCmd.common.timing.absStartTime;
+      extScanCmd.common.timing.absStartTime = currentTime;
 
-    // restart immediately
-    // Note: Already the current task.
-    // Note: Scan Window trigger is absolute.
-    MAP_llScheduleTask( extScanInfo->llTask );
+      // Update relGracefulStopTime and relHardStopTime with the time left to scan since the
+      // last command done received because the RCL stopped scanning after it finished receiving
+      // AUX packet and not because the scan window ended.
+
+      // Subtract timeDiff from relative graceful stop time only when it's in use (not zero)
+      if(extScanCmd.common.timing.relGracefulStopTime != 0)
+      {
+          extScanCmd.common.timing.relGracefulStopTime -= timeDiff;
+      }
+
+      // Subtract timeDiff from relative hard stop time only when it's in use (not zero)
+      if(extScanCmd.common.timing.relHardStopTime != 0)
+      {
+          extScanCmd.common.timing.relHardStopTime -= timeDiff;
+      }
+
+      // restart immediately
+      // Note: Already the current task.
+      // Note: Scan Window trigger is absolute.
+      MAP_llScheduleTask( extScanInfo->llTask );
   }
   else // we're done so on to the next scan interval
   {
@@ -259,6 +277,9 @@ void llPeriodicScan_PostProcess( void )
   llPeriodicScanSet_t *pPeriodicScan = llPeriodicScan.currentScan;
   llPeriodicScanSet_t *pTmpPeriodicScan = NULL;
 
+  // After receiving lastCmdDone, Clear all Periodic Scanner buffers.
+  llClearPeriodicScanDataQueue(TRUE);
+
   if ((pPeriodicScan->state == PERIODIC_SCAN_STATE_SYNCED) ||
       (pPeriodicScan->state == PERIODIC_SCAN_STATE_SYNCING_ACTIVE))
   {
@@ -267,8 +288,8 @@ void llPeriodicScan_PostProcess( void )
     {
       // check status of last received sync indication
       // accept the packet also in case of CRC error
-      if (((taskEndStatus == BLESTAT_DONE_OK) && (pPeriodicScan->rxCount > 0)) ||
-          ((taskEndStatus == BLESTAT_DONE_RXERR) && (llPeriodicScan.rfOutput.nRxAdvNok > 0)))
+      if (((pPeriodicScan->rfCmd.common.status == RCL_CommandStatus_Finished) && (pPeriodicScan->rxCount > 0)) ||
+          ((pPeriodicScan->rfCmd.common.status == RCL_CommandStatus_RxErr) && (llPeriodicScan.rfOutput.nRxNok > 0)))
       {
         pPeriodicScan->numMissed = 0;
         // decrease the priority
@@ -342,9 +363,7 @@ void llPeriodicScan_PostProcess( void )
       // in case current priodic scan is already synced
       else if (pPeriodicScan->state == PERIODIC_SCAN_STATE_SYNCED)
       {
-        uint8 cteCount = 0;
-
-        if ((taskEndStatus != BLESTAT_DONE_OK) || (pPeriodicScan->rxCount == 0))
+        if ((taskEndStatus != RCL_CommandStatus_Finished) || (pPeriodicScan->rxCount == 0))
         {
           // check for timeout
           if ((pPeriodicScan->numMissed * pPeriodicScan->interval * 1250) >
@@ -354,6 +373,8 @@ void llPeriodicScan_PostProcess( void )
           }
         }
 #ifdef RTLS_CTE
+        uint8 cteCount = 0;
+
         while (llCteSamples.autoCopyCompleted > 0)
         {
           if (cteCount < pPeriodicScan->cteInfo.count)
@@ -386,20 +407,19 @@ void llPeriodicScan_PostProcess( void )
       // update next sync indication receive time
       if (pPeriodicScan->numMissed == 0)
       {
-        pPeriodicScan->startTime += ((pPeriodicScan->syncCmd.skip + 1) * ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift));
+        pPeriodicScan->rfCmd.common.timing.absStartTime += ((pPeriodicScan->syncCmd.skip + 1) * ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift));
         // update event counter
         pPeriodicScan->eventCounter += (pPeriodicScan->syncCmd.skip + 1);
       }
       else
       {
-        pPeriodicScan->startTime += ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift);
+        pPeriodicScan->rfCmd.common.timing.absStartTime += ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift);
         // update event counter
         pPeriodicScan->eventCounter++;
       }
-      pPeriodicScan->rfCmd.rfOpCmd.startTime = pPeriodicScan->startTime;
 
       // initialize the status
-      pPeriodicScan->rfCmd.rfOpCmd.status = RFSTAT_IDLE;
+      pPeriodicScan->rfCmd.common.status = RCL_CommandStatus_Idle;
 
       //check if channel map should be updated
       if ((pPeriodicScan->chanMap.updated) &&
@@ -409,7 +429,7 @@ void llPeriodicScan_PostProcess( void )
         llSetPeriodicScanChmapUpdate(pPeriodicScan,FALSE,NULL,0);
       }
       // set the next data channel
-      pPeriodicScan->rfCmd.chan = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current,
+      pPeriodicScan->rfCmd.channel = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current,
                                                              pPeriodicScan->syncInfo.accessAddr,
                                                              pPeriodicScan->eventCounter );
     }

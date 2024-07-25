@@ -39,7 +39,9 @@
  * EXTERNS
  */
 extern void LL_rclAdvCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
+extern void LL_rclPeriodicAdvCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclScanCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
+extern void LL_rclPeriodicScanCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclInitCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
 extern void LL_rclRescheduleCommand(RCL_Command *cmd);
 
@@ -194,7 +196,6 @@ uint8 lastPrimPhy = AE_AUX_1M_PHY;
 uint8 lastScanRsp = FALSE;
 #endif
 
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 extern uint8 secondaryAdvChannelMap[LL_NUM_BYTES_FOR_CHAN_MAP];
 extern uint8 secondaryAdvChannelMapPopCount;
@@ -208,7 +209,7 @@ extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 t
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 // instance for periodic advertiser and periodic advertising scanner
 llPeriodicAdv_t llPeriodicAdv;
-#endif
+#endif // ADV_NCONN_CFG || ADV_CONN_CFG
 #endif // USE_PERIODIC_ADV
 
 #ifdef USE_PERIODIC_SCAN
@@ -406,7 +407,7 @@ void llSetPeriodicAdvData( llPeriodicAdvSet_t *pPeriodicAdv )
   if (pPeriodicAdv->dataUpdated)
   {
     pPeriodicAdv->dataUpdated = FALSE;
-    // free previously allocated data
+    // Free previously allocated data
     if (pPeriodicAdv->pData != NULL)
     {
       MAP_osal_mem_free(pPeriodicAdv->pData);
@@ -426,19 +427,19 @@ void llSetPeriodicAdvData( llPeriodicAdvSet_t *pPeriodicAdv )
       pPeriodicAdv->dataLen = 0;
     }
   }
-  // calculate the number of fragments needed
+  // Calculate the number of fragments needed
   pPeriodicAdv->numFrags = (pPeriodicAdv->dataLen == 0)?1:(pPeriodicAdv->dataLen / pPeriodicAdv->maxAvailData)  +
                           ((pPeriodicAdv->dataLen % pPeriodicAdv->maxAvailData) ? 1 : 0);
-  // find the fragment length
+  // Find the fragment length
   pPeriodicAdv->fragLen = (pPeriodicAdv->numFrags == 1) ?
                            pPeriodicAdv->dataLen        :
                            pPeriodicAdv->maxAvailData;
 
-  // find the last fragment length
+  // Find the last fragment length
   pPeriodicAdv->lastFragLen = (pPeriodicAdv->numFrags == 1) ?
                                pPeriodicAdv->fragLen        :
                               (pPeriodicAdv->dataLen -
-                             ((pPeriodicAdv->numFrags-1)*pPeriodicAdv->fragLen));
+                              ((pPeriodicAdv->numFrags-1)*pPeriodicAdv->fragLen));
 }
 
 /*******************************************************************************
@@ -447,6 +448,7 @@ void llSetPeriodicAdvData( llPeriodicAdvSet_t *pPeriodicAdv )
  * @brief       This function is used to clear all periodic adv sets
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -468,39 +470,47 @@ void llClearPeriodicAdvSets(void)
   }
   if (MAP_llGetCurrentTask() == llPeriodicAdv.llTask)
   {
-    // halt the radio
-    MAP_llHaltRadio( CMD_ABORT );
+    // Halt the radio
+    MAP_llHaltRadio( llPeriodicAdv.llTask->command );
   }
-  // release ll task
+  // Release ll task
   if (llPeriodicAdv.llTask != NULL)
   {
     MAP_llFreeTask( &llPeriodicAdv.llTask );
+    llPeriodicAdv.llTask = NULL;
   }
-  // release all sets
+  // Release all sets
   while( llPeriodicAdv.advList != NULL )
   {
     pPeriodicAdv = llPeriodicAdv.advList->next;
-    // release periodic data
+    // Release periodic data
     if (llPeriodicAdv.advList->dataCmd.pData != NULL)
     {
       MAP_osal_mem_free(llPeriodicAdv.advList->dataCmd.pData);
+      llPeriodicAdv.advList->dataCmd.pData = NULL;
     }
     if (llPeriodicAdv.advList->pData != NULL)
     {
       MAP_osal_mem_free(llPeriodicAdv.advList->pData);
+      llPeriodicAdv.advList->pData = NULL;
     }
-    // delete the set
+    // Release periodic command
+    if (llPeriodicAdv.advList->pRfCmds != NULL)
+    {
+      MAP_osal_mem_free(llPeriodicAdv.advList->pRfCmds);
+      llPeriodicAdv.advList->pRfCmds = NULL;
+    }
+    // Delete the set
     MAP_osal_mem_free(llPeriodicAdv.advList);
-    // advance to next set
+    // Advance to next set
     llPeriodicAdv.advList = pPeriodicAdv;
   }
   llPeriodicAdv.advNumActive = 0;
   llPeriodicAdv.currentAdv = NULL;
   llPeriodicAdv.advList = NULL;
 }
-
-#endif
-#endif
+#endif // ADV_NCONN_CFG || ADV_CONN_CFG
+#endif // USE_PERIODIC_ADV
 
 #if defined (USE_PERIODIC_ADV) || (USE_PERIODIC_SCAN)
 /*******************************************************************************
@@ -967,7 +977,7 @@ llPeriodicScanSet_t *llGetPeriodicScanByAdvertiser( uint8 sid, uint8 addrType, u
  */
 llPeriodicAcceptListItem_t *llGetPeriodicAcceptListItem( uint8 sid, uint8 addrType, uint8 *addr, llPeriodicAcceptListItem_t **pPrevItem )
 {
-  llPeriodicAcceptListItem_t *pItem = llPeriodicScan.AcceptList.itemList;
+  llPeriodicAcceptListItem_t *pItem = llPeriodicScan.acceptList.itemList;
 
   while( pItem != NULL )
   {
@@ -1138,7 +1148,9 @@ void llProcessPeriodicScanSyncInfo( uint8 *pPkt, aeExtAdvRptEvt_t *advEvent, uin
           (((*(pPkt + 8)) & 0x1F) != (pPeriodicScan->chanMap.current.bitmap[4] & 0x1F)))
       {
         // start the channel map update procedure
-        llSetPeriodicScanChmapUpdate(pPeriodicScan,TRUE,pPkt + 4,*(uint16 *)(pPkt + 16));
+        // Need to align the last argument of the function call otherwise we go to faultISR
+        uint16 instant = BUILD_UINT16(pPkt[16], pPkt[17]);
+        llSetPeriodicScanChmapUpdate(pPeriodicScan,TRUE,pPkt + 4,instant);
       }
     }
   }
@@ -1194,30 +1206,39 @@ void llProcessPeriodicScanSyncInfo( uint8 *pPkt, aeExtAdvRptEvt_t *advEvent, uin
         // the packet offset is too far
         return;
       }
+
       pPkt += 2;
       // parse the interval
       llPeriodicScan.createSync->interval = *(uint16 *)pPkt;
+
       pPkt += 2;
       //parse the channel map
       llSetPeriodicChanMap( &llPeriodicScan.createSync->chanMap.current, pPkt );
+
       //parse the SCA
       llPeriodicScan.createSync->syncInfo.sca = ((*(pPkt + 4) >> 5) & 0x07);
       pPkt += LL_NUM_BYTES_FOR_CHAN_MAP;
+
       //parse the access address
-      llPeriodicScan.createSync->syncInfo.accessAddr = *(uint32 *)pPkt;
+      MAP_osal_memcpy(&llPeriodicScan.createSync->syncInfo.accessAddr, pPkt, LL_PKT_SYNCH_LEN);
       pPkt += LL_PKT_SYNCH_LEN;
+
       //parse the access crc init
       llPeriodicScan.createSync->syncInfo.crcInit[0] = *(pPkt + 0);
       llPeriodicScan.createSync->syncInfo.crcInit[1] = *(pPkt + 1);
       llPeriodicScan.createSync->syncInfo.crcInit[2] = *(pPkt + 2);
+
       pPkt += LL_PKT_CRC_LEN;
       //parse the event counter
       llPeriodicScan.createSync->syncInfo.eventCounter = *(uint16 *)pPkt;
+
       //update periodic scanning start time
-      llPeriodicScan.createSync->startTime = timeStamp + US_TO_RAT_TICKS(llPeriodicScan.createSync->syncInfo.packetOffset);
+      llPeriodicScan.createSync->rfCmd.common.timing.absStartTime = timeStamp + US_TO_RAT_TICKS(llPeriodicScan.createSync->syncInfo.packetOffset) - (LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD);
+
       // update the periodic phy
       llPeriodicScan.createSync->phy = phy;
       llPeriodicScan.createSync->ownAddrType = extScanInfo->ownAddrType;
+
       //update the skip according to the timeout and interval parameters
       llPeriodicScan.createSync->syncCmd.skip = MIN(llPeriodicScan.createSync->syncCmd.skip,
                                                 PERIODIC_SCAN_MISSED_LIMIT(llPeriodicScan.createSync->syncCmd.timeout,llPeriodicScan.createSync->interval));
@@ -1267,7 +1288,7 @@ void llClearPeriodicScanSets(void)
       (pCurTask->taskID == LL_TASK_ID_PERIODIC_SCANNER))
   {
     // halt the radio
-    MAP_llHaltRadio( CMD_ABORT );
+    MAP_llHaltRadio( pCurTask->command );
   }
   // release the create sync
   if (llPeriodicScan.createSync != NULL)
@@ -1376,11 +1397,11 @@ void llUpdateExtScanAcceptSyncInfo(void)
 {
   if ((llPeriodicScan.scanNumActive > 0) || (llPeriodicScan.createSync != NULL))
   {
-    SET_EXT_SCAN_FILTER_CFG_ACCEPT_SYNCINFO( extScanParam.extFltrCfg );
+    extScanParam.periodicSyncEstablishment = TRUE;
   }
   else
   {
-    CLR_EXT_SCAN_FILTER_CFG_ACCEPT_SYNCINFO( extScanParam.extFltrCfg );
+    extScanParam.periodicSyncEstablishment = FALSE;
   }
 }
 
@@ -2891,6 +2912,7 @@ llPeriodicAdvSet_t *llSelectPeriodicAdv( llPeriodicAdvSet_t *pPeriodicAdv1, llPe
  * @brief       This routine is used find next Periodic Adv Set in periodic adv sorted list.
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -2907,58 +2929,56 @@ void *llFindNextPeriodicAdv( void )
 {
   llPeriodicAdvSet_t *pPeriodicAdv = llPeriodicAdv.advList;
   uint32 currentTime = MAP_llGetCurrentTime() + RAT_TICKS_FOR_SCHED_PROCESS_TIME;
-  uint16 eventCounter;
+  uint16 eventCounter = 0;
   llPeriodicAdvSet_t *pSelectPeriodicAdv = NULL;
   uint8 extAdvSelected = FALSE;
   uint16 extAdvNumMissed = 0;
 
+  // Check if it is valid, otherwise, nothing to do here
   if ((pPeriodicAdv == NULL) || (llPeriodicAdv.advNumActive == 0))
   {
     return(NULL);
   }
-  //check for existing ext adv
+
+  // Check for existing ext adv
   if ((pNextAdvSet != NULL) && (numActiveAdvSets > 0) &&
       (pNextAdvSet->AdvEntry->advMode == LL_ADV_MODE_ON))
   {
     uint32 extAdvInterval = (*((uint32 *)pNextAdvSet->AdvEntry->pAdvParam->primIntMin)) * RAT_TICKS_IN_625US;
     extAdvSelected = TRUE;
-    // find the number of missed ext adv packets according to the last schedule time
+    // Find the number of missed ext adv packets according to the last schedule time
     extAdvNumMissed = MAP_llTimeDelta(pNextAdvSet->AdvEntry->advStartTime ,pNextAdvSet->timeScheduled)/extAdvInterval;
     if (extAdvNumMissed > 0)
     {
       extAdvNumMissed--;
     }
   }
-  // look for the most appropriate periodic adv task among all active periodic adv tasks
+  // Look for the most appropriate periodic adv task among all active periodic adv tasks
   while (pPeriodicAdv != NULL)
   {
     if (pPeriodicAdv->state == PERIODIC_ADV_STATE_ENABLE)
     {
       eventCounter = pPeriodicAdv->eventCounter;
-      // set periodic adv start time to the future
+      // Set periodic adv start time to the future
       while(MAP_llTimeCompare(currentTime , pPeriodicAdv->startTime))
       {
         pPeriodicAdv->startTime = pPeriodicAdv->startTime + (pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS );
         pPeriodicAdv->eventCounter++;
         pPeriodicAdv->numMissed++;
       }
-      // case counter was updated
+      // Case counter was updated
       if (pPeriodicAdv->eventCounter != eventCounter)
       {
-        //update the next channel
+        // Update the next channel
         pPeriodicAdv->currentChan = llSetNextPeriodicAdvChan( pPeriodicAdv->pChanMap, pPeriodicAdv->syncInfo.accessAddr ,pPeriodicAdv->eventCounter);
-        pPeriodicAdv->rfCmd.chan = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
-        // update extended header contents
+        pPeriodicAdv->pRfCmds->perAdvCmd.channel = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
+        // Update extended header contents
         llSetupPeriodicHdr(pPeriodicAdv);
       }
-      // set the start time
-      pPeriodicAdv->rfCmd.rfOpCmd.startTime = pPeriodicAdv->startTime;
-      // set the chain start time
-      pPeriodicAdv->rfParam.auxPtrTgtTime = pPeriodicAdv->rfCmd.rfOpCmd.startTime +
-                                            US_TO_RAT_TICKS(pPeriodicAdv->otaTime +
-                                                        START_SYNTH_TO_RAT_OFFSET);
+      // Set the start time
+      pPeriodicAdv->pRfCmds->perAdvCmd.common.timing.absStartTime = pPeriodicAdv->startTime;
 
-      // case previously no adv task was selected
+      // Case previously no adv task was selected
       if (extAdvSelected)
       {
         extAdvSelected = llSelectExtAdvOrPeriodicAdv(pPeriodicAdv,extAdvNumMissed);
@@ -2967,14 +2987,14 @@ void *llFindNextPeriodicAdv( void )
           pSelectPeriodicAdv = pPeriodicAdv;
         }
       }
-      // case previously no periodic adv task and no ext adv task was selected
+      // Case previously no periodic adv task and no ext adv task was selected
       else if (pSelectPeriodicAdv == NULL)
       {
         pSelectPeriodicAdv = pPeriodicAdv;
       }
       else
       {
-        // select the most appropriate periodic adv task between previously selected and currently
+        // Select the most appropriate periodic adv task between previously selected and currently
         pSelectPeriodicAdv = llSelectPeriodicAdv(pSelectPeriodicAdv,pPeriodicAdv);
       }
     }
@@ -2982,7 +3002,7 @@ void *llFindNextPeriodicAdv( void )
   }
   if (extAdvSelected == FALSE)
   {
-    // set the current periodic adv pointer
+    // Set the current periodic adv pointer
     llPeriodicAdv.currentAdv = pSelectPeriodicAdv;
   }
   else
@@ -2992,15 +3012,15 @@ void *llFindNextPeriodicAdv( void )
 
   if (pSelectPeriodicAdv != NULL)
   {
-    // pointer to radio operation command
-    llPeriodicAdv.llTask->command = (uint32)&pSelectPeriodicAdv->rfCmd;
+    // Pointer to radio operation command
+    llPeriodicAdv.llTask->command = (uint32)pSelectPeriodicAdv->pRfCmds;
 
-    return( (void *)&pSelectPeriodicAdv->rfCmd );
+    return( (void *)pSelectPeriodicAdv->pRfCmds );
   }
   llPeriodicAdv.llTask->command = 0;
   return NULL;
 }
-#endif
+#endif // USE_PERIODIC_ADV
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 
 /*******************************************************************************
@@ -3339,6 +3359,8 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
     pPkt += dataLen;
   }
 
+  // adjust RSSI based on Rx RF path compensation
+  extAdvRpt->rssi += pRfPathComp->rfRxPathCompVal;
 
   // check the channel index
   if ((GET_CHANNEL_IDX(*pChannelIndex)) < LL_ADV_BASE_CHAN)
@@ -3384,13 +3406,22 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
     else
     {
       extAdvRpt->primPhy = pScanState->lastPrimPhy;
+
       // set secondary PHY
       // Note: The Rx status returns 1M/2M/S8/S2 as 0..3, so +1 to match the
       //       parameter, except for S2.
       extAdvRpt->secPhy = (*pPkt & AE_PHY_MASK);
+
+      // check that the secondary Phy value is legal
+      if(extAdvRpt->secPhy > BLE5_S2_PHY)
+      {
+          sendReport = FALSE;
+      }
+
       // save the origin phy type (for periodic scanner in case of coded phy)
       *secPhy = extAdvRpt->secPhy;
       extAdvRpt->secPhy += ((extAdvRpt->secPhy == BLE5_S2_PHY) ? 0 : 1);
+
       // check that the packet should be ignored and it's only for periodic syncing
       if (*pPkt & AE_SYNCINFO_ONLY_MASK)
       {
@@ -3625,7 +3656,7 @@ void llProcessExtScanRxFIFO( void )
 #ifdef USE_AE
   uint8             extHdrFlgs = 0;
 #endif //USE_AE
-#if defined (USE_PERIODIC_SCAN) || (USE_AE)
+#if defined (USE_PERIODIC_SCAN) || defined (USE_AE)
   uint8            *pSyncInfo = NULL;
   uint8             secPhy = 0xFF;
 #endif //USE_PERIODIC_SCAN || USE_AE
@@ -3830,6 +3861,8 @@ void llProcessExtScanRxFIFO( void )
 #else
       // get the RSSI
       extAdvRpt->rssi = RCL_BLE5_getRxRssi(pDataEntry);
+      // adjust RSSI based on Rx RF path compensation
+      extAdvRpt->rssi += pRfPathComp->rfRxPathCompVal;
       // Get the channel index
       channelIndex = GET_CHANNEL_IDX(RCL_BLE5_getRxChannel(pDataEntry));
 #endif
@@ -3998,7 +4031,7 @@ void llProcessExtScanRxFIFO( void )
     if ((pSyncInfo != NULL) && (checkSyncInfo) && (secPhy != 0xFF))
     {
       //check that we are waiting for that sync info advertiser
-      MAP_llProcessPeriodicScanSyncInfo(pSyncInfo,extAdvRpt,extScanOutput.timeStamp,secPhy);
+      MAP_llProcessPeriodicScanSyncInfo(pSyncInfo,extAdvRpt,extScanOutput.lastTimestamp,secPhy);
     }
 #endif
     //Ensure that we have to send the report to the host
@@ -4058,8 +4091,7 @@ void llProcessExtScanRxFIFO( void )
  */
 void llProcessPeriodicScanRxFIFO( void )
 {
-  dataEntry_t      *pDataEntry;
-  uint8            *pPkt;
+  uint8             *pPkt;
   uint8             pHdr;
   uint8             dataLen;
   uint8             pktLen;
@@ -4072,223 +4104,222 @@ void llProcessPeriodicScanRxFIFO( void )
   uint8             dataStatus = PERIODIC_SCAN_REPORT_DATA_COMPLETE;
   uint8             rssi;
   uint32            timeStamp;
-  llPeriodicScanSet_t *pPeriodicScan = llPeriodicScan.currentScan;
+
+  RCL_Buffer_DataEntry  *pDataEntry;
+  llPeriodicScanSet_t   *pPeriodicScan = llPeriodicScan.currentScan;
 
   // get pointer to packet
   if (pPeriodicScan == NULL)
   {
     return;
   }
-  pDataEntry = (dataEntry_t *)MAP_RFHAL_GetNextDataEntry( pPeriodicScan->rfParam.pRXQ );
-
-  // check if it is valid, otherwise, nothing to do here
-  if ( (pDataEntry == NULL) || (pDataEntry->status != DATASTAT_FINISHED) )
+  while ((pDataEntry = RCL_MultiBuffer_RxEntry_get(&pPeriodicScan->rfParam.rxBuffers, &scanDataQueue)) != NULL)
   {
-    return;
-  }
-  // count the rx
-  pPeriodicScan->rxCount++;
+      // count the rx
+      pPeriodicScan->rxCount++;
 
-  // get pointer to BLE PDU packet
-  pPkt = (uint8 *)(pDataEntry + 1);
+      // get pointer to BLE PDU packet
+      pPkt = (uint8 *)(pDataEntry->data + (pDataEntry->numPad - 1));
 
-  // get packet header
-  pHdr = *pPkt++;
-  // handle the legacy packet in llProcessExtScanRxFIFO function.
-  if (LL_LEGACY_ADV_PDU( pHdr ))
-  {
-    MAP_RFHAL_NextDataEntryDone( pPeriodicScan->rfParam.pRXQ );
-    return;
-  }
-  // get packet length
-  pktLen = *pPkt++;
-  // init event type based on advertising mode
-  evtType = GET_ADV_MODE(*pPkt);
-  // periodic adv mode is only none connectable and none scannable
-  if ((TST_AE_PROPS_FLAG( evtType, AE_PROPS_CONN_ADV)) ||
-      (TST_AE_PROPS_FLAG( evtType, AE_PROPS_SCAN_ADV)))
-  {
-    MAP_RFHAL_NextDataEntryDone( pPeriodicScan->rfParam.pRXQ );
-    return;
-  }
-  extHdrLen = GET_EXT_HDR_LEN(*pPkt++);
-  // get extended header flags, if any
-  if ( extHdrLen > 0 )
-  {
-    uint8 countHdrSize = 1;
+      // get packet header
+      pHdr = *pPkt++;
 
-    extHdrFlgs = *pPkt++;
-    // check for CTE info
-    if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_CTEINFO) )
-    {
-      //get CTE type
-      cteType = (*pPkt & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
-      cteLen = *pPkt & LL_CTE_INFO_TIME_MASK;
-      pPkt++;
-      countHdrSize++;
-    }
-    //check for AUX ptr
-    if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_AUXPTR) )
-    {
-      dataStatus = PERIODIC_SCAN_REPORT_DATA_INCOMPLETE_MORE;
-      pPkt += EXTHDR_FLAG_AUXPTR_SIZE;
-      countHdrSize += EXTHDR_FLAG_AUXPTR_SIZE;
-    }
-    //check for Tx Power
-    if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_TXPWR) )
-    {
-      txPower = (int8)*pPkt++;
-      countHdrSize++;
-    }
-    //check for ACAD
-    if (extHdrLen > countHdrSize)
-    {
-      // check for channel map update indication
-      if ((*pPkt == EXTHDR_ACAD_CHANMAP_UPDATE_SIZE) &&
-          (*(pPkt+ 1) == EXTHDR_ACAD_CHANMAP_UPDATE_TYPE))
+      pktLen = *pPkt;
+      if (LL_AUX_PDU ( pHdr ))
       {
-        // start the channel map update procedure
-        llSetPeriodicScanChmapUpdate(pPeriodicScan,TRUE,pPkt + 2,*(uint16 *)(pPkt + 7));
-      }
-      pPkt += (extHdrLen - countHdrSize);
-    }
-  }
-  // in case we are in syncing process - check the CTE type
-  // maybe we should ignore this advertiser
-  if ((llPeriodicScan.createSync != NULL) &&
-      (llPeriodicScan.createSync == pPeriodicScan) &&
-      (llPeriodicScan.createSync->state == PERIODIC_SCAN_STATE_SYNCING_ACTIVE) &&
-      (llPeriodicScan.createSync->syncCmd.cteType != 0))
-  {
-    if (((cteType == LL_CTE_TYPE_AOA) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_AOA(llPeriodicScan.createSync->syncCmd.cteType))) ||
-       ((cteType == LL_CTE_TYPE_AOD_1US) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_1U_AOD(llPeriodicScan.createSync->syncCmd.cteType))) ||
-       ((cteType == LL_CTE_TYPE_AOD_2US) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_2U_AOD(llPeriodicScan.createSync->syncCmd.cteType))) ||
-       ((cteType == LL_CTE_TYPE_NONE) && (GET_PERIODIC_CTE_TYPE_SYNC_ONLY_CTE(llPeriodicScan.createSync->syncCmd.cteType))))
-    {
-      //we should ignore this advertiser
-      // in case of using accept list - continue in searching for other advertiser
-      if (GET_PERIODIC_SCAN_OPTIONS_LIST_USE(llPeriodicScan.createSync->syncCmd.options))
-      {
-        pPeriodicScan->terminate = LL_STATUS_ERROR_UNACCEPTABLE_CONN_PARAMETERS;
-      }
-      // in case of NOT using accept list - terminate the syncing procedure in post process
-      else
-      {
-        pPeriodicScan->terminate = LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE;
-      }
-      MAP_RFHAL_NextDataEntryDone( pPeriodicScan->rfParam.pRXQ );
-      return;
-    }
-  }
-  // get data length: Packet Length minus (Extended Header Length + 1)
-  dataLen = pktLen - (extHdrLen + 1);
-  // get the time stamp
-  timeStamp = *(uint32 *)(pPkt + dataLen + 6);
-  // check that the time stamp is valid
-  if (timeStamp != 0xFFFFFFFF)
-  {
-    if (pPeriodicScan->rxCount == 1)
-    {
-      uint32 timeExpect = pPeriodicScan->startTime + LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD;
-      uint16 timeJitter = (pPeriodicScan->phy > BLE5_2M_PHY)?RAT_TICKS_IN_16MS:
-                          (pPeriodicScan->phy == BLE5_2M_PHY)?RAT_TICKS_IN_1MS:RAT_TICKS_IN_2MS;
-      uint16 timeGlich = MAX(PERIODIC_SCAN_TIMESTAMP_DRIFT_MIN_GLICH,
-                            (PERIODIC_SCAN_DRIFT_GET_MAX_GLICH(pPeriodicScan->syncCmd.skip,pPeriodicScan->interval)));
-      uint32 driftTime;
-      int8   driftDirection;
+          // Packet Length minus (Extended Header Length + 1)
+          dataLen = pktLen - (GET_EXT_HDR_LEN(*(pPkt+1)) + 1);
+          // advance packet pointer to extended header information field
+          pPkt++;
+          // init event type based on advertising mode
+          evtType = GET_ADV_MODE(*pPkt);
 
-      // find the drift time and direction
-      if (MAP_llTimeCompare(timeStamp , timeExpect))
-      {
-        driftTime = MAP_llTimeDelta(timeStamp,timeExpect);
-        driftDirection = PERIODIC_SCAN_DRIFT_DIRECTION_POSITIVE;
-      }
-      else
-      {
-        driftTime = MAP_llTimeDelta(timeExpect,timeStamp);
-        driftDirection = PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE;
-      }
+          // get extended header flags, if any
+          extHdrLen = GET_EXT_HDR_LEN(*pPkt++);
 
-       // check if this is the first rx
-      if (driftTime < timeJitter)
-      {
-        // check time glich
-        if ((driftTime < timeGlich) || (pPeriodicScan->driftLearnCounter == 0))
-        {
-          // find the drift factor
-          if (pPeriodicScan->driftLearnCounter <= PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)
+          // periodic adv mode is only none connectable and none scannable
+          if (!((TST_AE_PROPS_FLAG( evtType, AE_PROPS_CONN_ADV)) ||
+              (TST_AE_PROPS_FLAG( evtType, AE_PROPS_SCAN_ADV))))
           {
-            if (pPeriodicScan->driftLearnCounter > 0)
-            {
-              // claculate the drifts sum
-              if (driftDirection == PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE)
+              // get extended header flags, if any
+              if ( extHdrLen > 0 )
               {
-                pPeriodicScan->driftFactor -= ((driftTime) / (pPeriodicScan->numMissed + 1));
-              }
-              else
-              {
-                pPeriodicScan->driftFactor += ((driftTime) / (pPeriodicScan->numMissed + 1));
-              }
-            }
+                uint8 countHdrSize = 1;
 
-            if (pPeriodicScan->driftLearnCounter == PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)
-            {
-              driftDirection = (pPeriodicScan->driftFactor >= 0)?PERIODIC_SCAN_DRIFT_DIRECTION_POSITIVE:
-                                                                 PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE;
-              // calculate the average drift
-              pPeriodicScan->driftFactor = (pPeriodicScan->driftFactor / PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM) +
-                                         (((pPeriodicScan->driftFactor % PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM) == 0)?0:driftDirection);
-            }
-            pPeriodicScan->driftLearnCounter++;
+                extHdrFlgs = *pPkt++;
+                // check for CTE info
+                if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_CTEINFO) )
+                {
+                  //get CTE type
+                  cteType = (*pPkt & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
+                  cteLen = *pPkt & LL_CTE_INFO_TIME_MASK;
+                  pPkt++;
+                  countHdrSize++;
+                }
+                //check for AUX ptr
+                if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_AUXPTR) )
+                {
+                  dataStatus = PERIODIC_SCAN_REPORT_DATA_INCOMPLETE_MORE;
+                  pPkt += EXTHDR_FLAG_AUXPTR_SIZE;
+                  countHdrSize += EXTHDR_FLAG_AUXPTR_SIZE;
+                }
+                //check for Tx Power
+                if ( TST_EXTHDR_FLAG(extHdrFlgs, EXTHDR_FLAG_TXPWR) )
+                {
+                  txPower = (int8)*pPkt++;
+                  countHdrSize++;
+                }
+                //check for ACAD
+                if (extHdrLen > countHdrSize)
+                {
+                  // check for channel map update indication
+                  if ((*pPkt == EXTHDR_ACAD_CHANMAP_UPDATE_SIZE) &&
+                      (*(pPkt+ 1) == EXTHDR_ACAD_CHANMAP_UPDATE_TYPE))
+                  {
+                    // start the channel map update procedure
+                    // Need to align the last argument of the function call otherwise we go to faultISR
+                    uint16 instant = BUILD_UINT16(pPkt[7], pPkt[8]);
+                    llSetPeriodicScanChmapUpdate(pPeriodicScan,TRUE,pPkt + 2, instant);
+                  }
+                  pPkt += (extHdrLen - countHdrSize);
+                }
+              }
+              // in case we are in syncing process - check the CTE type
+              // maybe we should ignore this advertiser
+              if ((llPeriodicScan.createSync != NULL) &&
+                  (llPeriodicScan.createSync == pPeriodicScan) &&
+                  (llPeriodicScan.createSync->state == PERIODIC_SCAN_STATE_SYNCING_ACTIVE) &&
+                  (llPeriodicScan.createSync->syncCmd.cteType != 0))
+              {
+                if (((cteType == LL_CTE_TYPE_AOA) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_AOA(llPeriodicScan.createSync->syncCmd.cteType))) ||
+                   ((cteType == LL_CTE_TYPE_AOD_1US) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_1U_AOD(llPeriodicScan.createSync->syncCmd.cteType))) ||
+                   ((cteType == LL_CTE_TYPE_AOD_2US) && (GET_PERIODIC_CTE_TYPE_SYNC_NO_2U_AOD(llPeriodicScan.createSync->syncCmd.cteType))) ||
+                   ((cteType == LL_CTE_TYPE_NONE) && (GET_PERIODIC_CTE_TYPE_SYNC_ONLY_CTE(llPeriodicScan.createSync->syncCmd.cteType))))
+                {
+                  //we should ignore this advertiser
+                  // in case of using accept list - continue in searching for other advertiser
+                  if (GET_PERIODIC_SCAN_OPTIONS_LIST_USE(llPeriodicScan.createSync->syncCmd.options))
+                  {
+                    pPeriodicScan->terminate = LL_STATUS_ERROR_UNACCEPTABLE_CONN_PARAMETERS;
+                  }
+                  // in case of NOT using accept list - terminate the syncing procedure in post process
+                  else
+                  {
+                    pPeriodicScan->terminate = LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE;
+                  }
+                  return;
+                }
+              }
+
+              // get the time stamp
+              timeStamp = RCL_BLE5_getRxTimestamp( pDataEntry );
+              // check that the time stamp is valid
+              if (timeStamp != 0xFFFFFFFF)
+              {
+                if (pPeriodicScan->rxCount == 1)
+                {
+                  uint32 timeExpect = pPeriodicScan->rfCmd.common.timing.absStartTime + LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD;
+                  uint16 timeJitter = (pPeriodicScan->phy > BLE5_2M_PHY)?RAT_TICKS_IN_16MS:
+                                      (pPeriodicScan->phy == BLE5_2M_PHY)?RAT_TICKS_IN_1MS:RAT_TICKS_IN_2MS;
+                  uint16 timeGlich = MAX(PERIODIC_SCAN_TIMESTAMP_DRIFT_MIN_GLICH,
+                                        (PERIODIC_SCAN_DRIFT_GET_MAX_GLICH(pPeriodicScan->syncCmd.skip,pPeriodicScan->interval)));
+                  uint32 driftTime;
+                  int8   driftDirection;
+
+                  // find the drift time and direction
+                  if (MAP_llTimeCompare(timeStamp , timeExpect))
+                  {
+                    driftTime = MAP_llTimeDelta(timeStamp,timeExpect);
+                    driftDirection = PERIODIC_SCAN_DRIFT_DIRECTION_POSITIVE;
+                  }
+                  else
+                  {
+                    driftTime = MAP_llTimeDelta(timeExpect,timeStamp);
+                    driftDirection = PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE;
+                  }
+
+                   // check if this is the first rx
+                  if (driftTime < timeJitter)
+                  {
+                    // check time glich
+                    if ((driftTime < timeGlich) || (pPeriodicScan->driftLearnCounter == 0))
+                    {
+                      // find the drift factor
+                      if (pPeriodicScan->driftLearnCounter <= PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)
+                      {
+                        if (pPeriodicScan->driftLearnCounter > 0)
+                        {
+                          // calculate the drifts sum
+                          if (driftDirection == PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE)
+                          {
+                            pPeriodicScan->driftFactor -= ((driftTime) / (pPeriodicScan->numMissed + 1));
+                          }
+                          else
+                          {
+                            pPeriodicScan->driftFactor += ((driftTime) / (pPeriodicScan->numMissed + 1));
+                          }
+                        }
+
+                        if (pPeriodicScan->driftLearnCounter == PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)
+                        {
+                          driftDirection = (pPeriodicScan->driftFactor >= 0)?PERIODIC_SCAN_DRIFT_DIRECTION_POSITIVE:
+                                                                             PERIODIC_SCAN_DRIFT_DIRECTION_NEGATIVE;
+                          // calculate the average drift
+                          pPeriodicScan->driftFactor = (pPeriodicScan->driftFactor / PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM) +
+                                                     (((pPeriodicScan->driftFactor % PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM) == 0)?0:driftDirection);
+                        }
+                        pPeriodicScan->driftLearnCounter++;
+                      }
+                      else
+                      {
+                        // check if we might do drift learning again
+                        if (driftTime > PERIODIC_SCAN_DRIFT_LEARNING_THRESHOLD)
+                        {
+                          // restart the drift learning
+                          pPeriodicScan->driftLearnCounter = 0;
+                        }
+                      }
+                      // update the exact periodic start time according to the first rx time with correction
+                      pPeriodicScan->rfCmd.common.timing.absStartTime = timeStamp - (LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD);
+                    }
+                  }
+                  else // we missed the first rx
+                  {
+                    pPeriodicScan->rxCount = 0;
+                    return;
+                  }
+                }
+                //update the ota
+                if (dataStatus == PERIODIC_SCAN_REPORT_DATA_COMPLETE)
+                {
+                  // add total time from first packet start time until the last packet start time
+                  pPeriodicScan->totalOtaTime = (timeStamp - pPeriodicScan->rfCmd.common.timing.absStartTime);
+                  // add the last packet CTE length and ota time
+                  pPeriodicScan->totalOtaTime += (US_TO_RAT_TICKS((cteLen * 8) +
+                                                                (MAP_llOctets2Time((pPeriodicScan->rfCmd.common.phyFeatures & 0x03),
+                                                                (pPeriodicScan->rfCmd.common.phyFeatures >> 2) & 0x01,
+                                                                 pktLen,MIC_NOT_ENABLED))) + PERIODIC_SCAN_MARGIN_TIME_RAT_TICKS);
+                  pPeriodicScan->totalOtaTime = MAX(pPeriodicScan->totalOtaTime, PERIODIC_SCAN_MAX_MARGIN_TIME_RAT_TICKS);
+                }
+                // check if reported was enable by host
+                if ((pPeriodicScan != llPeriodicScan.createSync) && (pPeriodicScan->reportEnable))
+                {
+                  rssi = ( llPeriodicScan.rfOutput.lastRssi != LRF_RSSI_INVALID ) ? llPeriodicScan.rfOutput.lastRssi : LRF_RSSI_INVALID;
+                  // send report to host
+                  HCI_PeriodicAdvReportEvent( pPeriodicScan->handle,
+                                            txPower,
+                                            LL_CHECK_LAST_RSSI(rssi),
+                                            cteType,
+                                            dataStatus,
+                                            dataLen,
+                                            pPkt );
+                }
+              }
           }
-          else
-          {
-            // check if we might do drift learning again
-            if (driftTime > PERIODIC_SCAN_DRIFT_LEARNING_THRESHOLD)
-            {
-              // restart the drift learning
-              pPeriodicScan->driftLearnCounter = 0;
-            }
-          }
-          // update the exact periodic start time according to the first rx time with correction
-          pPeriodicScan->startTime = timeStamp - (LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD);
-        }
       }
-      else // we missed the first rx
-      {
-        pPeriodicScan->rxCount = 0;
-        MAP_RFHAL_NextDataEntryDone( pPeriodicScan->rfParam.pRXQ );
-        return;
-      }
-    }
-    //update the ota
-    if (dataStatus == PERIODIC_SCAN_REPORT_DATA_COMPLETE)
-    {
-      // add total time from first packet start time until the last packet start time
-      pPeriodicScan->totalOtaTime = (timeStamp - pPeriodicScan->startTime);
-      // add the last packet CTE length and ota time
-      pPeriodicScan->totalOtaTime += (US_TO_RAT_TICKS((cteLen * 8) +
-                                                    (MAP_llOctets2Time((pPeriodicScan->rfCmd.phyMode & 0x03),
-                                                    (pPeriodicScan->rfCmd.phyMode>>2) & 0x01,
-                                                     pktLen,MIC_NOT_ENABLED))) + PERIODIC_SCAN_MARGIN_TIME_RAT_TICKS);
-      pPeriodicScan->totalOtaTime = MAX(pPeriodicScan->totalOtaTime, PERIODIC_SCAN_MAX_MARGIN_TIME_RAT_TICKS);
-    }
-    // check if reported was enable by host
-    if ((pPeriodicScan != llPeriodicScan.createSync) && (pPeriodicScan->reportEnable))
-    {
-      rssi = (RSSI_SUFFIX_PRESENT() && (llPeriodicScan.rfOutput.lastRssi != LL_RF_RSSI_UNDEFINED))?llPeriodicScan.rfOutput.lastRssi:LL_RF_RSSI_INVALID;
-      // send report to host
-      HCI_PeriodicAdvReportEvent( pPeriodicScan->handle,
-                                txPower,
-                                LL_CHECK_LAST_RSSI(rssi),
-                                cteType,
-                                dataStatus,
-                                dataLen,
-                                pPkt );
-    }
   }
-  // release the rx buffer
-  MAP_RFHAL_NextDataEntryDone( pPeriodicScan->rfParam.pRXQ );
+  llClearRxDataEntry(&llPeriodicScan.rxBuffers, &scanDataQueue);
+
 }
 
 /*******************************************************************************
@@ -4314,15 +4345,15 @@ uint8 llSelectScanOrPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
 {
   uint32 periodicScanInterval = (pPeriodicScan->interval * (pPeriodicScan->syncCmd.skip + 1) * RAT_TICKS_IN_1_25MS);
   uint32 extScanInterval = (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
-
+  uint32 absStartTime = pPeriodicScan->rfCmd.common.timing.absStartTime;
   /////////////////////////////////////////////
   // check for collision
   /////////////////////////////////////////////
   //check if the second start before the first
-  if (MAP_llTimeCompare(extScanInfo->scanStartTime , pPeriodicScan->startTime))
+  if (MAP_llTimeCompare(extScanInfo->scanStartTime , absStartTime))
   {
     // check for collision between the two
-    if (MAP_llTimeCompare(extScanInfo->scanStartTime , pPeriodicScan->startTime + pPeriodicScan->totalOtaTime))
+    if (MAP_llTimeCompare(extScanInfo->scanStartTime , absStartTime + pPeriodicScan->totalOtaTime))
     {
       // no collision - choose the periodic scan
       return FALSE;
@@ -4331,7 +4362,7 @@ uint8 llSelectScanOrPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   else // first starts before the second
   {
     // check for collision between the two
-    if (MAP_llTimeCompare(pPeriodicScan->startTime , extScanInfo->scanStartTime +
+    if (MAP_llTimeCompare(absStartTime , extScanInfo->scanStartTime +
                          (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US)))
     {
       // no collision - choose the ext scan
@@ -4409,7 +4440,7 @@ uint8 llSelectScanOrPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   /////////////////////////////////////////////
   // check start time parameter
   /////////////////////////////////////////////
-  if (MAP_llTimeCompare(extScanInfo->scanStartTime , pPeriodicScan->startTime))
+  if (MAP_llTimeCompare(extScanInfo->scanStartTime , absStartTime))
   {
     return FALSE;
   }
@@ -4443,14 +4474,16 @@ llPeriodicScanSet_t *llSelectPeriodicScan( llPeriodicScanSet_t *pPeriodicScan1, 
   uint16 interval1 = (pPeriodicScan1->interval * (pPeriodicScan1->syncCmd.skip + 1));
   uint16 interval2 = (pPeriodicScan2->interval * (pPeriodicScan2->syncCmd.skip + 1));
 
+  uint32 absStartTime1 = pPeriodicScan1->rfCmd.common.timing.absStartTime;
+  uint32 absStartTime2 = pPeriodicScan1->rfCmd.common.timing.absStartTime;
   /////////////////////////////////////////////
   // check for collision
   /////////////////////////////////////////////
   //check if the second start before the first
-  if (MAP_llTimeCompare(pPeriodicScan1->startTime , pPeriodicScan2->startTime))
+  if (MAP_llTimeCompare(absStartTime1 , absStartTime2))
   {
     // check for collision between the two
-    if (MAP_llTimeCompare(pPeriodicScan1->startTime , pPeriodicScan2->startTime + pPeriodicScan2->totalOtaTime))
+    if (MAP_llTimeCompare(absStartTime1 , absStartTime2 + pPeriodicScan2->totalOtaTime))
     {
       // no collision - choose the second
       return pPeriodicScan2;
@@ -4459,7 +4492,7 @@ llPeriodicScanSet_t *llSelectPeriodicScan( llPeriodicScanSet_t *pPeriodicScan1, 
   else // first starts before the second
   {
     // check for collision between the two
-    if (MAP_llTimeCompare(pPeriodicScan2->startTime , pPeriodicScan1->startTime + pPeriodicScan1->totalOtaTime))
+    if (MAP_llTimeCompare(absStartTime2 , absStartTime1 + pPeriodicScan1->totalOtaTime))
     {
       // no collision - choose the first
       return pPeriodicScan1;
@@ -4541,7 +4574,7 @@ llPeriodicScanSet_t *llSelectPeriodicScan( llPeriodicScanSet_t *pPeriodicScan1, 
   // check start time parameter
   /////////////////////////////////////////////
   // pPeriodicScan2->numMissed = pPeriodicScan1->numMissed
-  if (MAP_llTimeCompare(pPeriodicScan1->startTime , pPeriodicScan2->startTime))
+  if (MAP_llTimeCompare(absStartTime1 , absStartTime2))
   {
     return pPeriodicScan2;
   }
@@ -4590,15 +4623,21 @@ void *llFindNextPeriodicScan( void )
     pSelectedPeriodicScan = llPeriodicScan.createSync;
     updated = FALSE;
     // check if the start time is in the future
-    while(MAP_llTimeCompare(currentTime, llPeriodicScan.createSync->startTime))
+    uint32 tempAbsStartTime = llPeriodicScan.createSync->rfCmd.common.timing.absStartTime;
+
+    while(MAP_llTimeCompare(currentTime, tempAbsStartTime))
     {
       // increase the start time
-      llPeriodicScan.createSync->startTime = llPeriodicScan.createSync->startTime + (llPeriodicScan.createSync->interval * RAT_TICKS_IN_1_25MS );
+      tempAbsStartTime = tempAbsStartTime + (llPeriodicScan.createSync->interval * RAT_TICKS_IN_1_25MS );
       // increase the event counter
       llPeriodicScan.createSync->eventCounter++;
       llPeriodicScan.createSync->numMissed++;
       updated = TRUE;
     }
+
+    // update the absStartTime
+    llPeriodicScan.createSync->rfCmd.common.timing.absStartTime = tempAbsStartTime;
+
     // check for timeout
     if (llPeriodicScan.createSync->numMissed >= PERIODIC_SYNCING_LIMIT_NUM_EVENTS)
     {
@@ -4614,8 +4653,7 @@ void *llFindNextPeriodicScan( void )
       if (updated)
       {
         //update the next channel
-        llPeriodicScan.createSync->rfCmd.chan = llSetNextPeriodicAdvChan( &llPeriodicScan.createSync->chanMap.current, llPeriodicScan.createSync->syncInfo.accessAddr ,llPeriodicScan.createSync->eventCounter);
-        llPeriodicScan.createSync->rfCmd.rfOpCmd.startTime = llPeriodicScan.createSync->startTime;
+        llPeriodicScan.createSync->rfCmd.channel = llSetNextPeriodicAdvChan( &llPeriodicScan.createSync->chanMap.current, llPeriodicScan.createSync->syncInfo.accessAddr ,llPeriodicScan.createSync->eventCounter);
       }
       llPeriodicScan.createSync->intPriority = LL_QOS_HIGH_PRIORITY;
     }
@@ -4636,7 +4674,7 @@ void *llFindNextPeriodicScan( void )
     }
     if (updated)
     {
-      extScanCmd.rfOpCmd.startTime = extScanInfo->scanStartTime;
+      extScanCmd.common.timing.absStartTime = extScanInfo->scanStartTime;
     }
     // increase the ext scan priority in case the periodic create sync is pending
     // or there were several missed scans
@@ -4676,14 +4714,18 @@ void *llFindNextPeriodicScan( void )
       int16 drift = (pPeriodicScan->driftLearnCounter <= PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)?0:pPeriodicScan->driftFactor;
 
       updated = FALSE;
+      uint32 tempAbsStartTime = pPeriodicScan->rfCmd.common.timing.absStartTime;
       // check if the start time is in the future
-      while(MAP_llTimeCompare(currentTime , pPeriodicScan->startTime))
+      while(MAP_llTimeCompare(currentTime , tempAbsStartTime))
       {
-        pPeriodicScan->startTime = pPeriodicScan->startTime + ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift);
+        tempAbsStartTime = tempAbsStartTime + ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift);
         pPeriodicScan->eventCounter++;
         pPeriodicScan->numMissed++;
         updated = TRUE;
       }
+
+      pPeriodicScan->rfCmd.common.timing.absStartTime = tempAbsStartTime;
+
       // check for timeout
       if ((pPeriodicScan->numMissed * pPeriodicScan->interval * 1250) >
           (pPeriodicScan->syncCmd.timeout * 10000))
@@ -4716,10 +4758,8 @@ void *llFindNextPeriodicScan( void )
         if (updated)
         {
           //update the next channel
-          pPeriodicScan->rfCmd.chan = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current, pPeriodicScan->syncInfo.accessAddr ,pPeriodicScan->eventCounter);
+          pPeriodicScan->rfCmd.channel = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current, pPeriodicScan->syncInfo.accessAddr ,pPeriodicScan->eventCounter);
         }
-        // update start time
-        pPeriodicScan->rfCmd.rfOpCmd.startTime = pPeriodicScan->startTime;
 
         // case previously ext scan task was selected
         if (extScanSelected)
@@ -4738,7 +4778,7 @@ void *llFindNextPeriodicScan( void )
         else
         {
           // check who has the earlier start time between previously selected and currently
-          pEarliestStartScan = (MAP_llTimeCompare(pSelectedPeriodicScan->startTime , pPeriodicScan->startTime))?pPeriodicScan:pSelectedPeriodicScan;
+          pEarliestStartScan = (MAP_llTimeCompare(pSelectedPeriodicScan->rfCmd.common.timing.absStartTime , pPeriodicScan->rfCmd.common.timing.absStartTime))?pPeriodicScan:pSelectedPeriodicScan;
           // select the most appropriate periodic scan task between previously selected and currently
           pSelectedPeriodicScan = llSelectPeriodicScan(pSelectedPeriodicScan,pPeriodicScan);
         }
@@ -4753,7 +4793,7 @@ void *llFindNextPeriodicScan( void )
     // in case there is no collision between the two - select the earlier start time candidate
     if ((pEarliestStartScan != NULL) && (pSelectedPeriodicScan != pEarliestStartScan))
     {
-      if (MAP_llTimeCompare(pSelectedPeriodicScan->startTime , pEarliestStartScan->startTime + pEarliestStartScan->totalOtaTime))
+      if (MAP_llTimeCompare(pSelectedPeriodicScan->rfCmd.common.timing.absStartTime , pEarliestStartScan->rfCmd.common.timing.absStartTime + pEarliestStartScan->totalOtaTime))
       {
         pSelectedPeriodicScan = pEarliestStartScan;
       }
@@ -4773,6 +4813,7 @@ void *llFindNextPeriodicScan( void )
 
     return( (void *)&pSelectedPeriodicScan->rfCmd );
   }
+
   llPeriodicScan.llTask->command = 0;
   return NULL;
 }
@@ -5027,6 +5068,8 @@ void llSetupExtHdr( advSet_t *pAdvSet,
   {
 
     *pBuf = RfBleDpl_getTxPowerDbm(pAdvSet->txPowerIndex);
+    // adjust Tx Power based on Tx RF path compensation
+    *pBuf += pRfPathComp->rfTxPathCompVal;
     pBuf++;
   }
 
@@ -5046,7 +5089,7 @@ void llSetupExtHdr( advSet_t *pAdvSet,
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 /*******************************************************************************
- * @fn          llBuildExtAdvPacket
+ * @fn          llAddExtAdvPacketToTx
  *
  * @brief       This routine is used to build an extended advertising packet
  *              based on the advertising packet type and add it to the command
@@ -5058,95 +5101,121 @@ void llSetupExtHdr( advSet_t *pAdvSet,
  * @param       pktType    - Advertising packet type
  * @param       payloadLen - The total of the advertising payload including the header
  *                           length and data length
- * @param       pData      - Pointer to the packet advertising/scan response data
- * @param       dataLen    - The length of the advertising/scan response data
  *
  * output parameters
  *
  * @param       None.
  *
- * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_UNEXPECTED_PARAMETER
+ * @return      LL_STATUS_SUCCESS,
+ *              LL_STATUS_ERROR_INVALID_PARAMS,
+ *              LL_STATUS_ERROR_UNEXPECTED_PARAMETER
  */
-llStatus_t llBuildExtAdvPacket(advSet_t *pAdvSet, uint8 pktType, uint8 payloadLen, uint8 *pData, uint8 dataLen)
+llStatus_t llAddExtAdvPacketToTx(advSet_t *pAdvSet, uint8 pktType, uint8 payloadLen)
 {
-  aeRf_t *pRfCmd = (aeRf_t *)pAdvSet->pRfCmds;
-  aePacket *pPkt = NULL;
+  aeRf_t *pRfCmd;
+  aePacket *pPkt;
+  llStatus_t status = LL_STATUS_ERROR_INVALID_PARAMS;
 
-  // Get the pointer to the correct txBuffer that should be used for the next advertising packet
-  // and change bufNo to the value of the next buffer
-  switch ( pRfCmd->buffNo )
+  // Check input parameter
+  if ( pAdvSet != NULL )
   {
-    case 0:
-    {
-      pPkt = &(pRfCmd->txBuffer);
-      pRfCmd->buffNo = 1;
-      break;
-    }
+    pRfCmd = (aeRf_t *)pAdvSet->pRfCmds;
+    pPkt = &(pRfCmd->txBuffer[pRfCmd->buffNo]);
 
-    case 1:
-    {
-      pPkt = &(pRfCmd->txBuffer2);
-      pRfCmd->buffNo = 2;
-      break;
-    }
+    // Build ae packet
+    status = MAP_llBuildExtAdvPacket( pPkt, &(pRfCmd->comPkt), pktType, payloadLen, pAdvSet->peerAddrType, pRfCmd->advParam.addrType.own);
 
-    case 2:
+    if ( status == LL_STATUS_SUCCESS)
     {
-      pPkt = &(pRfCmd->txBuffer3);
-      pRfCmd->buffNo = 0;
-      break;
-    }
+      // Add the packet to the RCL TX queue
+      RCL_TxBuffer_put(&pRfCmd->advParam.txBuffers, (RCL_Buffer_TxBuffer *)pPkt);
 
-    default:
-    {
-      // Should not get here
-      pPkt = &(pRfCmd->txBuffer);
-      pRfCmd->buffNo = 1;
-      break;
+      // Update bufNo to the value of the next buffer
+      pRfCmd->buffNo++;
+      if ( pRfCmd->buffNo == AE_NUM_TX_BUFFERS )
+      {
+        pRfCmd->buffNo = 0;
+      }
     }
   }
 
-  MAP_osal_memset(pPkt->data, 0, LL_MAX_EXT_DATA_LEN);
+  // Return status value
+  return status;
+}
 
-  RCL_TxBuffer_init((RCL_Buffer_TxBuffer *)pPkt, LL_RCL_PKT_NUM_PAD_BTYES, LL_RCL_PKT_HDR_LEN, payloadLen);
+/*******************************************************************************
+ * @fn          llBuildExtAdvPacket
+ *
+ * @brief       This routine is used to prepare an extended advertising packet
+ *              based on the advertising packet type
+ *
+ * input parameters
+ *
+ * @param       pPkt          - Pointer to the advertising packets that the RCL will transmit
+ * @param       comPkt        - Pointer to the common Extended Packet
+ * @param       pktType       - Advertising packet type
+ * @param       payloadLen    - The total of the advertising payload including the header
+ *                              length and data length
+ * @param       peerAddrType  - Peer device address type of public or random
+ * @param       ownAddrType   - Own device address type of public or random
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      LL_STATUS_SUCCESS,
+ *              LL_STATUS_ERROR_UNEXPECTED_PARAMETER,
+ *              LL_STATUS_ERROR_INVALID_PARAMS
+ */
+llStatus_t  llBuildExtAdvPacket(aePacket *pPkt, comExtPktFormat_t *comPkt, uint8 pktType, uint8 payloadLen, uint8 peerAddrType, uint8 ownAddrType)
+{
+  llStatus_t status = LL_STATUS_ERROR_INVALID_PARAMS;
 
-  pPkt->header = pktType;
-
-  // Add AdvA address type only if AdvA flag is included in the extended header
-  if ( TST_EXTHDR_FLAG( pRfCmd->comPkt.extHdrFlags, EXTHDR_FLAG_ADVA ) )
+  // Check input parameters
+  if (( pPkt != NULL ) && ( comPkt != NULL ))
   {
-    pPkt->header |= LL_ADV_HDR_SET_TX_ADD(pPkt->header, pRfCmd->advParam.addrType.own);
-  }
+    status = LL_STATUS_SUCCESS;
 
-  // Add TargetA address type only if TargetA flag is included in the extended header
-  if ( TST_EXTHDR_FLAG( pRfCmd->comPkt.extHdrFlags, EXTHDR_FLAG_TARGETA ) )
-  {
-    pPkt->header |= LL_ADV_HDR_SET_RX_ADD(pPkt->header, pAdvSet->peerAddrType);
-  }
+    MAP_osal_memset(pPkt->data, 0, LL_MAX_EXT_DATA_LEN);
 
-  pPkt->payloadLen = payloadLen;
-  pPkt->extHdrLen = MAP_llGetExtHdrLen( pRfCmd->comPkt.extHdrFlags);
-  pPkt->advType = GET_ADV_MODE(pAdvSet->extHdrInfo);
-  // Copy the extended header to the command
-  MAP_osal_memcpy(pPkt->data, pRfCmd->extHdr, pPkt->extHdrLen);
+    RCL_TxBuffer_init((RCL_Buffer_TxBuffer *)pPkt, LL_RCL_PKT_NUM_PAD_BTYES, LL_RCL_PKT_HDR_LEN, payloadLen);
 
-  if ( dataLen > 0 )
-  {
-    if( pData != NULL )
+    pPkt->header = pktType;
+
+    // Add AdvA address type only if AdvA flag is included in the extended header
+    if ( TST_EXTHDR_FLAG( comPkt->extHdrFlags, EXTHDR_FLAG_ADVA ))
     {
-      // Copy the advertising data
-      MAP_osal_memcpy(&(pPkt->data[pPkt->extHdrLen]), pData, dataLen);
+      pPkt->header |= LL_ADV_HDR_SET_TX_ADD(pPkt->header, ownAddrType);
     }
-    else
+
+    // Add TargetA address type only if TargetA flag is included in the extended header
+    if ( TST_EXTHDR_FLAG( comPkt->extHdrFlags, EXTHDR_FLAG_TARGETA ))
     {
-      return LL_STATUS_ERROR_UNEXPECTED_PARAMETER;
+      pPkt->header |= LL_ADV_HDR_SET_RX_ADD(pPkt->header, peerAddrType);
+    }
+
+    pPkt->payloadLen = payloadLen;
+    pPkt->extHdrLen = MAP_llGetExtHdrLen( comPkt->extHdrFlags);
+    pPkt->advType = GET_ADV_MODE(comPkt->extHdrInfo);
+    // Copy the extended header to the command
+    MAP_osal_memcpy(pPkt->data, comPkt->pExtHeader, pPkt->extHdrLen);
+
+    if ( comPkt->advDataLen > 0 )
+    {
+      if( comPkt->pAdvData != NULL )
+      {
+        // Copy the advertising data
+        MAP_osal_memcpy(&(pPkt->data[pPkt->extHdrLen]), comPkt->pAdvData, comPkt->advDataLen);
+      }
+      else
+      {
+        status =  LL_STATUS_ERROR_UNEXPECTED_PARAMETER;
+      }
     }
   }
 
-  // Add the packet to the RCL TX queue
-  RCL_TxBuffer_put(&pRfCmd->advParam.txBuffers, (RCL_Buffer_TxBuffer *)pPkt);
-
-  return LL_STATUS_SUCCESS;
+  // Return status value
+  return status;
 }
 
 /*******************************************************************************
@@ -5323,6 +5392,9 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   // Extended Header Configuration
   pRf->comPkt.extHdrConfig = 0;
 
+  // set the ptr to buffer with ext hdr
+  pRf->comPkt.pExtHeader = pRf->extHdr;
+
   SET_EXT_ADV_HDR_CFG_SKIP_ADVA( pRf->comPkt.extHdrConfig );
   SET_EXT_ADV_HDR_CFG_SKIP_TGTA( pRf->comPkt.extHdrConfig );
   SETVAR_EXT_ADV_HDR_CFG_DEV_ADDR_TYPE( pRf->comPkt.extHdrConfig,
@@ -5352,8 +5424,8 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   // Build EXT_ADV_IND packet and add it to the command TX queue
   uint8_t payloadLen = AE_EXT_HDR_ADV_TYPE_FIELD_SIZE + pAdvSet->extHdrSize;
   pRf->buffNo = 0;
+  status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_ADV_EXT_IND, payloadLen);
 
-  status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_ADV_EXT_IND, payloadLen, NULL, 0);
   if ( status != LL_STATUS_SUCCESS )
   {
     return status;
@@ -5472,10 +5544,9 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
 
   // Build AUX_ADV_IND packet and add it to the command TX queue
   MAP_llSetupExtHdr(pAdvSet, pAdvSet->auxHdrFlags, 0 );
-
   payloadLen = pktSize;
+  status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_ADV_IND, payloadLen);
 
-  status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_ADV_IND, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
   if ( status != LL_STATUS_SUCCESS )
   {
     // Clear from the TX queue the EXT_ADV_IND added before
@@ -5497,7 +5568,6 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps))
   {
     uint8 scanRspExtHdrSize;
-    uint8 payloadLen;
     if(pAdvSet->numFrags > 1)
     {
       SET_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_AUXPTR);
@@ -5525,11 +5595,12 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
     payloadLen = (uint8)(1U + scanRspExtHdrSize + pRf->comPkt.advDataLen);
 
     // AUX_SCAN_RSP pkt is needed to be sent as NC/NS mode
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_NONCONN_NONSCAN );
-    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_SCAN_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+    // Build ae packet and add it to the command TX queue
+    status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_SCAN_RSP, payloadLen);
     // Change adv_mode back to scannable
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_SCANNABLE );
 
   }
@@ -5538,7 +5609,6 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
   if (TST_AE_PROPS_CONN(pAdvSet->pAdvParam->eventProps) != 0)
   {
     uint8 connRspExtHdrSize;
-    uint8 payloadLen;
 
     // No data allowed
     pRf->comPkt.advDataLen = 0;
@@ -5559,11 +5629,12 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
     payloadLen = (uint8)1 + connRspExtHdrSize + pRf->comPkt.advDataLen;
 
     // AUX_CONN_RSP pkt is needed to be sent as NC/NS mode
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_NONCONN_NONSCAN );
-    status = MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_CONNECT_RSP, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+    // Build ae packet and add it to the command TX queue
+    status = MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_CONNECT_RSP, payloadLen);
     // Change adv_mode back to connectable
-    SET_ADV_MODE( pAdvSet->extHdrInfo,
+    SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                   AE_ADV_MODE_CONNECTABLE );
   }
 
@@ -5585,6 +5656,7 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
  * @brief       This routine is used to set the content of the sync info in AUX_ADV_IND
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5599,17 +5671,26 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
  */
 void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
 {
-  llPeriodicAdvSet_t *pPeriodicAdv = llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
+  llPeriodicAdvSet_t *pPeriodicAdv = NULL;
   llPeriodicChanMap_t *pChanMap = &llPeriodicAdv.chanMap.current;
-  uint32 totalAuxOtaTime;
+  uint32 totalAuxOtaTime = 0;
   uint16 offsetUnitVal = AE_AUX_OFFSET_30_US_UNIT_VALUE;
-  uint16 packetOffsetField;
-  uint8 i;
+  uint16 packetOffsetField = 0;
+  uint8 i = 0;
 
+  // Check input parameters
+  if (( pAdvSet == NULL) || ( pBuf == NULL))
+  {
+    return;
+  }
+
+  // Get pointer to periodic adv set
+  pPeriodicAdv = llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
   if (pPeriodicAdv == NULL)
   {
     return;
   }
+
   if (pAdvSet->numFrags > 1)
   {
     uint16 chainSize;
@@ -5618,55 +5699,62 @@ void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
 
     // CHAIN_IND ota time without sync info
     chainSize = ((pAdvSet->auxExtHdrSize - EXTHDR_FLAG_SYNCINFO_SIZE + 1) * (pAdvSet->numFrags - 1)) +
-                (pAdvSet->fragLen * (pAdvSet->numFrags - 2)) + pAdvSet->lastFragLen; //last frag should be without auxptr
+                 (pAdvSet->fragLen * (pAdvSet->numFrags - 2)) + pAdvSet->lastFragLen; // Last frag should be without auxptr
 
-    totalAuxOtaTime += MAP_llOctets2Time( ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode & 0x03,      // first two bits only
-                              (((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                              chainSize,
-                              MIC_NOT_ENABLED );
+    totalAuxOtaTime += MAP_llOctets2Time(((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature & 0x03,      // First two bits only
+                                         (((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature>>2) & 0x01, // Scheme
+                                         chainSize,
+                                         MIC_NOT_ENABLED );
 
     totalAuxOtaTime += (AE_MIN_T_MAFS_IN_US * (pAdvSet->numFrags - 2));
   }
   else
   {
-    totalAuxOtaTime = MAP_llOctets2Time( ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode & 0x03,      // first two bits only
-                              (((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode>>2) & 0x01, // scheme
-                              (pAdvSet->auxExtHdrSize + 1),
-                              MIC_NOT_ENABLED );
+    totalAuxOtaTime = MAP_llOctets2Time(((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature & 0x03,      // First two bits only
+                                        (((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature>>2) & 0x01, // Scheme
+                                        (pAdvSet->auxExtHdrSize + pAdvSet->fragLen + 1),
+                                        MIC_NOT_ENABLED );
   }
   pPeriodicAdv->syncInfo.eventCounter = pPeriodicAdv->eventCounter;
   pPeriodicAdv->syncInfo.offsetUnit = AE_AUX_OFFSET_UNITS_30_US;
 
-  // set the packet offset
+  // Find AUX_ADV_IND start time
+  pPeriodicAdv->auxStartTime = ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.timing.absStartTime +
+                               RCL_BLE5_getAuxAdvStartTimeDelta(((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.phyFeatures,
+                                                               ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.chanMap,
+                                                               pAdvSet->extHdrSize + PERIODIC_ADV_EXT_HDR_LENGTH_SIZE);
+
+  // Set the packet offset
   if ((pPeriodicAdv->state == PERIODIC_ADV_STATE_PENDING_ENABLE) ||
       (pPeriodicAdv->state == PERIODIC_ADV_STATE_PENDING_TRIGGER))
   {
     pPeriodicAdv->syncInfo.packetOffset = totalAuxOtaTime +
-                                       (((MAP_LL_ENC_GeneratePseudoRandNum() % 4) + 1) * 1000);
+                                          (((MAP_LL_ENC_GeneratePseudoRandNum() % 4) + 1) * PERIODIC_ADV_OFFSET_GUARD_TIME);
   }
   else
   {
     i = 0;
-    // find the proper sync indication that the sync information will point to
-    while(MAP_llTimeCompare(((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.rfOpCmd.startTime + US_TO_RAT_TICKS(totalAuxOtaTime) , pPeriodicAdv->rfCmd.rfOpCmd.startTime + (i * pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS )))
+
+    // Find the proper sync indication that the sync information will point to
+    while(MAP_llTimeCompare( pPeriodicAdv->auxStartTime + US_TO_RAT_TICKS(totalAuxOtaTime) , pPeriodicAdv->pRfCmds->perAdvCmd.common.timing.absStartTime + (i * pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS )))
     {
       i++;
       pPeriodicAdv->syncInfo.eventCounter++;
     }
-    // set the sync information packet offset
-    pPeriodicAdv->syncInfo.packetOffset = RAT_TICKS_TO_US(pPeriodicAdv->rfCmd.rfOpCmd.startTime + (i * pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS ) - ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.rfOpCmd.startTime);
-    // case the packet offset less then 500 usec - point to the next sync indication
+    // Set the sync information packet offset
+    pPeriodicAdv->syncInfo.packetOffset = RAT_TICKS_TO_US(pPeriodicAdv->pRfCmds->perAdvCmd.common.timing.absStartTime + (i * pPeriodicAdv->interval * RAT_TICKS_IN_1_25MS ) - pPeriodicAdv->auxStartTime);
+    // Case the packet offset less then 500 usec - point to the next sync indication
     if (pPeriodicAdv->syncInfo.packetOffset < 500)
     {
       pPeriodicAdv->syncInfo.packetOffset += (pPeriodicAdv->interval * 1250);
       pPeriodicAdv->syncInfo.eventCounter++;
     }
-    // case the packet offset is too far - set it to 0
+    // Case the packet offset is too far - set it to 0
     else if ((pPeriodicAdv->syncInfo.packetOffset / AE_AUX_OFFSET_300_US_UNIT_VALUE) > AE_AUX_OFFSET_MASK)
     {
       pPeriodicAdv->syncInfo.packetOffset = 0;
     }
-    // set the offset unit
+    // Set the offset unit
     else if ((pPeriodicAdv->syncInfo.packetOffset / AE_AUX_OFFSET_30_US_UNIT_VALUE) > AE_AUX_OFFSET_MASK)
     {
       pPeriodicAdv->syncInfo.offsetUnit = AE_AUX_OFFSET_UNITS_300_US;
@@ -5675,33 +5763,33 @@ void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
   }
   packetOffsetField = (((pPeriodicAdv->syncInfo.packetOffset / offsetUnitVal) & AE_AUX_OFFSET_MASK) |
                         (pPeriodicAdv->syncInfo.offsetUnit << AE_AUX_OFFSET_SIZE));
-  // case channel map update in progress
+  // Case channel map update in progress
   if ((pPeriodicAdv->pendingChanUpdate != PERIODIC_ADV_CHANMAP_UPDATE_NOT_PENDING) &&
       (pPeriodicAdv->chanMapUpdateEvent <= pPeriodicAdv->syncInfo.eventCounter))
   {
-    // point to the new channel map
+    // Point to the new channel map
     pChanMap = &llPeriodicAdv.chanMap.next;
   }
-  //copy the packet offset
+  // Copy the packet offset
   *pBuf++ = LO_UINT16( packetOffsetField );
   *pBuf++ = HI_UINT16( packetOffsetField );
-  //copy the interval
+  // Copy the interval
   *pBuf++ = LO_UINT16( pPeriodicAdv->interval );
   *pBuf++ = HI_UINT16( pPeriodicAdv->interval );
-  //copy the channel map
+  // Copy the channel map
   *pBuf++ = pChanMap->bitmap[0];
   *pBuf++ = pChanMap->bitmap[1];
   *pBuf++ = pChanMap->bitmap[2];
   *pBuf++ = pChanMap->bitmap[3];
   *pBuf++ = pChanMap->bitmap[4] | (pPeriodicAdv->syncInfo.sca << 5);
-  //copy the access address
+  // Copy the access address
   osal_memcpy(pBuf,(uint8 *)&pPeriodicAdv->syncInfo.accessAddr,LL_PKT_SYNCH_LEN);
   pBuf += LL_PKT_SYNCH_LEN;
-  //copy the CRC init
+  // Copy the CRC init
   *pBuf++ = pPeriodicAdv->syncInfo.crcInit[0];
   *pBuf++ = pPeriodicAdv->syncInfo.crcInit[1];
   *pBuf++ = pPeriodicAdv->syncInfo.crcInit[2];
-  //copy the event counter
+  // Copy the event counter
   *pBuf++ = LO_UINT16( pPeriodicAdv->syncInfo.eventCounter );
   *pBuf++ = HI_UINT16( pPeriodicAdv->syncInfo.eventCounter );
 }
@@ -5712,6 +5800,7 @@ void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
  * @brief       This routine is used to set the Periodic adv Header flags
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5721,49 +5810,63 @@ void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
  *
  * @param       None.
  *
- * @return      totalHdrSize - periodic adv header size.
+ * @return      totalHdrSize - Periodic adv header size.
  */
 uint8 llSetPeriodicHdrFlags( llPeriodicAdvSet_t *pPeriodicAdv)
 {
   uint8 totalHdrSize = 0;
+  comExtPktFormat_t *comPkt = NULL;
 
-  pPeriodicAdv->rfPkt.extHdrFlags = 0;
-  // check that the host request for CTE
+  // Check input parameter
+  if ( pPeriodicAdv == NULL )
+  {
+    return totalHdrSize;
+  }
+
+  comPkt = &(pPeriodicAdv->pRfCmds->comPkt);
+  comPkt->extHdrFlags = 0;
+#ifdef RTLS_CTE
+  // Check that the host request for CTE
   if ((pPeriodicAdv->cteInfo.enable) &&
       (pPeriodicAdv->cteInfo.count > pPeriodicAdv->txCount))
   {
-    // include CTE Info flag
+    // Include CTE Info flag
     SET_EXTHDR_FLAG( pPeriodicAdv->rfPkt.extHdrFlags,EXTHDR_FLAG_CTEINFO );
     totalHdrSize += EXTHDR_FLAG_CTEINFO_SIZE;
   }
+#endif
 
-  // check if the user set the Tx Power option
+  // Check if the user set the Tx Power option
   if ((TST_AE_PROPS_TX_PWR(pPeriodicAdv->paramsCmd.props)) &&
       (pPeriodicAdv->txCount == 0))
   {
-    // include Tx power flag
-    SET_EXTHDR_FLAG( pPeriodicAdv->rfPkt.extHdrFlags,EXTHDR_FLAG_TXPWR );
+    // Include Tx power flag
+    SET_EXTHDR_FLAG( comPkt->extHdrFlags,EXTHDR_FLAG_TXPWR );
     totalHdrSize += EXTHDR_FLAG_TXPWR_SIZE;
   }
-  // check for channel map update indication
+  // Check for channel map update indication
   if ((pPeriodicAdv->pendingChanUpdate == PERIODIC_ADV_CHANMAP_UPDATE_PENDING) &&
       (pPeriodicAdv->txCount == 0))
   {
     totalHdrSize += EXTHDR_FLAG_ACAD_SIZE;
   }
-  // check that there are more then 1 packet because of periodic data or CTE count
+#ifdef RTLS_CTE
+  // Check that there are more then 1 packet because of periodic data or CTE count
   if ((pPeriodicAdv->numFrags > (pPeriodicAdv->txCount + 1)) ||
      ((pPeriodicAdv->cteInfo.enable) &&
       (pPeriodicAdv->cteInfo.count > (pPeriodicAdv->txCount + 1))))
+#else
+  if (pPeriodicAdv->numFrags > (pPeriodicAdv->txCount + 1))
+#endif
   {
-    // include Aux ptr flag
-    SET_EXTHDR_FLAG( pPeriodicAdv->rfPkt.extHdrFlags,EXTHDR_FLAG_AUXPTR );
+    // Include Aux ptr flag
+    SET_EXTHDR_FLAG( comPkt->extHdrFlags,EXTHDR_FLAG_AUXPTR );
     totalHdrSize += EXTHDR_FLAG_AUXPTR_SIZE;
   }
 
   if (totalHdrSize > 0)
   {
-    //add 1 byte for the flags
+    // Add 1 byte for the flags
     totalHdrSize++;
   }
   return (totalHdrSize);
@@ -5775,6 +5878,7 @@ uint8 llSetPeriodicHdrFlags( llPeriodicAdvSet_t *pPeriodicAdv)
  *              buffer.
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5788,9 +5892,23 @@ uint8 llSetPeriodicHdrFlags( llPeriodicAdvSet_t *pPeriodicAdv)
  */
 void llSetupPeriodicHdr( llPeriodicAdvSet_t *pPeriodicAdv )
 {
-  uint8 *pBuf = pPeriodicAdv->extHdr;
-  uint8 extHdrCount = (pPeriodicAdv->extHdrSize > 0)?1:0;
+  uint8 *pBuf = NULL;
+  uint8 extHdrCount = 0;
 
+  // Check input parameter
+  if ( pPeriodicAdv == NULL )
+  {
+    return;
+  }
+
+  pBuf = pPeriodicAdv->extHdr;
+  extHdrCount = (pPeriodicAdv->extHdrSize > 0)?1:0;
+
+  // Save the extended header flags
+  *pBuf = pPeriodicAdv->pRfCmds->comPkt.extHdrFlags;
+   pBuf++;
+
+#ifdef RTLS_CTE
   if ( TST_EXTHDR_FLAG(pPeriodicAdv->rfPkt.extHdrFlags, EXTHDR_FLAG_CTEINFO) )
   {
     // set the CTE Info (length and type)
@@ -5798,71 +5916,83 @@ void llSetupPeriodicHdr( llPeriodicAdvSet_t *pPeriodicAdv )
               ((pPeriodicAdv->cteInfo.type << LL_CTE_INFO_TYPE_OFFSET) | LL_CTE_INFO_TIME_MASK));
     extHdrCount++;
   }
+#endif
 
-  if ( TST_EXTHDR_FLAG(pPeriodicAdv->rfPkt.extHdrFlags, EXTHDR_FLAG_AUXPTR) )
+  if ( TST_EXTHDR_FLAG(pPeriodicAdv->pRfCmds->comPkt.extHdrFlags, EXTHDR_FLAG_AUXPTR) )
   {
     uint8  auxCA;
     uint8  auxOffsetUnits;
     uint8  auxPhy;
     uint16 auxRem;
 
-    // determine CA
+    // Determine CA
     auxCA = AE_AUX_CA_0_50_PPM;
 
-    // set the aux offset units based on the total time
+    // Set the aux offset units based on the total time
     // Note: Spec indicates 30us should be used if time if less than 245700 us.
     // ALT: ((uint32)pAdvSet->otaTimeExtAdv < AE_AUX_OFFSET_UNIT_CUTOFF_TIME) ?
     //      AE_AUX_OFFSET_UNITS_30_US                                         :
     //      AE_AUX_OFFSET_UNITS_300_US;
     auxOffsetUnits = AE_AUX_OFFSET_UNITS_30_US;
 
-    // set the aux PHY
+    // Set the aux PHY
     // Note: The aux PHY specified by the API is +1 the value expected in the
     //       AuxPtr field (sigh).
     auxPhy = (pPeriodicAdv->phy & AE_PHY_CODED_SCHEME_MASK) - 1;
 
-    // store the Offset Units, CA, and Channel Index in first byte of AuxPtr
+    /**
+     * When AUX offset is set to 0 and the offset units to 1 the RCL will automatically
+     * calculate the offset for the next offset unit and will send the next AUX packet
+     * If these variable are set to valid values the RCL will not transmit the AUX and
+     * until the controller will submit a new command with the AUX command
+     */
+     auxOffsetUnits = 1;
+
+    // Store the Offset Units, CA, and Channel Index in first byte of AuxPtr
     *pBuf++ = (auxOffsetUnits << 7) |
               (auxCA << 6)          |
               (pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK);
 
-    // build remainder of the AuxPtr
+    // Build remainder of the AuxPtr
     // Note: When the auxOffset is zero, it is expected that the CM0 will
     //       automatically update the Extended Header value, so what's stored
     //       in the Extended Header now does not matter.
     auxRem = (auxPhy << AE_AUX_OFFSET_SIZE) |
              (AE_AUX_OFFSET_AUTO_INSERT & AE_AUX_OFFSET_MASK);
 
-    // store the Aux PHY and Aux Offset
+    // Store the Aux PHY and Aux Offset
     *pBuf++ = LO_UINT16( auxRem );
     *pBuf++ = HI_UINT16( auxRem );
     extHdrCount += EXTHDR_FLAG_AUXPTR_SIZE;
   }
 
-  if ( TST_EXTHDR_FLAG(pPeriodicAdv->rfPkt.extHdrFlags, EXTHDR_FLAG_TXPWR) )
+  if ( TST_EXTHDR_FLAG(pPeriodicAdv->pRfCmds->comPkt.extHdrFlags, EXTHDR_FLAG_TXPWR) )
   {
-    // include Tx power flag
-    *pBuf++ = (uint8)llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[pPeriodicAdv->txPowerIndex].Pout;
+    // Include Tx power flag
+    *pBuf = RfBleDpl_getTxPowerDbm(pPeriodicAdv->txPowerIndex);
+    // adjust Tx Power based on Tx RF path compensation
+    *pBuf += pRfPathComp->rfTxPathCompVal;
+    pBuf++;
     extHdrCount++;
   }
 
-  // check for ACAD
+  // Check for ACAD
   if ((pPeriodicAdv->extHdrSize > 0) && (pPeriodicAdv->txCount == 0) && (pPeriodicAdv->extHdrSize > extHdrCount))
   {
     if ((pPeriodicAdv->pendingChanUpdate == PERIODIC_ADV_CHANMAP_UPDATE_PENDING) &&
         ((pPeriodicAdv->extHdrSize - extHdrCount) == (EXTHDR_ACAD_CHANMAP_UPDATE_SIZE + 1)))
     {
-      //copy the acad data length
+      // Copy the acad data length
       *pBuf++ = EXTHDR_ACAD_CHANMAP_UPDATE_SIZE;
-      //copy the acad data type
+      // Copy the acad data type
       *pBuf++ = EXTHDR_ACAD_CHANMAP_UPDATE_TYPE;
-      //copy the new channel map
+      // Copy the new channel map
       *pBuf++ = llPeriodicAdv.chanMap.next.bitmap[0];
       *pBuf++ = llPeriodicAdv.chanMap.next.bitmap[1];
       *pBuf++ = llPeriodicAdv.chanMap.next.bitmap[2];
       *pBuf++ = llPeriodicAdv.chanMap.next.bitmap[3];
       *pBuf++ = llPeriodicAdv.chanMap.next.bitmap[4];
-      //copy the instant
+      // Copy the instant
       *pBuf++ = LO_UINT16( pPeriodicAdv->chanMapUpdateEvent );
       *pBuf++ = HI_UINT16( pPeriodicAdv->chanMapUpdateEvent );
     }
@@ -5876,6 +6006,7 @@ void llSetupPeriodicHdr( llPeriodicAdvSet_t *pPeriodicAdv )
  * @brief       This routine is used to setup the periodic advertising command.
  *
  * @design  /ref did_286039104
+ * @design  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5889,98 +6020,115 @@ void llSetupPeriodicHdr( llPeriodicAdvSet_t *pPeriodicAdv )
  */
 llStatus_t llSetupPeriodicAdv( advSet_t *pAdvSet )
 {
-  llPeriodicAdvSet_t *pPeriodicAdv = llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
+  llPeriodicAdvSet_t *pPeriodicAdv = NULL;
+  periodicRf_t *pRf  = NULL;
 
+  // Check input parameter
+  if (pAdvSet == NULL)
+  {
+    return( LL_STATUS_ERROR_BAD_PARAMETER );
+  }
+
+  // Get pointer to periodic adv set
+  pPeriodicAdv = llGetPeriodicAdv(pAdvSet->pAdvParam->handle);
   if (pPeriodicAdv == NULL)
   {
     return( LL_STATUS_ERROR_UNKNOWN_CONN_HANDLE );
   }
-  pPeriodicAdv->state = PERIODIC_ADV_STATE_PENDING_TRIGGER;
-  // set the periodic adv default priority.
-  pPeriodicAdv->priority = qosDefaultPriorityPerAdvParameter;
-  // set the packet format struct
-  SET_ADV_MODE( pPeriodicAdv->rfPkt.extHdrInfo,AE_ADV_MODE_NONCONN_NONSCAN );
-  pPeriodicAdv->rfPkt.extHdrConfig = 0;
-  SET_EXT_ADV_HDR_CFG_SKIP_ADVA(pPeriodicAdv->rfPkt.extHdrConfig);
-  SET_EXT_ADV_HDR_CFG_SKIP_TGTA(pPeriodicAdv->rfPkt.extHdrConfig);
-  SETVAR_EXT_ADV_HDR_CFG_DEV_ADDR_TYPE( pPeriodicAdv->rfPkt.extHdrConfig,pAdvSet->ownAddrType );
-  SETVAR_EXT_ADV_HDR_CFG_TGT_ADDR_TYPE( pPeriodicAdv->rfPkt.extHdrConfig,pAdvSet->peerAddrType );
 
-  // set the phy according to the AUX_ADV_IND phy
-  pPeriodicAdv->rfCmd.phyMode = ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.phyMode;
-  pPeriodicAdv->rfCmd.rangeDelay = (pPeriodicAdv->rfCmd.phyMode > BLE5_2M_PHY) ? LL_CODED_RANGE_DELAY_RAT_TICKS : LL_UNCODED_RANGE_DELAY_RAT_TICKS;
-  // set the ptr to buffer with ext hdr
-  pPeriodicAdv->rfPkt.pExtHeader = pPeriodicAdv->extHdr;
-  // set the ptr to Adv data
-  pPeriodicAdv->rfPkt.pAdvData = pPeriodicAdv->pData;
-  // set the size of Adv data
-  pPeriodicAdv->rfPkt.advDataLen = pPeriodicAdv->fragLen;
+  // Get pointer to RCL command
+  pRf = pPeriodicAdv->pRfCmds;
+
+  // Set periodic adv state
+  pPeriodicAdv->state = PERIODIC_ADV_STATE_PENDING_TRIGGER;
+  // Set the periodic adv default priority.
+  pPeriodicAdv->priority = qosDefaultPriorityPerAdvParameter;
+
+  /*
+  ** Setup periodic adv packet format struct
+  */
+  SET_ADV_MODE( pRf->comPkt.extHdrInfo,AE_ADV_MODE_NONCONN_NONSCAN );
+  pRf->comPkt.extHdrConfig = 0;
+  SET_EXT_ADV_HDR_CFG_SKIP_ADVA( pRf->comPkt.extHdrConfig );
+  SET_EXT_ADV_HDR_CFG_SKIP_TGTA( pRf->comPkt.extHdrConfig );
+  SETVAR_EXT_ADV_HDR_CFG_DEV_ADDR_TYPE( pRf->comPkt.extHdrConfig, pAdvSet->ownAddrType );
+  SETVAR_EXT_ADV_HDR_CFG_TGT_ADDR_TYPE( pRf->comPkt.extHdrConfig, pAdvSet->peerAddrType );
+
+  // Set the phy according to the AUX_ADV_IND phy
+  pRf->phyFeatures = ((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature;
+  pPeriodicAdv->phy = pAdvSet->pAdvParam->secPhy;
+
+  // Set the ptr to buffer with ext hdr
+  pRf->comPkt.pExtHeader = pPeriodicAdv->extHdr;
+  // Set the ptr to Adv data
+  pRf->comPkt.pAdvData = pPeriodicAdv->pData;
+  // Set the size of Adv data
+  pRf->comPkt.advDataLen = pPeriodicAdv->fragLen;
   pPeriodicAdv->txCount = 0;
+#ifdef RTLS_CTE
   pPeriodicAdv->numChains = MAX(pPeriodicAdv->numFrags,
                                (pPeriodicAdv->cteInfo.enable)?
                                 pPeriodicAdv->cteInfo.count:0);
-  // set the header flags and return the header size
+#else
+  pPeriodicAdv->numChains = pPeriodicAdv->numFrags;
+#endif
+  // Set the header flags and return the header size
   pPeriodicAdv->extHdrSize = llSetPeriodicHdrFlags(pPeriodicAdv);
-  // calculate the sync indication OTA time
-  pPeriodicAdv->otaTime =  MAP_llOctets2Time( pPeriodicAdv->rfCmd.phyMode & 0x03,      // first two bits only
-                                             (pPeriodicAdv->rfCmd.phyMode>>2) & 0x01, // scheme
+  // Calculate the sync indication OTA time
+  pPeriodicAdv->otaTime =  MAP_llOctets2Time( pRf->phyFeatures & 0x03,      // First two bits only
+                                             (pRf->phyFeatures>>2) & 0x01,  // Scheme
                                              (pPeriodicAdv->extHdrSize + EXTHDR_INFO_SIZE + pPeriodicAdv->fragLen),
                                               MIC_NOT_ENABLED );
+#ifdef RTLS_CTE
   pPeriodicAdv->otaTime += (pPeriodicAdv->cteInfo.enable)?(pPeriodicAdv->cteInfo.len * 8):0;
+#endif
   if (pPeriodicAdv->numChains > 1)
   {
     pPeriodicAdv->otaTime += AE_MIN_T_MAFS_IN_US;
-    // calculate the complete OTA time in post process
+    // Calculate the complete OTA time in post process
     pPeriodicAdv->totalOtaTime = PERIODIC_ADV_MARGIN_TIME_RAT_TICKS;
   }
   else
   {
     pPeriodicAdv->totalOtaTime = US_TO_RAT_TICKS(pPeriodicAdv->otaTime) + PERIODIC_ADV_MARGIN_TIME_RAT_TICKS;
   }
-  // set periodic adv header
+
+  /*
+  ** Setup periodic adv header
+  */
   llSetupPeriodicHdr(pPeriodicAdv);
-  SET_EXTHDR_LEN( pPeriodicAdv->rfPkt.extHdrInfo,pPeriodicAdv->extHdrSize );
-  // set the rf params struct
-  pPeriodicAdv->rfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-  pPeriodicAdv->rfParam.pAdvPkt = (uint8 *)&pPeriodicAdv->rfPkt;
-  pPeriodicAdv->rfParam.accessAddress = pPeriodicAdv->syncInfo.accessAddr;
-  pPeriodicAdv->rfParam.crcInit0 = pPeriodicAdv->syncInfo.crcInit[0];
-  pPeriodicAdv->rfParam.crcInit1 = pPeriodicAdv->syncInfo.crcInit[1];
-  pPeriodicAdv->rfParam.crcInit2 = pPeriodicAdv->syncInfo.crcInit[2];
+  SET_EXTHDR_LEN( pRf->comPkt.extHdrInfo, pPeriodicAdv->extHdrSize );
 
-  // Set counter command
-  pPeriodicAdv->rfCount.rfOpCmd.cmdNum    = CMD_COUNTER;
-  pPeriodicAdv->rfCount.rfOpCmd.status    = RFSTAT_IDLE;
-  pPeriodicAdv->rfCount.rfOpCmd.startTime = RAT_TICKS_IN_40US;
-  pPeriodicAdv->rfCount.rfOpCmd.startTrig = TRIGTYPE_REL_END_PREV_CMD;
-  pPeriodicAdv->rfCount.rfOpCmd.condition = CONDTYPE_RUN_TRUE_STOP_FALSE;
-  // Secondary channel RF Counter command next pointer
-  pPeriodicAdv->rfCount.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pPeriodicAdv->rfCmd;
+  /*
+  ** Setup RF Command
+  */
 
-  // set the counter based on the number of additional aux packets needed
-  // according to the max value of periodic data or CTE count
-  // Note: If the numFrags=0, then there is no secondary channel packet, so
-  // this counter will never be used.
-  pPeriodicAdv->rfCount.counter = pPeriodicAdv->numChains;
+  // Set periodic adv command
+  pRf->perAdvCmd = RCL_CmdBle5PeriodicAdvertiser_DefaultRuntime();
+  pRf->perAdvCmd.channel = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
+  pRf->perAdvCmd.txPower = RfBleDpl_getTxPower(pPeriodicAdv->txPowerIndex);
+  pRf->perAdvCmd.common.scheduling = RCL_Schedule_AbsTime;
+  pRf->perAdvCmd.common.phyFeatures = pRf->phyFeatures;
+  pRf->perAdvCmd.common.allowDelay = FALSE;
 
-  // set the radio command number
-  pPeriodicAdv->rfCmd.rfOpCmd.cmdNum = CMD_BLE5_ADV_PER;
-  // set radio status
-  pPeriodicAdv->rfCmd.rfOpCmd.status = RFSTAT_IDLE;
-  // set the ptr to next radio command op
-  pPeriodicAdv->rfCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&pPeriodicAdv->rfCount;
-  // set the start time trigger
-  pPeriodicAdv->rfCmd.rfOpCmd.startTrig = PAST_TRIG_START_ASAP | TRIGTYPE_AT_ABS_TIME;
-  pPeriodicAdv->rfCmd.rfOpCmd.condition = CONDTYPE_RUN_TRUE_STOP_FALSE;
+  // Set periodic adv parameters
+  pRf->perAdvCmd.ctx = &pRf->perAdvParam;
+  pRf->perAdvParam = RCL_CtxPeriodicAdvertiser_DefaultRuntime();
+  pRf->perAdvParam.accessAddress = pPeriodicAdv->syncInfo.accessAddr;
+  // Copy over crcinit
+  osal_memcpy((uint8 *)&(pRf->perAdvParam.crcInit),
+              pPeriodicAdv->syncInfo.crcInit,
+              BLE_CRC_LEN);
 
-  // set the channel number and enable BLE whitening
-  pPeriodicAdv->rfCmd.chan = pPeriodicAdv->currentChan & AE_CHAN_INDEX_MASK;
-  SET_WHITENING_BLE( pPeriodicAdv->rfCmd.whitening );
+  // Set periodic adv output
+  pRf->perAdvCmd.stats = &pRf->perAdvOutput;
+  pRf->perAdvOutput = RCL_StatsAdvScanInit_DefaultRuntime();
+  pRf->perAdvCmd.stats->config.accumulate = true;
 
-  pPeriodicAdv->rfCmd.pParams = (uint8 *)&pPeriodicAdv->rfParam;
-  pPeriodicAdv->rfCmd.pOutput = (uint8 *)&pPeriodicAdv->rfOutput;
-  // set the RF command with Tx power value based on index
-  pPeriodicAdv->rfCmd.txPower = RfBleDpl_getTxPower(pPeriodicAdv->txPowerIndex);
+  // Set the periodic advertising callbacks
+  pRf->perAdvCmd.common.runtime.callback = LL_rclPeriodicAdvCallback;
+  pRf->perAdvCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
+                                                        RCL_EventTxBufferFinished.value;
 
   return( LL_STATUS_SUCCESS );
 }
@@ -5991,7 +6139,8 @@ llStatus_t llSetupPeriodicAdv( advSet_t *pAdvSet )
  *
  * @brief       This routine is used to execute the periodic advertising command.
  *
- * @design  /ref did_286039104
+ * @design      /ref did_286039104
+ * @design      BLE_LOKI-1795
  *
  * input parameters
  *
@@ -6006,32 +6155,103 @@ llStatus_t llSetupPeriodicAdv( advSet_t *pAdvSet )
  */
 llStatus_t llTrigPeriodicAdv( advSet_t *pAdvSet, llPeriodicAdvSet_t *pPeriodicAdv )
 {
+  periodicRf_t * pRf = NULL;
+
+  // Check input parameters
+  if (( pAdvSet == NULL ) || ( pPeriodicAdv == NULL ))
+  {
+    return (LL_STATUS_ERROR_BAD_PARAMETER);
+  }
+  pRf = pPeriodicAdv->pRfCmds;
+
   pPeriodicAdv->state = PERIODIC_ADV_STATE_ENABLE;
-  //set the start time
-  pPeriodicAdv->startTime = ((aeRf_t *)pAdvSet->pRfCmds)->auxRfCmd.rfOpCmd.startTime + US_TO_RAT_TICKS( pPeriodicAdv->syncInfo.packetOffset);
-  pPeriodicAdv->rfCmd.rfOpCmd.startTime = pPeriodicAdv->startTime;
-  // set the aux ptr start time
-  pPeriodicAdv->rfParam.auxPtrTgtTime = pPeriodicAdv->startTime + US_TO_RAT_TICKS(pPeriodicAdv->otaTime + START_SYNTH_TO_RAT_OFFSET);
+  // Set the start time
+  pPeriodicAdv->startTime = pPeriodicAdv->auxStartTime + US_TO_RAT_TICKS( pPeriodicAdv->syncInfo.packetOffset);
+  pRf->perAdvCmd.common.timing.absStartTime = pPeriodicAdv->startTime;
+
+  // Build AUX_SYNC_IND packet and add it to the command TX queue
+  pPeriodicAdv->extHdrSize = MAP_llGetExtHdrLen(pRf->comPkt.extHdrFlags);
+  uint8_t payloadLen = 1 + pPeriodicAdv->extHdrSize + pRf->comPkt.advDataLen;
+  pRf->buffNo = 0;
+  MAP_llAddPeriodicAdvPacketToTx( pPeriodicAdv, LL_PKT_TYPE_AUX_SYNC_IND, payloadLen );
+
+  // Update the chain packet if there is chain packet
+  if (pPeriodicAdv->numChains > 1)
+  {
+    MAP_llUpdatePeriodicAdvChainPacket( pPeriodicAdv );
+  }
 
   if (llPeriodicAdv.llTask == NULL)
   {
-    // allocate scheduler task
+    // Allocate scheduler task
     llPeriodicAdv.llTask = MAP_llAllocTask( LL_TASK_ID_PERIODIC_ADVERTISER );
-    // pointer to radio operation command
-    llPeriodicAdv.llTask->command = (uint32)&pPeriodicAdv->rfCmd;
-    // set RF events
-    llPeriodicAdv.llTask->rfEvents = RF_EventLastCmdDone   |
-                                     RF_EventInternalError |
-                                     RF_EventTxDone;
-
-    // callback function for scheduler
+    // Pointer to radio operation command
+    llPeriodicAdv.llTask->command = (uint32)pPeriodicAdv->pRfCmds;
+    // Callback function for scheduler
     llPeriodicAdv.llTask->setup = llPeriodicAdvSchedSetup;
   }
 
-  // update num active
+  // Update num active
   llPeriodicAdv.advNumActive++;
 
   return( LL_STATUS_SUCCESS );
+}
+
+/*******************************************************************************
+ * @fn          llAddPeriodicAdvPacketToTx
+ *
+ * @brief       This routine is used to build an periodic advertising packet
+ *              based on the advertising packet type and add it to the command
+ *              TX queue
+ *
+ * @design      BLE_LOKI-1795
+ *
+ * input parameters
+ *
+ * @param       pAdvSet    - Pointer to the advertising set for this command
+ * @param       pktType    - Advertising packet type
+ * @param       payloadLen - The total of the advertising payload including the header
+ *                           length and data length
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      LL_STATUS_SUCCESS,
+ *              LL_STATUS_ERROR_UNEXPECTED_PARAMETER,
+ *              LL_STATUS_ERROR_INVALID_PARAMS
+ */
+llStatus_t llAddPeriodicAdvPacketToTx(llPeriodicAdvSet_t *pPeriodicAdv, uint8 pktType, uint8 payloadLen)
+{
+  periodicRf_t *pRfCmd = NULL;
+  aePacket *pPkt = NULL;
+  llStatus_t status = LL_STATUS_ERROR_INVALID_PARAMS;
+
+  // Check input parameter
+  if ( pPeriodicAdv != NULL )
+  {
+    pRfCmd = pPeriodicAdv->pRfCmds;
+    pPkt = &(pRfCmd->txBuffer[pRfCmd->buffNo]);
+
+    // Build ae packet
+    status = MAP_llBuildExtAdvPacket( pPkt, &(pRfCmd->comPkt), pktType, payloadLen, LL_INVALID_DEV_ADDR_TYPE, LL_INVALID_DEV_ADDR_TYPE);
+
+    if ( status == LL_STATUS_SUCCESS)
+    {
+      // Add the packet to the RCL TX queue
+      RCL_TxBuffer_put(&pRfCmd->perAdvParam.txBuffers, (RCL_Buffer_TxBuffer *)pPkt);
+
+      // Update bufNo to the value of the next buffer
+      pRfCmd->buffNo++;
+      if (pRfCmd->buffNo == PERIODIC_NUM_TX_BUFFERS )
+      {
+        pRfCmd->buffNo = 0;
+      }
+    }
+  }
+
+  // Return status value
+  return status;
 }
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 #endif //USE_PERIODIC_ADV
@@ -6490,9 +6710,13 @@ llStatus_t llSetupExtScan( void )
   // set the channel number
   extScanCmd.channel = llGetFirstExtScanChannelIndex();
   // set accept extended flag to enable receiving extended advertising reports
-  extScanCmd.acceptExtended = TRUE;
+  extScanCmd.acceptExtended = llUserConfig.useAE;
 #ifdef QUAL_TEST
-  // currently setting this value to zero (no limit) isn't working. so temporarily use max value.
+  // maxWaitForAux is a feature that can be used to get the device to enter
+  // power saving mode if the wait time for the AUX channel is long.
+  // If maxWaitForAux is set to 0, the feature is disabled, and the radio
+  // will wait for the AUX packet whatever time is signaled in the AUX pointer.
+  // When maxWaitForAux is set to 0xFFFF, this time limit is set to 16.3 ms.
   extScanCmd.maxAuxPtrWaitTime = 65000;
 #else
   // If the AUX start time is larger than 30ms the RCL will continue scanning
@@ -6595,6 +6819,7 @@ llStatus_t llSetupExtScan( void )
  * @brief       This routine is used to setup the periodic scan command.
  *
  * @design      /ref did_286039104
+*  @design      BLE_LOKI-2022
  *
  * input parameters
  *
@@ -6608,52 +6833,18 @@ llStatus_t llSetupExtScan( void )
  */
 llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
 {
-#if !defined(DeviceFamily_CC26X1) && !defined(DeviceFamily_CC13X4) && !defined(DeviceFamily_CC26X4)
-  pPeriodicScan->rfCmd.rfOpCmd.cmdNum    = CMD_BLE5_SCANNER_PER;
-#else
-  pPeriodicScan->rfCmd.rfOpCmd.cmdNum    = 0x1826;
-#endif
-  pPeriodicScan->rfCmd.rfOpCmd.status    = RFSTAT_IDLE;
-  pPeriodicScan->rfCmd.rfOpCmd.pNextRfOp = NULL;
+  // Add the command default values
+  pPeriodicScan->rfCmd = RCL_CmdPeriodicScanner_DefaultRuntime();
 
-  // set the command condition
-  SET_RFOP_COND_RULE( pPeriodicScan->rfCmd.rfOpCmd.condition, CONDTYPE_NEVER_RUN_NEXT_CMD );
+  // set Rf command ID to periodic scan
+  pPeriodicScan->rfCmd.common.cmdId = RCL_CMDID_BLE5_PERIODIC_SCAN;
 
-  // enable BLE whitening
-  SET_WHITENING_BLE( pPeriodicScan->rfCmd.whitening );
+  // Set status to Idle and scheduling time to a give time in the future
+  pPeriodicScan->rfCmd.common.status   = RCL_CommandStatus_Idle;
+  pPeriodicScan->rfCmd.common.scheduling = RCL_Schedule_AbsTime;
 
-  // set the periodic scan default priority.
-  pPeriodicScan->priority = qosDefaultPriorityPerScnParameter;
-
-  // use default Tx Power
-  pPeriodicScan->rfCmd.txPower = 0;
-
-  // use common parameters and output
-  pPeriodicScan->rfCmd.pParams = (uint8 *)&pPeriodicScan->rfParam;
-  pPeriodicScan->rfCmd.pOutput = (uint8 *)&llPeriodicScan.rfOutput;
-
-  // set the Scan receive queue
-  pPeriodicScan->rfParam.pRXQ = llSetupPeriodicScanDataEntryQueue();
-
-  // set Scan Rx queue configuration
-  pPeriodicScan->rfParam.rxCfg =
-    ( RXQ_CFG_AUTOFLUSH_IGNORED_PKT |
-      RXQ_CFG_AUTOFLUSH_CRC_ERR_PKT |
-      RXQ_CFG_AUTOFLUSH_EMPTY_PKT   |
-      RXQ_CFG_INCLUDE_PKT_LEN_BYTE  |
-      RXQ_CFG_INCLUDE_CRC           |
-      RXQ_CFG_APPEND_RSSI           |
-      RXQ_CFG_APPEND_STATUS         |
-      RXQ_CFG_APPEND_TIMESTAMP );
-
-  // set Scan configuration
-  CLR_SCAN_CFG( pPeriodicScan->rfParam.scanCfg );
-
-  // instruct radio to not auto-set the ignore bit
-  CLR_SCAN_CFG_AUTO_SET_AL_IGNORE( pPeriodicScan->rfParam.scanCfg );
-
-  // initialize adiList
-  //for (uint8 i=0; i<AE_MAX_NUM_SID; i++) adiList[i] = EXT_SCAN_ADI_INIT;
+  // Setup Rx periodic scan buffers
+  MAP_llSetupPeriodicScanDataEntryQueue();
 
 #ifdef QUAL_TEST
   // maxWaitForAux is a feature that can be used to get the device to enter
@@ -6661,11 +6852,23 @@ llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   // If maxWaitForAux is set to 0, the feature is disabled, and the radio
   // will wait for the AUX packet whatever time is signaled in the AUX pointer.
   // When maxWaitForAux is set to 0xFFFF, this time limit is set to 16.3 ms.
-  pPeriodicScan->rfParam.maxWaitForAux = 0;
+  pPeriodicScan->rfCmd.maxAuxPtrWaitTime = 0;
 #else
-  // set max wait time for aux channel
-  pPeriodicScan->rfParam.maxWaitForAux = 0xFFFF;
+  pPeriodicScan->rfCmd.maxAuxPtrWaitTime = 30000;
 #endif
+  llPeriodicScan.rfOutput = RCL_StatsAdvScanInit_DefaultRuntime();
+  // Set Ctx default values
+  pPeriodicScan->rfParam = RCL_CtxPeriodicScanner_DefaultRuntime();
+
+  // Set Callback function to the command and RCL events
+  pPeriodicScan->rfCmd.common.runtime.callback = LL_rclPeriodicScanCallback;
+  pPeriodicScan->rfCmd.common.runtime.lrfCallbackMask.value = LRF_EventRxOk.value;
+  pPeriodicScan->rfCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
+                                                              RCL_EventRxEntryAvail.value;
+
+  pPeriodicScan->rfCmd.ctx = &llPeriodicScan.createSync->rfParam;
+  pPeriodicScan->rfCmd.ctx->rxBuffers = llPeriodicScan.rxBuffers;
+  pPeriodicScan->rfCmd.stats = &llPeriodicScan.rfOutput;
 
   return( LL_STATUS_SUCCESS );
 }
@@ -6676,6 +6879,7 @@ llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
  * @brief       This routine is used to execute the periodic scan command.
  *
  * @design      /ref did_286039104
+ * @design      BLE_LOKI-2022
  *
  * input parameters
  *
@@ -6693,61 +6897,22 @@ llStatus_t llTrigPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   pPeriodicScan->state = PERIODIC_SCAN_STATE_SYNCING_ACTIVE;
   // update event counter
   pPeriodicScan->eventCounter = pPeriodicScan->syncInfo.eventCounter;
-  // set start trigger
-  SET_RFOP_TRIG_TYPE( pPeriodicScan->rfCmd.rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
-  SET_RFOP_PAST_TRIG( pPeriodicScan->rfCmd.rfOpCmd.startTrig );
-  pPeriodicScan->startTime = pPeriodicScan->startTime - (LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD);
-  pPeriodicScan->rfCmd.rfOpCmd.startTime = pPeriodicScan->startTime;
-  // set timeout trigger
-  SET_RFOP_TRIG_TYPE( pPeriodicScan->rfParam.timeoutTrig, TRIGTYPE_REL_CMD_START );
-  // set the timeout time
-  pPeriodicScan->rfParam.timeoutTime = (LL_JITTER_CORRECTION) +
-                                       LL_RX_RAMP_OVERHEAD +
-                                       (RAT_TICKS_FOR_PERIODIC_SCAN_WIN_SIZE) +
-                                       LL_RX_SYNCH_OVERHEAD;
-  // check if we're using coded
-  if ( pPeriodicScan->phy > BLE5_2M_PHY )
-  {
-    pPeriodicScan->rfParam.timeoutTime += LL_RX_SYNCH_OVERHEAD_CODED;
-  }
-  // set end trigger
-  SET_RFOP_TRIG_TYPE( pPeriodicScan->rfParam.endTrig, TRIGTYPE_REL_CMD_START );
+
   // set end time
-  pPeriodicScan->rfParam.endTime = (((pPeriodicScan->interval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_1_25MS) -
+  pPeriodicScan->rfCmd.common.timing.relHardStopTime = (((pPeriodicScan->interval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_1_25MS) -
                                      (2 * RAT_TICKS_IN_150US);
   // set the channel number
-  pPeriodicScan->rfCmd.chan = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current,
+  pPeriodicScan->rfCmd.channel = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current,
                                                         pPeriodicScan->syncInfo.accessAddr,
                                                         pPeriodicScan->eventCounter );
-  // set device address and address type
-  SETVAR_SCAN_CFG_DEV_ADDR_TYPE( pPeriodicScan->rfParam.scanCfg, pPeriodicScan->ownAddrType );
-  pPeriodicScan->rfParam.pDeviceAddr = ADDRTYPE_TO_OWNADDR(pPeriodicScan->ownAddrType);
 
   // set the access address
   pPeriodicScan->rfParam.accessAddress = pPeriodicScan->syncInfo.accessAddr;
-  // set the CRC init
-  pPeriodicScan->rfParam.crcInit0 = pPeriodicScan->syncInfo.crcInit[0];
-  pPeriodicScan->rfParam.crcInit1 = pPeriodicScan->syncInfo.crcInit[1];
-  pPeriodicScan->rfParam.crcInit2 = pPeriodicScan->syncInfo.crcInit[2];
-  // set the PHY
-  // Note: Mask off the MSBit which indicates Coded Scheme.
-  if ( (pPeriodicScan->phy == BLE5_1M_PHY) ||
-       (pPeriodicScan->phy == BLE5_2M_PHY) )
-  {
-    pPeriodicScan->rfCmd.phyMode = pPeriodicScan->phy;
 
-    // default range delay
-    pPeriodicScan->rfCmd.rangeDelay = LL_UNCODED_RANGE_DELAY_RAT_TICKS;
-  }
-  else // Coded
-  {
-    pPeriodicScan->rfCmd.phyMode = (pPeriodicScan->phy == BLE5_S2_PHY) ?
-                                    BLE5_CODED_S2_PHY:BLE5_CODED_S8_PHY;
+  MAP_osal_memcpy(&pPeriodicScan->rfParam.crcInit, pPeriodicScan->syncInfo.crcInit, LL_PKT_CRC_LEN);
 
-    // set range delay
-    // Note: This is for Long Range (worst case distance of 1km, or 4us).
-    pPeriodicScan->rfCmd.rangeDelay = LL_CODED_RANGE_DELAY_RAT_TICKS;
-  }
+  pPeriodicScan->rfCmd.common.phyFeatures = pPeriodicScan->phy;
+
   // in case there is no currently active scan
   if (llPeriodicScan.scanNumActive == 0)
   {
@@ -6755,10 +6920,6 @@ llStatus_t llTrigPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
     llPeriodicScan.llTask = MAP_llAllocTask( LL_TASK_ID_PERIODIC_SCANNER );
     // pointer to radio operation command
     llPeriodicScan.llTask->command = (uint32)&pPeriodicScan->rfCmd;
-    // set RF events
-    llPeriodicScan.llTask->rfEvents = RF_EventLastCmdDone   |
-                                      RF_EventInternalError |
-                                      RF_EventRxEntryDone;
 
     // callback function for scheduler
     llPeriodicScan.llTask->setup = llPeriodicScanSchedSetup;
@@ -7097,7 +7258,7 @@ void llSetupExtInit( uint8 connId )
   extInitCmd.common.scheduling = RCL_Schedule_AbsTime;
   extInitCmd.common.allowDelay = TRUE;
   // accept AE packets
-  extInitCmd.acceptExtended = TRUE;
+  extInitCmd.acceptExtended = llUserConfig.useAE;
   // set the channel number
   extInitCmd.channel = LL_SCAN_ADV_CHAN_37;
 
@@ -7955,10 +8116,11 @@ llStatus_t llStartDurationTimer( uint16 eventID,
  *              packet (AUX_CHAIN_IND) should be send on current periodic adv set
  *
  * @design      /ref did_286039104
+ * @design      BLE_LOKI-1795
  *
  * input parameters
  *
- * @param       None.
+ * @param       pPeriodicAdv - Pointer to the periodic advertising set for this command.
  *
  * output parameters
  *
@@ -7966,142 +8128,87 @@ llStatus_t llStartDurationTimer( uint16 eventID,
  *
  * @return      None.
  */
-void llUpdatePeriodicAdvChainPacket(void)
+void llUpdatePeriodicAdvChainPacket( llPeriodicAdvSet_t *pPeriodicAdv )
 {
-  llPeriodicAdvSet_t *pPeriodicAdv = llPeriodicAdv.currentAdv;
+  periodicRf_t *pRf = NULL;
+  uint8 hdrSize = 0;
 
+  // Check input parameter
   if (pPeriodicAdv == NULL )
   {
     return;
   }
-  // update tx counter
+
+  pRf = pPeriodicAdv->pRfCmds;
+  if (pRf == NULL )
+  {
+    return;
+  }
+
+  // Update tx counter
   pPeriodicAdv->txCount++;
-  // update the chain packet if there is chain packet
+  // Update the chain packet if there is chain packet
   if (pPeriodicAdv->numChains > pPeriodicAdv->txCount)
   {
-    // update start time of secondary command in case of AUX_CHAIN_IND
-    pPeriodicAdv->rfCmd.rfOpCmd.startTime += US_TO_RAT_TICKS(pPeriodicAdv->otaTime);
-    // check for data
+    // Check for data
     if (pPeriodicAdv->numFrags <= pPeriodicAdv->txCount)
     {
-      pPeriodicAdv->rfPkt.pAdvData = NULL;
-      pPeriodicAdv->rfPkt.advDataLen = 0;
+      pRf->comPkt.pAdvData = NULL;
+      pRf->comPkt.advDataLen = 0;
     }
     else
     {
-      // update data pointer
-      pPeriodicAdv->rfPkt.pAdvData += pPeriodicAdv->rfPkt.advDataLen;
-      // in case of last chunk
+      // Update data pointer
+      pRf->comPkt.pAdvData += pRf->comPkt.advDataLen;
+      // In case of last chunk
       if (pPeriodicAdv->numFrags == (pPeriodicAdv->txCount + 1))
       {
-        pPeriodicAdv->rfPkt.advDataLen = pPeriodicAdv->lastFragLen;
+        // Clear AuxPtr
+        CLR_EXTHDR_FLAG( pRf->comPkt.extHdrFlags, EXTHDR_FLAG_AUXPTR );
+        pRf->comPkt.advDataLen = pPeriodicAdv->lastFragLen;
       }
     }
 
-    // update chain header
-    if (((pPeriodicAdv->cteInfo.enable) && (pPeriodicAdv->cteInfo.count == pPeriodicAdv->txCount))  ||
-        (pPeriodicAdv->numFrags == pPeriodicAdv->txCount)       ||
+    // Update chain header
+    if ((pPeriodicAdv->numFrags == pPeriodicAdv->txCount)       ||
+#ifdef RTLS_CTE
+        ((pPeriodicAdv->cteInfo.enable) && (pPeriodicAdv->cteInfo.count == pPeriodicAdv->txCount)) ||
+#endif
         (pPeriodicAdv->numFrags == (pPeriodicAdv->txCount + 1)) ||
         (pPeriodicAdv->numChains == (pPeriodicAdv->txCount + 1))||
-        (TST_EXTHDR_FLAG(pPeriodicAdv->rfPkt.extHdrFlags, EXTHDR_FLAG_TXPWR)) ||
+        (TST_EXTHDR_FLAG(pRf->comPkt.extHdrFlags, EXTHDR_FLAG_TXPWR)) ||
         (pPeriodicAdv->pendingChanUpdate == PERIODIC_ADV_CHANMAP_UPDATE_PENDING))
     {
-      uint8 hdrSize;
-      // update extended header flags
+      // Update extended header flags
       hdrSize = llSetPeriodicHdrFlags(pPeriodicAdv);
-      if (GET_EXT_HDR_LEN(pPeriodicAdv->rfPkt.extHdrInfo) != hdrSize )
+      if (GET_EXT_HDR_LEN(pRf->comPkt.extHdrInfo) != hdrSize )
       {
-        // update extended header length
-        SET_EXTHDR_LEN( pPeriodicAdv->rfPkt.extHdrInfo,hdrSize );
-        // update extended header contents
+        // Update extended header length
+        SET_EXTHDR_LEN( pRf->comPkt.extHdrInfo,hdrSize );
+        // Update extended header contents
         llSetupPeriodicHdr(pPeriodicAdv);
       }
-      // update OTA time
-      pPeriodicAdv->otaTime =  MAP_llOctets2Time( pPeriodicAdv->rfCmd.phyMode & 0x03,      // first two bits only
-                                       (pPeriodicAdv->rfCmd.phyMode>>2) & 0x01, // scheme
-                                       (hdrSize + EXTHDR_INFO_SIZE + pPeriodicAdv->rfPkt.advDataLen),
-                                        MIC_NOT_ENABLED );
-
+      // Update OTA time
+      pPeriodicAdv->otaTime = MAP_llOctets2Time( pRf->phyFeatures & 0x03,      // First two bits only
+                                                 (pRf->phyFeatures>>2) & 0x01, // Scheme
+                                                 (hdrSize + EXTHDR_INFO_SIZE + pRf->comPkt.advDataLen),
+                                                 MIC_NOT_ENABLED );
+#ifdef RTLS_CTE
       pPeriodicAdv->otaTime += ((pPeriodicAdv->cteInfo.enable) &&
                                 (pPeriodicAdv->cteInfo.count > pPeriodicAdv->txCount))?
                                 (pPeriodicAdv->cteInfo.len * 8):0;
+#endif
       pPeriodicAdv->otaTime += AE_MIN_T_MAFS_IN_US;
     }
-    // update aux ptr
-    if ((pPeriodicAdv->txCount + 1) == pPeriodicAdv->numChains)
-    {
-      pPeriodicAdv->rfParam.auxPtrTgtTime = 0;
-      pPeriodicAdv->rfParam.auxPtrTgtType = TRIGTYPE_NOW;
-      // remove the T_MAFS from the last chain
-      // this OTA will be used to calculate the total OTA time
-      pPeriodicAdv->otaTime -= AE_MIN_T_MAFS_IN_US;
-    }
-    else
-    {
-      // set the auxPtr time and type
-      // Note: CM0 expects time in RAT ticks.
-      pPeriodicAdv->rfParam.auxPtrTgtTime = pPeriodicAdv->rfCmd.rfOpCmd.startTime +
-                                        US_TO_RAT_TICKS( pPeriodicAdv->otaTime + START_SYNTH_TO_RAT_OFFSET );
 
-      pPeriodicAdv->rfParam.auxPtrTgtType = TRIGTYPE_AT_ABS_TIME;
-    }
+    // Build AUX_CHAIN_IND packet and add it to the command TX queue
+    pPeriodicAdv->extHdrSize = MAP_llGetExtHdrLen(pRf->comPkt.extHdrFlags);
+    uint8_t payloadLen = 1 + pPeriodicAdv->extHdrSize + pRf->comPkt.advDataLen;
+    MAP_llAddPeriodicAdvPacketToTx( pPeriodicAdv, LL_PKT_TYPE_AUX_CHAIN_IND, payloadLen );
   }
 }
 #endif
 #endif // USE_PERIODIC_ADV
-
-#ifdef USE_PERIODIC_SCAN
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-/*******************************************************************************
- * @fn          llSetupPeriodicScanDataEntryQueue
- *
- * @brief       This routine is used to setup a static ring RX buffer for the periodic scan.
- *
- * @design      /ref did_286039104
- *
- * input parameters
- *
- * @param
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Pointer to the Rx Data Entry Queue.
- */
-dataEntryQ_t *llSetupPeriodicScanDataEntryQueue( void )
-{
-  if (llPeriodicScan.queue.dataEntryQ.pCurEntry != NULL)
-  {
-    return( &llPeriodicScan.queue.dataEntryQ );
-  }
-  // init data entries
-  // ALT: Make ring buffer size configurable from ll_config.
-  for (uint8 i=0; i<NUM_RX_SCAN_ENTRIES; i++)
-  {
-    // initialize common data entry members
-    llPeriodicScan.rxBuf[i].entry.status = DATASTAT_PENDING;
-    llPeriodicScan.rxBuf[i].entry.config = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    llPeriodicScan.rxBuf[i].entry.length = LL_PKT_HDR_LEN + MAX_BLE_ADV_PKT_SIZE + SUFFIX_MAX_SIZE;
-
-    // point to next entry
-    // ALT: Make ring buffer size configurable from ll_config.
-    llPeriodicScan.rxBuf[i].entry.pNextEntry =
-      (dataEntry_t *)&llPeriodicScan.rxBuf[(i+1)%NUM_RX_SCAN_ENTRIES];
-  }
-
-  // init data queue
-  llPeriodicScan.queue.dataEntryQ.pCurEntry  = (dataEntry_t *)&llPeriodicScan.rxBuf[0];
-  llPeriodicScan.queue.dataEntryQ.pLastEntry = NULL;
-  llPeriodicScan.queue.pNextDataEntry        = (dataEntry_t *)&llPeriodicScan.rxBuf[0];
-  llPeriodicScan.queue.pTempDataEntry        = NULL;
-
-  return( &llPeriodicScan.queue.dataEntryQ );
-}
-
-#endif
-#endif // USE_PERIODIC_SCAN
-
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************

@@ -25,11 +25,9 @@
 #include "osal_bufmgr.h"
 #include "map_direct.h"
 
-#ifndef ICALL_LITE
-#if !defined(HCI_TL_NONE)
+#ifndef CONFIG_ZEPHYR
 #include "npi.h"
-#endif // !HCI_TL_NONE
-#endif // ICALL_LITE
+#endif // CONFIG_ZEPHYR
 
 #if defined( CC26XX ) || defined( CC13XX ) || defined( CC23X0 )
 #include "ll_common.h"
@@ -3055,27 +3053,6 @@ hciStatus_t hciExtSetRxGain( uint8 *pBuf )
 
 
 /*******************************************************************************
- * @fn          hciExtSetTxPower
- *
- * @brief       Serial interface translation function for HCI API.
- *
- * input parameters
- *
- * @param       pBuf - Pointer to command parameters and payload.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      hciStatus_t
- */
-hciStatus_t hciExtSetTxPower( uint8 *pBuf )
-{
-  return HCI_EXT_SetTxPowerCmd( pBuf[0] );
-}
-
-
-/*******************************************************************************
  * @fn          hciExtSetTxPowerDbm
  *
  * @brief       Serial interface translation function for HCI API.
@@ -3139,27 +3116,6 @@ hciStatus_t hciExtExtendRfRange( uint8 *pBuf )
 hciStatus_t hciExtHaltDuringRf( uint8 *pBuf )
 {
   return HCI_EXT_HaltDuringRfCmd( pBuf[0] );
-}
-
-
-/*******************************************************************************
- * @fn          hciExtSetMaxDtmTxPower
- *
- * @brief       Serial interface translation function for HCI API.
- *
- * input parameters
- *
- * @param       pBuf - Pointer to command parameters and payload.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      hciStatus_t
- */
-hciStatus_t hciExtSetMaxDtmTxPower( uint8 *pBuf )
-{
-  return HCI_EXT_SetMaxDtmTxPowerCmd( pBuf[0] );
 }
 
 

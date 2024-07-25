@@ -140,6 +140,7 @@ extern "C"
 #define LL_STATUS_ERROR_INSTANT_PASSED_HOST            0x28 // Instant Passed
 #define LL_STATUS_ERROR_INSTANT_PASSED_PEER            0x28 // Instant Passed
 #define LL_STATUS_ERROR_KEY_PAIRING_NOT_SUPPORTED      0x29 // Pairing With Unit Key Not Supported
+#define LL_STATUS_ERROR_INSUFFICIENT_SECURITY          0x2F // Insufficient Security
 #define LL_STATUS_ERROR_DIFFERENT_TRANS_COLLISION      0x2A // Different Transaction Collision
 #define LL_STATUS_ERROR_NO_ADV_CHAN_FOUND              0x30 // Parameter Out Of Mandatory Range
 #define LL_STATUS_ERROR_PARAM_OUT_OF_RANGE             0x30 // Parameter Out Of Mandatory Range
@@ -632,6 +633,8 @@ extern "C"
 #define LL_QOS_LOW_PRIORITY                            0
 #define LL_QOS_MEDIUM_PRIORITY                         1
 #define LL_QOS_HIGH_PRIORITY                           2
+#define LL_QOS_CS_PRIORITY                             3
+
 
 // Connection Selection Parameters
 #define LL_INACTIVE_CONNECTIONS                                 0xFF
@@ -4210,6 +4213,20 @@ extern llStatus_t LL_EXT_GetTxStats( uint16 connId, uint8 command );
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_EXT_GetCoexStats( uint8 command );
+
+/*******************************************************************************
+ * @fn          LE_SetHostFeature API
+ *
+ * @brief       This API is used to enable/disable a feature in the Host feature set
+ *
+ * @param       bitNumber - Bit position in the FeatureSet
+ * @param       bitValue - The Host feature bit enable or disable
+ *
+ * @return      LL_STATUS_SUCCESS/LL_STATUS_ERROR_BAD_PARAMETER/
+ *              LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED/LL_STATUS_ERROR_COMMAND_DISALLOWED
+ *
+ */
+extern llStatus_t LL_SetHostFeature(uint8 , uint8);
 
 /*
 **  LL Callbacks to HCI

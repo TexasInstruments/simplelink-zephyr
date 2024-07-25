@@ -53,6 +53,7 @@ extern "C"
 #define LL_SCHED_START_EVENT        1
 #define LL_SCHED_START_PRIMARY      2
 #define LL_SDAA_SCHED_HANDLED       3
+#define LL_SCHED_START_CS           4
 //
 #define LL_SCHED_START_IMMED_PAD    (3 *  RAT_TICKS_IN_625US)
 #define LL_SCHED_PRE_CUTOFF         (10 * RAT_TICKS_IN_625US)
@@ -60,15 +61,17 @@ extern "C"
 #define LL_SCHED_OVERHEAD           (LL_SCHED_PRE_CUTOFF + LL_SCHED_POST_CUTOFF)
 
 // Task ID
-#define LL_TASK_ID_ADVERTISER                    0x01
-#define LL_TASK_ID_SCANNER                       0x02
-#define LL_TASK_ID_INITIATOR                     0x04
-#define LL_TASK_ID_PERIODIC_ADVERTISER           0x08
-#define LL_TASK_ID_PERIODIC_SCANNER              0x10
+#define LL_TASK_ID_ADVERTISER                    0x0001
+#define LL_TASK_ID_SCANNER                       0x0002
+#define LL_TASK_ID_INITIATOR                     0x0004
+#define LL_TASK_ID_PERIODIC_ADVERTISER           0x0008
+#define LL_TASK_ID_PERIODIC_SCANNER              0x0010
 #define LL_TASK_ID_RX_WINDOW                     0x20
-#define LL_TASK_ID_PERIPHERAL                    0x40
-#define LL_TASK_ID_CENTRAL                       0x80
-#define LL_TASK_ID_NONE                          0xFF
+#define LL_TASK_ID_PERIPHERAL                    0x0040
+#define LL_TASK_ID_CENTRAL                       0x0080
+#define LL_TASK_ID_CS                            0x0100
+#define LL_TASK_ID_STANDARD_BLE                  0xFFFE
+#define LL_TASK_ID_NONE                          0xFFFF
 
 // Task ID Masks
 #define LL_TASK_ID_SECONDARY_TASKS               (LL_TASK_ID_ADVERTISER      | \
@@ -120,6 +123,13 @@ extern "C"
 #define LL_NUM_TASK_BLOCKS                    (NUM_TASK_BLOCKS_ADV_NCONN_CFG + \
                                                NUM_TASK_BLOCKS_SCAN_CFG + 1)
 
+#define HANDLE_INACTIVE    0 // A handle that was not opened or is closed
+#define HANDLE_ACTIVE      1 // A handle that is opened
+
+#define NUM_RCL_HANDLES    2 // A Standard BLE handle and a CS handle
+#define BLE_RCL_HANDLE     0 // The Standard BLE handle index
+#define CS_RCL_HANDLE      1 // The CS handle index
+
 /*******************************************************************************
  * TYPEDEFS
  */
@@ -131,7 +141,7 @@ typedef struct taskInfo_t taskInfo_t;
 // Task Information
 struct taskInfo_t
 {
-  uint8  taskID;                 // type of LL task
+  uint16 taskID;                 // type of LL task
   uint8  taskState;              // whether task is active or inactive
   uint32 command;                // address to radio operation
   uint32 startTime;              // initial RF command start time; used by PM
@@ -145,12 +155,20 @@ struct taskInfo_t
 typedef struct
 {
   uint8       numTasks;          // number of active tasks
-  uint8       activeTasks;       // bits to indicate which tasks are active
-  uint8       lastSecTask;       // the last secondary task; used for combo states
-  uint8       lastActiveTasks;   // the active tasks checked last time
+  uint16      activeTasks;       // bits to indicate which tasks are active
+  uint16      lastSecTask;       // the last secondary task; used for combo states
+  uint16      lastActiveTasks;   // the active tasks checked last time
   taskInfo_t *curTask;           // currently active task
   taskInfo_t *llTasks;           // array of tasks
 } taskList_t;
+
+// RCL Handle List
+typedef struct rclHandleList
+{
+  RCL_Handle rclHandle;
+  uint8      state:1;
+  uint8      reserved:7;
+} rclHandleList_t;
 
 /*******************************************************************************
  * LOCAL VARIABLES
@@ -172,13 +190,14 @@ extern void        llScheduler( void );
 extern void        llScheduleTask( taskInfo_t *llTask );
 extern void        llScheduleTask_sPatch( taskInfo_t *llTask );
 extern uint8       llFindStartType( taskInfo_t *secTask, taskInfo_t *primTask );
-extern taskInfo_t *llFindNextSecTask( uint8 secTaskID );
-extern taskInfo_t *llAllocTask( uint8 llTaskID );
+extern taskInfo_t *llFindNextSecTask( uint16 secTaskID );
+extern taskInfo_t *llAllocTask( uint16 llTaskID );
 extern void        llFreeTask( taskInfo_t **llTask );
 extern taskInfo_t *llGetCurrentTask( void );
-extern taskInfo_t *llGetTask( uint8 llTaskID );
-extern uint8       llGetTaskState( uint8 llTaskID );
-extern uint8       llActiveTask( uint8 llTaskID );
+extern RCL_Command *llSchedulerGetCsCmd( void );
+extern taskInfo_t *llGetTask( uint16 llTaskID );
+extern uint8       llGetTaskState( uint16 llTaskID );
+extern uint8       llActiveTask( uint16 llTaskID );
 extern uint8       llGetActiveTasks( void );
 extern uint8       llGetNumTasks( void );
 extern void        llSetupRatCompare( taskInfo_t *llTask );
@@ -199,6 +218,9 @@ extern void        llExtInitSchedSetup( taskInfo_t *llTask );
 extern void        llLinkSchedSetup( taskInfo_t *llTask );
 extern void        llPeriodicScanSchedSetup( taskInfo_t *llTask );
 extern void        llPeriodicAdvSchedSetup( taskInfo_t *llTask );
+extern RCL_Handle  llScheduler_getBleHandle( void );
+extern RCL_Handle  llScheduler_getHandle( uint16 taskID );
+extern uint32      llScheduler_getSwitchTime(uint16 taskID);
 
 #ifdef __cplusplus
 }

@@ -46,13 +46,13 @@
 // Note: Assumes alEntryFlags = accept list entry's flags.
 
 #define CLR_AL_ENTRY( alEntryFlags )                                           \
-  ((alEntryFlags) = 0)
+  (alEntryFlags) = 0
 
 #define SET_AL_ENTRY_FREE( alEntryFlags )                                      \
-  ((alEntryFlags) &= ~BV(0))
+  (alEntryFlags) &= ~BV(0)
 
 #define SET_AL_ENTRY_BUSY( alEntryFlags )                                      \
-  ((alEntryFlags) |= BV(0))
+  (alEntryFlags) |= BV(0)
 
 #define IS_AL_ENTRY_FREE( alEntryFlags )                                       \
   (((alEntryFlags) & BV(0)) == 0)
@@ -61,25 +61,25 @@
   (((alEntryFlags) & BV(0)) == 1)
 
 #define SET_AL_ENTRY_PUBLIC( alEntryFlags )                                    \
-  ((alEntryFlags) &= ~BV(1))
+  (alEntryFlags) &= ~BV(1)
 
 #define SET_AL_ENTRY_RANDOM( alEntryFlags )                                    \
-  ((alEntryFlags) |= BV(1))
+  (alEntryFlags) |= BV(1)
 
 #define GET_AL_ENTRY_ADDR_TYPE( alEntryFlags )                                 \
-  ((((alEntryFlags) & BV(1)) >> 1))
+  (((alEntryFlags) & BV(1)) >> 1)
 
 #define CLR_AL_ENTRY_IGNORE( alEntryFlags )                                    \
-  ((alEntryFlags) &= ~BV(2))
+  (alEntryFlags) &= ~BV(2)
 
 #define SET_AL_ENTRY_IGNORE( alEntryFlags )                                    \
-  ((alEntryFlags) |= BV(2))
+  (alEntryFlags) |= BV(2)
 
 #define SET_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  ((alEntryFlags) |= BV(3))
+  (alEntryFlags) |= BV(3)
 
 #define CLR_AL_ENTRY_PRIV_IGNORE( alEntryFlags )                               \
-  ((alEntryFlags) &= ~BV(3))
+  (alEntryFlags) &= ~BV(3)
 
 #define GET_AL_TABLE_POINTER( pAlEntry )                                       \
     ((alTable_t *)((uint8 *)(pAlEntry) - sizeof(alTable_t) + sizeof(uint32_t)))
@@ -123,7 +123,7 @@ typedef uint16_t alFlgs_t;
 
 // Accept List Entry
 // Note: see RCL filter list entry struct (RCL_FL_Entry).
-PACKED_TYPEDEF_STRUCT
+PACKED_TYPEDEF_STRUCT /* Creates a warning in other compilers as it is passed to RCL API which expects a non-packed structure */
 {
   alFlgs_t alFlags;                    // W:  accept list flags (RW for bit 2)
   uint8    devAddr[BLE_BDADDR_SIZE];   // W:  BLE address

@@ -38,6 +38,8 @@
 #include "ll_rat.h"
 #include "ll_config.h"
 #include "hal_gpio_wrapper.h"
+#include "cs/ll_cs_ctrl_pkt_mgr.h"
+#include "cs/ll_cs_procedure.h"
 //
 #include "rom_jt.h"
 
@@ -574,6 +576,11 @@ void llPeripheral_TaskEnd( void )
   }
 #endif // RTLS_CTE
 
+  // Check if it's time to build the CS StepList
+  MAP_llCsStartStepListGen(connPtr);
+  // Check if it's time to begin the CS procedure
+  MAP_llCsStartProcedure(connPtr);
+
   // check Control Procedure Processing
   if ( MAP_llProcessPeripheralControlProcedures( connPtr ) == LL_CTRL_PROC_STATUS_TERMINATE )
   {
@@ -1078,6 +1085,14 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
   while (( status == USUCCESS ) && ( connPtr->ctrlPktInfo.ctrlPktCount > 0 ))
   {
     // processing based on control packet type at the head of the queue
+    if ((connPtr->ctrlPktInfo.ctrlPkts[0] >= LL_CTRL_CS_SEC_RSP) &&
+        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_SEC_REQ) )
+    {
+        if(LL_CTRL_PROC_STATUS_SUCCESS == MAP_llCsProcessCsCtrlProcedures(connPtr, connPtr->ctrlPktInfo.ctrlPkts[0]))
+        {
+           return LL_CTRL_PROC_STATUS_SUCCESS;
+        }
+    }
     switch( connPtr->ctrlPktInfo.ctrlPkts[0] )
     {
       /*

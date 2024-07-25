@@ -774,7 +774,7 @@ typedef struct _ICall_GSA_RegService_
   gattAttribute_t *pAttrs; //!< Array of attribute records to be registered
   uint16_t numAttrs;       //!< Number of attributes in array
   uint8_t encKeySize;      //!< Minimum encryption key size required by service
-  CONST gattServiceCBs_t *pServiceCBs; //!< Service callback function pointers
+  const gattServiceCBs_t *pServiceCBs; //!< Service callback function pointers
 } ICall_GSA_RegService;
 
 /**

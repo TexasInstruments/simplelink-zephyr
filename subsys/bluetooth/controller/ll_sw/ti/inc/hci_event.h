@@ -388,6 +388,16 @@ extern "C"
 #define HCI_EXT_ADV_DATA_TRUNCATED_EVENT_LEN                           7
 #define HCI_EXT_SCAN_EVENT_LEN                                         3
 
+// Channel Sounding Events
+#define HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT_LEN 31
+#define HCI_LE_CS_CONFIG_COMPLETE_EVENT_LEN                             34
+#define HCI_LE_CS_SECURITY_ENABLE_COMPLETE_EVENT_LEN                    4
+#define HCI_LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE_EVENT_LEN              76
+#define HCI_LE_CS_PROCEDURE_ENABLE_COMPLETE_EVENT_LEN                   20
+#define HCI_LE_CS_SUBEVENT_RESULT_LEN                                   17
+#define HCI_LE_CS_SUBEVENT_CONTINUE_LEN                                 9
+#define HCI_LE_CS_TEST_END_COMPLETE_EVENT_LEN                           0
+
 /*******************************************************************************
  * TYPEDEFS
  */

@@ -154,6 +154,8 @@ extern "C"
 #define US_TO_RAT_TICKS( us )              ((us) << 2)
 #define RAT_TICKS_TO_US( rat )             ((rat) >> 2)
 
+#define SW_TX_POWER_TABLE (llUserConfig.lrfTxPowerTablePtr)
+
 /*******************************************************************************
  * CONSTANTS
  */
@@ -290,8 +292,22 @@ extern "C"
 #define LL_MIN_USED_CHANNELS_IND_LEN                   3
 #define LL_CTE_REQ_PAYLOAD_LEN                         2
 #define LL_CTE_RSP_PAYLOAD_LEN                         1
+#define LL_CS_CHANNEL_MAP_IND_PL_LEN                   11
+#define LL_CS_FAE_RSP_PL_LEN                           73
+#define LL_CS_FAE_REQ_PL_LEN                           1
+#define LL_CS_TERMINATE_IND_PL_LEN                     3
+#define LL_CS_IND_PL_LEN                               19
+#define LL_CS_RSP_PL_LEN                               22
+#define LL_CS_REQ_PL_LEN                               29
+#define LL_CS_CONFIG_RSP_PL_LEN                        2
+#define LL_CS_CONFIG_REQ_PL_LEN                        28
+#define LL_CS_CAPABILITIES_RSP_PAYLOAD_LEN             26
+#define LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN             26
+#define LL_CS_SEC_RSP_PL_LEN                           21
+#define LL_CS_SEC_REQ_PL_LEN                           21
+
 // set to one byte larger than the largest control packet length
-#define LL_INVALID_CTRL_LEN                            25
+#define LL_INVALID_CTRL_LEN                            74
 
 // miscellaneous fields, in bytes
 #define LL_CONNECT_IND_LL_DATA_LEN                     22
@@ -328,10 +344,10 @@ extern "C"
 #define LL_WINDOW_SIZE                                 2  // 2.5ms in 1.25ms ticks
 #define LL_WINDOW_OFFSET                               0  // 1.25ms + 0
 #define LL_LINK_SETUP_TIMEOUT                          5  // 6 connection intervals (i.e. 0..5)
-#define LL_LINK_MIN_WIN_OFFSET                         2  // in 625us units
+#define LL_TRANSMIT_WIN_DELAY_LEGACY                   2  // in 625us units ~ 1.25ms
 //
-#define LL_LINK_MIN_WIN_OFFSET_AE_UNCODED              4  // in 625us units
-#define LL_LINK_MIN_WIN_OFFSET_AE_CODED                6  // in 625us units
+#define LL_TRANSMIT_WIN_DELAY_AE_UNCODED               4  // in 625us units ~ 2.5ms
+#define LL_TRANSMIT_WIN_DELAY_LEGACY_AE_CODED          6  // in 625us units ~ 3.75 ms
 
 // Adv PDU Header Fields
 #define LL_ADV_PDU_HDR_TXADDR                          6
@@ -395,6 +411,23 @@ extern "C"
 #define  LL_CTRL_MIN_USED_CHANNELS_IND                 0x19 //  , P
 #define  LL_CTRL_CTE_REQ                               0x1A // C, P
 #define  LL_CTRL_CTE_RSP                               0x1B // C, P
+// Channel Sounding Control Procedures
+#define LL_CTRL_CS_CHANNEL_MAP_IND                     0x38 // C
+#define LL_CTRL_CS_FAE_RSP                             0x37 // C, P
+#define LL_CTRL_CS_FAE_REQ                             0x36 // C, P
+#define LL_CTRL_CS_TERMINATE_IND                       0x35 // C
+#define LL_CTRL_CS_IND                                 0x34 // C
+#define LL_CTRL_CS_RSP                                 0x33 //  , P
+#define LL_CTRL_CS_REQ                                 0x32 // C, P
+#define LL_CTRL_CS_CONFIG_RSP                          0x31 // C, P
+#define LL_CTRL_CS_CONFIG_REQ                          0x30 // C, P
+#define LL_CTRL_CS_CAPABILITIES_RSP                    0x2F // C, P
+#define LL_CTRL_CS_CAPABILITIES_REQ                    0x2E // C, P
+#define LL_CTRL_CS_SEC_RSP                             0x2D //  , P
+#define LL_CTRL_CS_SEC_REQ                             0x39 // C
+
+// The delta from which the CS ctrl packets begin
+#define LL_CS_CTRL_DLTA                                0x11
 //
 #define  LL_CTRL_INVALID_OPCODE                        0xC8
 //
@@ -422,14 +455,14 @@ extern "C"
 #define  LL_CTRL_DUMMY_PLACE_HOLDER_RECEIVE             0xFE
 #define  LL_CTRL_UNDEFINED_PKT                          0xFF
 
-#define NUM_OF_CTRL_PKT                                 28
+#define NUM_OF_CTRL_PKT                                 41 
 
 #define LL_CTRL_BLE_LOG_STRINGS_MAX                     27
 extern char *llCtrl_BleLogStrings[];
 
 // There is only supposed to be at most one control procedure pending, but some
 // extra space is allocated here just in case some queueing is required.
-#define LL_MAX_NUM_CTRL_PROC_PKTS                      4
+#define LL_MAX_NUM_CTRL_PROC_PKTS                      10
 
 // Control Procedure Actions
 #define LL_CTRL_PROC_STATUS_SUCCESS                    0
@@ -688,7 +721,25 @@ extern char *llCtrl_BleLogStrings[];
 #define LL_FEATURE_CONNECTION_SUBRATING                0x20          //     "Y"
 #define LL_FEATURE_CONNECTION_SUBRAING_HOST_SUPPORT    0x40          //     "Y"
 #define LL_FEATURE_CHANNEL_CLASSIFICATION              0x80          //     "Y"
-// Byte 5 - Byte 7
+// Byte 5
+#define LL_FEATURE_RESERVED0                           0x01
+#define LL_FEATURE_RESERVED1                           0x02
+#define LL_FEATURE_RESERVED2                           0x04
+#define LL_FEATURE_RESERVED3                           0x08
+#define LL_FEATURE_RESERVED4                           0x10
+#define LL_FEATURE_RESERVED5                           0x20
+#define LL_FEATURE_CS                                  0x40
+#define LL_FEATURE_CS_HOST                             0x80
+// Byte 6
+#define LL_FEATURE_RESERVED0                           0x01
+#define LL_FEATURE_RESERVED1                           0x02
+#define LL_FEATURE_RESERVED2                           0x04
+#define LL_FEATURE_RESERVED3                           0x08
+#define LL_FEATURE_RESERVED4                           0x10
+#define LL_FEATURE_RESERVED5                           0x20
+#define LL_FEATURE_RESERVED6                           0x40
+#define LL_FEATURE_RESERVED7                           0x80
+// Byte 7
 #define LL_FEATURE_RESERVED0                           0x01
 #define LL_FEATURE_RESERVED1                           0x02
 #define LL_FEATURE_RESERVED2                           0x04
@@ -956,6 +1007,8 @@ extern char *llCtrl_BleLogStrings[];
 
 #define LL_RCL_PKT_NUM_PAD_BTYES             3
 #define LL_RCL_PKT_HDR_LEN                   2
+
+#define LL_MAX_HCI_EVENT_LEN                 244
 /*******************************************************************************
  * TYPEDEFS
  */
@@ -1268,7 +1321,7 @@ typedef struct
   uint16_t packets;
   // Total number of CRC errors for this connection.
   uint16_t errors;
-  uint8_t  nextTaskType; // Type of next BLE task
+  uint16_t nextTaskType; // Type of next BLE task
   uint32_t nextTaskTime; // time to next BLE task
   uint16_t eventCounter; // event Counter
   uint32_t timeStamp;    // timestamp (anchor point)
@@ -1376,7 +1429,7 @@ struct llConn_t
   // Note: Address must start on word boundary!
   peerInfo_t        peerInfo;                           // peer device address and address type
   // Connection Event Notification
-  uint8             taskID;                             // user task ID to send task event
+  uint16            taskID;                             // user task ID to send task event
   uint16            taskEvent;                          // user event to send at end of connection event
 
   // TEMP: THIS BELONGS IN taskInfo_t, BUT THEN ANOTHER MALLOC IS NEEDED.
@@ -1879,6 +1932,7 @@ extern void                 llProcessPostRfOps( void );
 extern void                 llSetTxPower( RFBLEDPL_TX_POWER_TYPE );
 extern void                 llSetTxPwrLegacy( uint8 );
 extern int8                 llGetTxPower( void );
+extern uint16               llGetCsConnTaskID( void );
 extern uint8                llTxPwrPoutLU( int8 );
 extern uint8                llTxPwrLU( uint16 );
 extern void                 llTxPwrSetRfGainIndex( uint32 *);
@@ -1905,6 +1959,7 @@ void                 llPostSetupCtrlPktPeri( llConnState_t *connPtr, uint8_t ctr
 void                 llPostSetupCtrlPktCent( llConnState_t *connPtr, uint8_t ctrlPkt );
 //
 extern uint8                llSetupCte( llConnState_t *, uint8 );               // C, P
+extern void                 llSetupDataEntry( RCL_Buffer_TxBuffer *dataEntry, uint8 cmdLen, uint8 encEnabled ); // TODO add C, P thing
 
 // Control Procedure Management
 extern void                 llEnqueueCtrlPkt( llConnState_t *, uint8 );

@@ -112,6 +112,7 @@ typedef struct
   uint8                 advReportIncChannel;   // include channel index in advertising report
   const LRF_TxPowerTable  *lrfTxPowerTablePtr;
   const LRF_Config        *lrfConfigPtr;
+  const LRF_Config        *lrfConfigCsPtr;
   int8                    defaultTxPowerDbm;      // The default Tx Power value in dBm
   uint8                   defaultTxPowerFraction; // The fraction field allows 0.5 dB steps in the power table
                                                   // 0 - use the integer Tx power dBm value
@@ -125,6 +126,7 @@ typedef struct
   uint8                   useSrcClkLFOSC;         // Specifies whether Source Clock is LFOSC (RCOSC)
   uint16                  cfgLFOSCExtraPPM;       // Additional PPM configured by the user, applicable when using LFOSC (default: 1500ppm)
   uint8                   useDFL;                 // Use dynamic filter list
+  uint8 				  useAE;
 } llUserCfg_t;
 
 /*******************************************************************************

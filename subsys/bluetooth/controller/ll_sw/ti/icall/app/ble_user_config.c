@@ -25,26 +25,9 @@
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/drivers/utils/Random.h>
 
-#ifdef CC33xx
-#include "hci.h"
-#endif // CC33xx
-
-#if !defined(CC23X0) && !defined(CC33xx)
-#include "ble_overrides.h"
-#include "ecc/ECCROMCC26XX.h"
-#endif // !defined(CC23X0) && !defined(CC33xx)
-
-#ifndef CC23X0
-#include "ti_radio_config.h"
-#include <ti/drivers/rf/RF.h>
-#include <ti/drivers/aesccm/AESCCMCC26XX.h>
-#include <ti/drivers/aesecb/AESECBCC26XX.h>
-#include <ti/drivers/TRNG.h>
-#else
 #include <ti/drivers/aesccm/AESCCMLPF3.h>
 #include <ti/drivers/aesecb/AESECBLPF3.h>
 #include <ti/drivers/RNG.h>
-#endif // CC23X0
 
 #ifdef SYSCFG
 #include "ti_ble_config.h"
@@ -637,7 +620,7 @@ void driverTable_fnSpinlock(void)
  *
  * @return      None.
  */
-void DefaultAssertCback(uint8 assertCause, uint8 assertSubcause)
+void DefaultAssertCback(uint8 assertCause, uint8 assertSubCause)
 {
 #ifdef HAL_ASSERT_SPIN
   driverTable_fnSpinlock();

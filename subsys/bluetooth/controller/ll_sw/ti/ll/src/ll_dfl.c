@@ -46,7 +46,7 @@
 /*******************************************************************************
  * LOCAL VARIABLES
  */
-dynamicFL_t       dynamicFL;   // Dynamic filter list
+dynamicFL_t       g_dynamicFL;   // Dynamic filter list
 rankDynamicFL_t   rankFLTable; // Rank table of the dynamic filter list
 
 /*******************************************************************************
@@ -365,7 +365,7 @@ uint8 LL_DFL_FindEntry( dynamicFL_t    *pDynamicFL,
 */
 dynamicFL_t *LL_DFL_GetDynamicFilterlist( void )
 {
-    return (dynamicFL_t*)&dynamicFL;
+    return (dynamicFL_t*)&g_dynamicFL;
 }
 
 /*******************************************************************************

@@ -281,20 +281,12 @@
  *   <td>HCI Extension Set Max Data Length</td>
  * </tr>
  * <tr>
- *   <td>@ref HCI_EXT_SetMaxDtmTxPowerCmd</td>
- *   <td>HCI Extension Set Max DTM Transmitter Power</td>
- * </tr>
- * <tr>
  *   <td>@ref HCI_EXT_SetRxGainCmd</td>
  *   <td>HCI Extension Set Receiver Gain</td>
  * </tr>
  * <tr>
  *   <td>@ref HCI_EXT_SetSCACmd</td>
  *   <td>HCI Extension Set SCA</td>
- * </tr>
- * <tr>
- *   <td>@ref HCI_EXT_SetTxPowerCmd</td>
- *   <td>HCI Extension Set Transmitter Power</td>
  * </tr>
  * <tr>
  *   <td>@ref HCI_EXT_SetTxPowerDbmCmd</td>
@@ -3130,6 +3122,19 @@ extern hciStatus_t HCI_LE_ClearPeriodicAdvListCmd( void );
 extern hciStatus_t HCI_LE_ReadPeriodicAdvListSizeCmd( void );
 
 /**
+ * HCI_LE_SetHostFeature
+ *
+ * Enable/Disable the Host feature bit
+ *
+ * @param       bitNumber - Bit position in the FeatureSet
+ * @param       bitValue - The Host feature bit enable or disable
+ *
+ * @return  HCI status
+ *
+ */
+extern hciStatus_t HCI_LE_SetHostFeature( uint8, uint8  );
+
+/**
  * HCI_LE_SetPeriodicAdvReceiveEnableCmd
  *
  * Used a scanner to enable or disable reports for the periodic
@@ -3191,26 +3196,6 @@ extern hciStatus_t HCI_LE_SetConnectionlessIqSamplingEnableCmd( uint16 syncHandl
  * @return @ref HCI_SUCCESS
  */
 extern hciStatus_t HCI_EXT_SetRxGainCmd( uint8 rxGain );
-
-
-/**
- * Set the transmit power.
- *
- * The 'txPower' input parameter should be an index from @ref TX_Power_Index.
- *
- * The default system value for this feature is @ref HCI_EXT_TX_POWER_0_DBM
- *
- * @note For the CC254x platform, a setting of 4dBm is only allowed for the
- * CC2540.
- *
- * @par Corresponding Events
- * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_SET_TX_POWER
- *
- * @param txPower @ref TX_Power_Index
- *
- * @return @ref HCI_SUCCESS
- */
-extern hciStatus_t HCI_EXT_SetTxPowerCmd( uint8 txPower );
 
 /**
  * Set the transmit power in dBm.
@@ -3650,28 +3635,6 @@ extern hciStatus_t HCI_EXT_SetFreqTuneCmd( uint8 step );
  * @return @ref HCI_SUCCESS
  */
 extern hciStatus_t HCI_EXT_SaveFreqTuneCmd( void );
-
-/**
- * Set the maximum transmit output power for DTM.
- *
- * This command is used to override the RF transmitter output power used by the
- * Direct Test Mode (DTM). Normally, the maximum transmitter output power
- * setting used by DTM is the maximum transmitter output power setting for the
- * device (i.e. 4 dBm for the CC2540; 0 dBm for the CC2541; 5 dBm for the
- * CC264x). This command will change the value used by DTM.
- *
- * @note When DTM is ended by a call to @ref HCI_LE_TestEndCmd, or a
- * @ref HCI_ResetCmd is used, the transmitter output power setting is restored
- * to the default value of @ref HCI_EXT_TX_POWER_0_DBM
- *
- * @par Corresponding Events
- * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_SET_MAX_DTM_TX_POWER
- *
- * @param txPower @ref TX_Power_Index
- *
- * @return @ref HCI_SUCCESS
- */
-extern hciStatus_t HCI_EXT_SetMaxDtmTxPowerCmd( uint8 txPower );
 
 /**
  * Set the maximum transmit output power for DTM (in dBm).
@@ -4446,6 +4409,268 @@ extern hciStatus_t HCI_EXT_GetTxStatisticsCmd( uint16 connHandle, uint8 command 
  * @return @ref HCI_SUCCESS
  */
 extern hciStatus_t HCI_EXT_GetCoexStatisticsCmd( uint8 command );
+ /**
+ * Read local CS capabilities
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref  hciEvt_CmdComplete_t with cmdOpcode
+ *       @ref HCI_LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES
+ *
+ * @param None
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_ReadLocalSupportedCapabilities( void );
+
+/**
+ * Read CS remote Supported Capabilities.
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES
+ *
+ * @param connHandle connection handle
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_ReadRemoteSupportedCapabilities( uint16 connHandle );
+
+/**
+ * start or restart the CS security procedure
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_SECURITY_ENABLE
+ *
+ * @param connHandle connection handle
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_SecurityEnable( uint16 connHandle );
+
+/**
+ * set default CS settings in the local contoller
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_SET_DEFAULT_SETTINGS
+ *
+ * @param connHandle connection handle
+ * @param roleEnable which role is enabled?
+ * @param csSyncAntenna - antennas for CS sync
+ * @param maxTxPower - The maximum transmit power level
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_SetDefaultSettings( uint16 connHandle,
+                                          uint8 roleEnable,
+                                          uint8 csSyncAntennaSelection,
+                                          int8  maxTxPower);
+
+/**
+ *  read the per-channel Mode 0 Frequency
+ *  Actuation Error table of the local Controller
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_READ_LOCAL_FAE_TABLE
+ *
+ * @param none
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_ReadLocalFAETable( void );
+
+/**
+ *  read the per-channel Mode 0 Frequency
+ *  Actuation Error table of the remote Controller
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_EMOTE_LOCAL_FAE_TABLE
+ *
+ * @param connHandle
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_ReadRemoteFAETable(uint16 connHandle);
+
+/**
+ *  write the per-channel Mode 0 Frequency
+ *  Actuation Error table of the remote Controller
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_WRITE_REMOTE_FAE_TABLE
+ *
+ * @param connHandle
+ * @param reflectorFaeTable
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_WriteRemoteFAETable( uint16 ConnHandle, void* reflectorFaeTable);
+
+/**
+ * create a new CS configuration in the local and remote
+ * controller.
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_CREATE_CONFIG
+ *
+ * @param  connHandle,
+ * @param  configID,
+ * @param  createContext,
+ * @param  mainModeType,
+ * @param  subModeType,
+ * @param  mainModeMinSteps,
+ * @param  mainModeMaxSteps,
+ * @param  mainModeRepetition,
+ * @param  modeZeroSteps,
+ * @param  role,
+ * @param  rttTypes,
+ * @param  csSyncPhy,
+ * @param  channelMap,
+ * @param  channelMapRep,
+ * @param  channelSelType,
+ * @param  ch3cShape,
+ * @param  ch3cJump,
+ * @param  companionSignalEnable
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_CreateConfig( uint16 connHandle,
+                                    uint8 configID,
+                                    uint8 createContext,
+                                    uint8* pBufConfig );
+/**
+ * remove a CS configuration from the local controller.
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_REMOVE_CONFIG
+ *
+ * @param connHandle
+ * @param configId
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_RemoveConfig( uint16 connHandle, uint8 configID );
+
+/**
+ * update the channel classification based on its
+ * local information. This channel classification persists until overwritten
+ * with a subsequent HCI_LE_CS_Set_CS_Channel_Classification  command or until
+ * the Controller is reset. The Controller may combine the channel
+ * classification information provided by the Host along with local channel
+ * classification information to send an updated CS channel map to the remote
+ * Controller.
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_SET_CHANNEL_CLASSIFICATION
+ *
+ * @param channelClassification
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_SetChannelClassification( uint8* channelClassification );
+
+/**
+ * set the parameters for the scheduling of one or more
+ * CS procedures by the local Controller with the remote device.
+ *
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_SET_PROCEDURE_PARAMS
+ *
+ * @param  connHandle,
+ * @param  configID,
+ * @param  maxProcedureDur,
+ * @param  minProcedureInterva
+ * @param  maxProcedureInterva
+ * @param  maxProcedureCount,
+ * @param  minSubEventLen,
+ * @param  maxSubEventLen,
+ * @param  toneAntennaConfigSel
+ * @param  phy,
+ * @param  txPwrDelta,
+ * @param  preferredPeerAntenna
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_SetProcedureParameters( uint16 connHandle,
+                                              uint8 configID,
+                                              uint8* pParams );
+
+/**
+ * enable or disable the scheduling of CS procedures
+ * by the local Controller with the remote device
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_PROCEDURE_ENABLE
+ *
+ * @param  connHandle
+ * @param  enable
+ * @param  configID
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_ProcedureEnable( uint16 connHandle,
+                                        uint8 enable,
+                                        uint8 configID );
+/**
+ * Start a CS test where the DUT (Device Under Test) is
+ * placed in the role of either the initiator or reflector
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_TEST
+ *
+ * @param  none
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_Test( void);
+
+/**
+ * Stop any CS test that is in
+ * progress.
+ *
+ * @design      BLE_LOKI-506
+ *
+ * @par Corresponding Events
+ * @ref hciEvt_CmdComplete_t with cmdOpcode
+ *      @ref HCI_LE_CS_TEST_END`
+ *
+ * @param  none
+ *
+ * @return @ref HCI_SUCCESS
+ */
+hciStatus_t HCI_LE_CS_TestEnd(void);
 
 #ifdef __cplusplus
 }

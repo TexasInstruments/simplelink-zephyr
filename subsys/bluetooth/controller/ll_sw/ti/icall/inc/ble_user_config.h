@@ -135,9 +135,9 @@ extern "C"
 //       is only defined for the Application project
 #if defined(ICALL_STACK0_ADDR)
 
-#ifndef CC33xx
+#ifndef CONFIG_ZEPHYR
 #include <ti_drivers_config.h>
-#endif // CC33xx
+#endif // CONFIG_ZEPHYR
 
 // RF Front End Settings
 // Note: The use of these values completely depends on how the PCB is laid out.

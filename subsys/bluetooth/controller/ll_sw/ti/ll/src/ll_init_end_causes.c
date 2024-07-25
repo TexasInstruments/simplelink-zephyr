@@ -156,15 +156,9 @@ void llInit_TaskConnect( void )
   connPtr->curParam.winSize = connReqData[extInitIndex].winSize;
 #endif
 
-  // convert the LSTO from time to an expiration connection event count
-  MAP_llConvertLstoToEvent( connPtr, &connPtr->curParam );
-
   // set the expiration connection event count to a specified limited number
   // Note: This is required in case the Central never sends that first packet.
   connPtr->expirationEvent = LL_LINK_SETUP_TIMEOUT;
-
-  // convert the Control Procedure timeout into connection event count
-  MAP_llConvertCtrlProcTimeoutToEvent( connPtr );
 
   // get the RCL buffer list
   RCL_MultiBuffer_ListInfo listInfo;
@@ -285,6 +279,12 @@ void llInit_TaskConnect( void )
     connPtr->curParam.winSize      <<= 1; // in 1.25ms units so convert to 625us
     connPtr->curParam.connInterval <<= 1; // in 1.25ms units so convert to 625us
     connPtr->curParam.connTimeout  <<= 4; // in 10ms units so convert to 625us
+
+  // convert the LSTO from time to an expiration connection event count
+  MAP_llConvertLstoToEvent( connPtr, &connPtr->curParam );
+
+  // convert the Control Procedure timeout into connection event count
+  MAP_llConvertCtrlProcTimeoutToEvent( connPtr );
 
 #ifdef DEBUG_SW_TRACE
   DBG_PRINT0(DBGSYS, "");
@@ -442,38 +442,54 @@ void llExtInit_PostProcess( void )
 
   // update health check
   MAP_llHealthUpdate(LL_STATE_INIT);
+
   // clear command status value
   extInitCmd.common.status = RCL_CommandStatus_Idle;
 
   // get current time with some margin
   currentTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_625US;
 
-  // check if there's more time before the end of the scan window
-  // Note: True when first parameter is greater than second.
-  if ( (MAP_llTimeCompare( extInitCmd.common.timing.absStartTime +
-                           extInitCmd.common.timing.relGracefulStopTime, currentTime )) &&
-       (extInitCmd.common.timing.relHardStopTime != 0) &&
-       (MAP_llTimeCompare( extInitCmd.common.timing.absStartTime +
-                           extInitCmd.common.timing.relHardStopTime, currentTime ) ))
+  // calculate if graceful stop time \ hard stop time has not been reached yet
+  // Note: True when first parameter is greater than the second.
+  uint8 isGracfulTimeNotReached = MAP_llTimeCompare(extInitCmd.common.timing.absStartTime +
+                                                    extInitCmd.common.timing.relGracefulStopTime, currentTime );
+  uint8 isHardStopTimeNotReached = MAP_llTimeCompare(extInitCmd.common.timing.absStartTime +
+                                                    extInitCmd.common.timing.relHardStopTime, currentTime );
+
+  // check if there's more time before the end of the scan window and
+  // that end time is not before the current time.
+  // takes different cases into account, depends on which parameters we use (relHardStopTime, relGracefulStopTime or both)
+  // Note: zero value means that the parameter is not in use
+  if( (extInitCmd.common.timing.relHardStopTime == 0 && extInitCmd.common.timing.relGracefulStopTime != 0 && isGracfulTimeNotReached) ||
+      (extInitCmd.common.timing.relHardStopTime != 0 && extInitCmd.common.timing.relGracefulStopTime == 0 && isHardStopTimeNotReached) ||
+      (extInitCmd.common.timing.relHardStopTime != 0 && extInitCmd.common.timing.relGracefulStopTime != 0 && isHardStopTimeNotReached && isGracfulTimeNotReached)
+      )
   {
-    uint32 timeDiff = currentTime - extInitCmd.common.timing.absStartTime;
 
-    // update start time to the future
-    // Note: Once the CM0 follows an auxPtr to a secondary channel, it never
-    //       returns to the primary channel! (sigh)
-    // Note: Scan Window trigger is absolute, so there's no need to adjust it.
-    extInitCmd.common.timing.absStartTime = currentTime;
+      // Update start time to the future
+      uint32 timeDiff = currentTime - extInitCmd.common.timing.absStartTime;
+      extInitCmd.common.timing.absStartTime = currentTime;
 
-    // Update relGracefulStopTime and relHardStopTime with the time left to scan since the
-    // last command done received because the RCL stopped scanning after it finished receiving
-    // AUX packet and not because the scan window ended.
-    extInitCmd.common.timing.relGracefulStopTime -= timeDiff;
-    extInitCmd.common.timing.relHardStopTime -= timeDiff;
+      // Update relGracefulStopTime and relHardStopTime with the time left to scan since the
+      // last command done received because the RCL stopped scanning after it finished receiving
+      // AUX packet and not because the scan window ended.
 
-    // restart immediately
-    // Note: Already the current task.
-    // Note: Scan Window trigger is absolute.
-    MAP_llScheduleTask( extInitInfo->llTask );
+      // Subtract timeDiff from relative graceful stop time only when it's in use (not zero)
+      if(extInitCmd.common.timing.relGracefulStopTime != 0)
+      {
+         extInitCmd.common.timing.relGracefulStopTime -= timeDiff;
+      }
+
+      // Subtract timeDiff from relative hard stop time only when it's in use (not zero)
+      if(extInitCmd.common.timing.relHardStopTime != 0)
+      {
+          extInitCmd.common.timing.relHardStopTime -= timeDiff;
+      }
+
+      // restart immediately
+      // Note: Already the current task.
+      // Note: Scan Window trigger is absolute.
+      MAP_llScheduleTask( extInitInfo->llTask );
   }
   else // we're done so on to the next scan interval
   {

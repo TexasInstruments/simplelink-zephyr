@@ -25,7 +25,6 @@
 /*******************************************************************************
  * INCLUDES
  */
-
 #include "bcomdef.h"
 #include "hal_mcu.h"
 #include <ti/drivers/rcl/commands/ble5.h>
@@ -43,6 +42,7 @@
 #include "icall.h"
 #include "hal_gpio_wrapper.h"
 #include "ll_ae.h"
+#include "cs/ll_cs_rcl.h"
 //
 #include "rom_jt.h"
 
@@ -95,6 +95,7 @@ void llHandleSDAALastCmdDone( void );
 void LL_rclAdvRxEntryDone( void );
 void LL_rclScanRxEntryDone( void );
 void LL_rclAdvTxFinished( void);
+void LL_rclPeriodicAdvTxFinished( void);
 void LL_rclInitRxEntryDone( void );
 void LL_rclUpdateExtAl( RCL_FilterList *filterList,
                      uint16 flags,
@@ -482,9 +483,10 @@ void LL_rclAdvTxFinished( void)
         pRf->comPkt.pAdvData += pAdvSet->fragLen;
         pRf->comPkt.advDataLen = pAdvSet->fragLen;
 
-        // AUX_CHAIN_IND pkt is not permitted to send ADV A or Target A
+        // AUX_CHAIN_IND pkt is not permitted to send ADV A , Target A or syncInfo
         CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_ADVA );
         CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_TARGETA );
+        CLR_EXTHDR_FLAG( auxChainHdrFlags, EXTHDR_FLAG_SYNCINFO );
 
         // check if the next fragment will be the last fragment
         if ( remFrag == 1 )
@@ -514,23 +516,76 @@ void LL_rclAdvTxFinished( void)
         payloadLen = 1 + auxChainExtHdrSize + pRf->comPkt.advDataLen;
         pRf->comPkt.extHdrFlags = auxChainHdrFlags;
         // AUX_CHAIN_IND pkt is needed to be sent as NC/NS mode
-        SET_ADV_MODE( pAdvSet->extHdrInfo,
+        SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                       AE_ADV_MODE_NONCONN_NONSCAN );
         /* No need to check the status. If an error occured the RCL will not have another
          * packet in the chain to transmit and it will finish the advertiser command.
          * A new command will be prepared in llExtAdv_PostProcess */
-        (void)MAP_llBuildExtAdvPacket(pAdvSet, LL_PKT_TYPE_AUX_CHAIN_IND, payloadLen, pRf->comPkt.pAdvData, pRf->comPkt.advDataLen);
+        (void)MAP_llAddExtAdvPacketToTx(pAdvSet, LL_PKT_TYPE_AUX_CHAIN_IND, payloadLen);
 
         // if scannable mode change the state back to scannable
         if (TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps))
         {
-          SET_ADV_MODE( pAdvSet->extHdrInfo,
+          SET_ADV_MODE( pRf->comPkt.extHdrInfo,
                         AE_ADV_MODE_SCANNABLE );
         }
       }
     pAdvSet->txCount++;
   }
 #endif // USE_AE
+}
+
+/*******************************************************************************
+ * This is the common RCL callback used for periodic advertise command.
+ *
+ * @Design: BLE_LOKI-1453
+ * @Design: BLE_LOKI-1795
+ *
+ */
+void LL_rclPeriodicAdvCallback(RCL_Command *cmd,
+                               LRF_Events lrfEvents,
+                               RCL_Events events)
+{
+  if (llState != LL_STATE_PERIODIC_ADV)
+  {
+    MAP_llHaltRadio( (uint32)cmd );
+    LL_rclRescheduleCommand(cmd);
+    return;
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Command Started
+  //////////////////////////////////////////////////////////////////////////////
+  if ( events.cmdStarted )
+  {
+    llCmdStartedEventHandle();
+  }
+
+  if ( events.txBufferFinished )
+  {
+    LL_rclPeriodicAdvTxFinished();
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Last Command Done
+  //////////////////////////////////////////////////////////////////////////////
+  if ( events.lastCmdDone )
+  {
+    MAP_llLastCmdDoneEventHandleStatePeriodicAdv();
+  }
+
+  return;
+}
+
+/*******************************************************************************
+ * This function is used by LL_rclPeriodicAdvCallback to manage the command TX queue
+ *
+ */
+void LL_rclPeriodicAdvTxFinished( void )
+{
+#ifdef USE_PERIODIC_ADV
+  MAP_llUpdatePeriodicAdvChainPacket( llPeriodicAdv.currentAdv );
+#endif
 }
 #endif // (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 
@@ -580,6 +635,42 @@ void LL_rclScanCallback(RCL_Command *cmd,
   return;
 }
 
+/*******************************************************************************
+ * This is the common RCL callback used for periodic scan command.
+ *
+ * @Design: BLE_LOKI-2022
+ *
+ */
+void LL_rclPeriodicScanCallback(RCL_Command *cmd,
+                     LRF_Events lrfEvents,
+                     RCL_Events events)
+{
+  if (llState != LL_STATE_PERIODIC_SCAN)
+  {
+    MAP_llHaltRadio( (uint32)cmd );
+    LL_rclRescheduleCommand(cmd);
+    return;
+  }
+  if ( events.rxEntryAvail )
+  {
+    //////////////////////////////////////////////////////////////////////////////
+    // Rx Entry Done
+    //////////////////////////////////////////////////////////////////////////////
+    if (lrfEvents.rxOk)
+    {
+      llProcessPeriodicScanRxFIFO();
+    }
+  }
+  //////////////////////////////////////////////////////////////////////////////
+  // Last Command Done
+  //////////////////////////////////////////////////////////////////////////////
+  if ( events.lastCmdDone )
+  {
+    MAP_llLastCmdDoneEventHandleStatePeriodicScan();
+  }
+
+  return;
+}
 /*******************************************************************************
  * This is the common RCL callback used for scan command. This function is used
  * to check if the packet should be ignoed due to NPM mode restrictions or not.
@@ -1072,10 +1163,11 @@ void LL_rclTestCallback(RCL_Command *cmd,
                      LRF_Events lrfEvents,
                      RCL_Events events)
 {
-  if ((llState != LL_STATE_DIRECT_TEST_MODE_TX) &&
-      (llState != LL_STATE_DIRECT_TEST_MODE_RX) &&
-      (llState != LL_STATE_MODEM_TEST_TX)       &&
-      (llState != LL_STATE_MODEM_TEST_RX))
+  if ((llState != LL_STATE_DIRECT_TEST_MODE_TX)         &&
+      (llState != LL_STATE_DIRECT_TEST_MODE_RX)         &&
+      (llState != LL_STATE_MODEM_TEST_TX)               &&
+      (llState != LL_STATE_MODEM_TEST_RX)               &&
+      (llState != LL_STATE_MODEM_TEST_TX_FREQ_HOPPING))
   {
     MAP_llHaltRadio( (uint32)cmd );
     LL_rclRescheduleCommand(cmd);
@@ -1090,6 +1182,20 @@ void LL_rclTestCallback(RCL_Command *cmd,
   }
 
   return;
+}
+
+void ll_rclCsCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events rclEvents)
+{
+  if (rclEvents.lastCmdDone)
+  {
+    taskEndAction = MAP_llCsSubevent_PostProcess;
+    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+  }
+  else
+  {
+    taskEndAction = MAP_llCsSteps_PostProcess;
+    (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+  }
 }
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
@@ -1600,6 +1706,18 @@ uint8 llRxEntryDoneEventHandleStateAdv( void )
 #endif
   return TRUE;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// LastCmdDone Event Handle for Periodic ADV state
+////////////////////////////////////////////////////////////////////////////////
+uint8 llLastCmdDoneEventHandleStatePeriodicAdv( void )
+{
+  taskEndAction = MAP_llPeriodicAdv_PostProcess;
+
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+
+  return TRUE;
+}
 #endif //(ADV_NCONN_CFG | ADV_CONN_CFG)
 
 /*
@@ -1614,9 +1732,25 @@ uint8 llLastCmdDoneEventHandleStateScan( void )
   taskEndAction = MAP_llExtScan_PostProcess;
   // process RF End Cause
   (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
-
   return TRUE;
 }
+
+/*
+** Local Functions for Periodic Scan state
+*/
+#ifdef USE_PERIODIC_SCAN
+////////////////////////////////////////////////////////////////////////////////
+// LastCmdDone Event Handle for SCAN state
+////////////////////////////////////////////////////////////////////////////////
+uint8 llLastCmdDoneEventHandleStatePeriodicScan( void )
+{
+  taskEndAction = MAP_llPeriodicScan_PostProcess;
+  // process RF End Cause
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+  return TRUE;
+}
+
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Rx Ignore Event Handle for SCAN state
@@ -2727,10 +2861,13 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
     }
 
     // check if opcode and pktLen are valid
+    // First check for CS since it is not sequential like the rest of the pkts
+    if( (*pPkt >= LL_CTRL_CS_SEC_RSP) &&
+        (pktLen != ctrlPktLenTable[*pPkt-LL_CS_CTRL_DLTA]) &&
     // Note: Since the opcode values are sequential, we can compare it
     //       directly to the size of the table to see if it is valid.
-    if ( (*pPkt >= NUM_OF_CTRL_PKT) ||
-         (pktLen != ctrlPktLenTable[*pPkt]) )
+      ( (*pPkt >= NUM_OF_CTRL_PKT) ||
+         (pktLen != ctrlPktLenTable[*pPkt]) ))
     {
       // control packet received for features that are not supported
       connPtr->unknownCtrlType = *pPkt;
@@ -2803,8 +2940,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
       // Post the command again in such a case and continue executing
       RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
     }
-    else
-    if (dtmInfo->txPktCnt != LL_EXT_DTM_TX_CONTINUOUS)
+    else if (dtmInfo->txPktCnt != LL_EXT_DTM_TX_CONTINUOUS)
     {
       // generate a callback for the packet report
       // Note: For TX, the number of received packets is always zero.
@@ -2820,8 +2956,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
            Fix Misra-C Required: MISRA.IF.NO_ELSE */
     }
   }
-  else
-  if (llState == LL_STATE_DIRECT_TEST_MODE_RX)
+  else if (llState == LL_STATE_DIRECT_TEST_MODE_RX)
   {
     // get the command status
     taskEndStatus = rxTestCmd.common.status;
@@ -2831,9 +2966,51 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
       RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
     }
   }
-  else
-  if ((llState == LL_STATE_MODEM_TEST_TX) ||
-      (llState == LL_STATE_MODEM_TEST_RX))
+
+  else if ( llState == LL_STATE_MODEM_TEST_TX_FREQ_HOPPING )
+  {
+      /**
+       * This part is used for modem tests with channel frequency hopping, such as:
+       * LL_EXT_EnhancedModemHopTestTx, LL_EXT_ModemHopTestTx.
+       *
+       * In those tests, a data packet is transmitted on a different frequency
+       * (linearly stepping through all RF channels 0..39).
+       * The channel update is taking place in this part.
+       */
+
+      // get the command status
+      taskEndStatus = txDtmTestCmd.common.status;
+
+      // command finished unsuccessfully
+      if (taskEndStatus == RCL_CommandStatus_Error_Synth)
+      {
+        // post the command
+        RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+      }
+
+      // command finished successfully
+      if ( taskEndStatus == RCL_CommandStatus_Finished )
+      {
+          // incrementing the Physical channel by 1 until we reach channel 39
+          // then start the cycle all over again
+          txDtmTestCmd.channel += 1;
+
+          if ( txDtmTestCmd.channel > LL_LAST_RF_CHAN_ADJ )
+          {
+              txDtmTestCmd.channel = LL_FIRST_RF_CHAN_ADJ;
+          }
+
+          // clear status
+          txDtmTestCmd.common.status = RCL_CommandStatus_Idle;
+
+          // resubmit the command in the callback
+          RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+
+          return TRUE;
+      }
+  }
+  else if ( (llState == LL_STATE_MODEM_TEST_TX)  ||
+            (llState == LL_STATE_MODEM_TEST_RX) )
   {
     /* We should never get into LastCmdDone event while running MODEM_TEST commands,
      * as those commands shouldn't stop unless ended by EndModemTestCmd API.

@@ -118,6 +118,7 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define HCI_LE_ReadChannelMapCmd(...)               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_ReadChannelMapCmd , ##__VA_ARGS__))
 #define HCI_LE_ReadRemoteUsedFeaturesCmd(...)       (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_ReadRemoteUsedFeaturesCmd , ##__VA_ARGS__))
 #define HCI_LE_SetHostChanClassificationCmd(...)    (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_SetHostChanClassificationCmd , ##__VA_ARGS__))
+#define HCI_LE_SetHostFeature(...)                  (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_SetHostFeature , ##__VA_ARGS__))
 /* HCI V4.2 DLE API */
 /*******************/
 #define HCI_LE_SetDataLenCmd(...)                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_SetDataLenCmd , ##__VA_ARGS__))
@@ -164,11 +165,11 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define LE_SetExtScanRspData(...)                         (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_SetExtScanRspData, ##__VA_ARGS__))
 #define LE_SetExtAdvEnable(...)                           (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_SetExtAdvEnable, ##__VA_ARGS__))
 #define LE_RemoveAdvSet(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_RemoveAdvSet, ##__VA_ARGS__))
-#define LE_ClearAdvSets(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ClearAdvSets, ##__VA_ARGS__))
+#define LE_ClearAdvSets(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ClearAdvSets))
 #define LE_SetExtScanParams(...)                          (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_SetExtScanParams, ##__VA_ARGS__))
 #define LE_SetExtScanEnable(...)                          (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_SetExtScanEnable, ##__VA_ARGS__))
-#define LE_ReadMaxAdvDataLen(...)                         (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ReadMaxAdvDataLen, ##__VA_ARGS__))
-#define LE_ReadNumSupportedAdvSets(...)                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ReadNumSupportedAdvSets, ##__VA_ARGS__))
+#define LE_ReadMaxAdvDataLen(...)                         (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ReadMaxAdvDataLen))
+#define LE_ReadNumSupportedAdvSets(...)                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ReadNumSupportedAdvSets))
 #define LL_AE_RegCBack(...)                               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LL_AE_RegCBack, ##__VA_ARGS__))
 #define LE_ExtCreateConn(...)                             (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_LE_ExtCreateConn, ##__VA_ARGS__))
 /* HCI V5.2 SC API */
@@ -221,7 +222,6 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define HCI_EXT_SetFastTxResponseTimeCmd(...)                      (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetFastTxResponseTimeCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetPeripheralLatencyOverrideCmd(...)               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetPeripheralLatencyOverrideCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetSlaveLatencyOverrideCmd(...)                    (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetPeripheralLatencyOverrideCmd , ##__VA_ARGS__))
-#define HCI_EXT_SetTxPowerCmd(...)                                 (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetTxPowerCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetTxPowerDbmCmd(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetTxPowerDbmCmd , ##__VA_ARGS__))
 #define HCI_EXT_BuildRevisionCmd(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_BuildRevisionCmd , ##__VA_ARGS__))
 #define HCI_EXT_DelaySleepCmd(...)                                 (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_DelaySleepCmd , ##__VA_ARGS__))
@@ -237,7 +237,6 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 #define HCI_EXT_SetBDADDRCmd(...)                                  (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetBDADDRCmd , ##__VA_ARGS__))
 #define HCI_EXT_ResetSystemCmd(...)                                (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_ResetSystemCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetLocalSupportedFeaturesCmd(...)                  (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetLocalSupportedFeaturesCmd , ##__VA_ARGS__))
-#define HCI_EXT_SetMaxDtmTxPowerCmd(...)                           (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetMaxDtmTxPowerCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetMaxDtmTxPowerDbmCmd(...)                        (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd , ##__VA_ARGS__))
 #define HCI_EXT_SetRxGainCmd(...)                                  (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_SetRxGainCmd , ##__VA_ARGS__))
 #define HCI_EXT_ExtendRfRangeCmd(...)                              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_EXT_ExtendRfRangeCmd))
@@ -655,6 +654,23 @@ extern void *GATT_bm_alloc(uint16 connHandle, uint8 opcode, uint16 size,
 /* Osal Bufmgr API      */
 /************************/
 #define osal_bm_reg_callback(...)               (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_osal_bm_reg_callback , ##__VA_ARGS__))
+
+/* HCI CS API */
+/**************/
+#define HCI_CS_ReadLocalSupportedCapabilities(...)    (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_CS_ReadLocalSupportedCapabilities , ##__VA_ARGS__))
+#define HCI_CS_ReadRemoteSupportedCapabilities(...)   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_CS_ReadRemoteSupportedCapabilities , ##__VA_ARGS__))
+#define HCI_LE_CS_CreateConfig(...)                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_CreateConfig , ##__VA_ARGS__))
+#define HCI_LE_CS_SecurityEnable(...)                 (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_SecurityEnable , ##__VA_ARGS__))
+#define HCI_LE_CS_SetDefaultSettings(...)             (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_SetDefaultSettings , ##__VA_ARGS__))
+#define HCI_LE_CS_ReadLocalFAETable(...)              (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_ReadLocalFAETable , ##__VA_ARGS__))
+#define HCI_LE_CS_ReadRemoteFAETable(...)             (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_ReadRemoteFAETable , ##__VA_ARGS__))
+#define HCI_LE_CS_WriteRemoteFAETable(...)            (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_WriteRemoteFAETable , ##__VA_ARGS__))
+#define HCI_LE_CS_RemoveConfig(...)                   (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_RemoveConfig , ##__VA_ARGS__))
+#define HCI_LE_CS_SetChannelClassification(...)       (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_SetChannelClassification , ##__VA_ARGS__))
+#define HCI_LE_CS_SetProcedureParameters(...)         (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_SetProcedureParameters , ##__VA_ARGS__))
+#define HCI_LE_CS_ProcedureEnable(...)                (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_ProcedureEnable , ##__VA_ARGS__))
+#define HCI_LE_CS_Test(...)                           (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_Test , ##__VA_ARGS__))
+#define HCI_LE_CS_TestEnd(...)                        (icall_directAPI(ICALL_SERVICE_CLASS_BLE, (uint32_t) IDX_HCI_LE_CS_TestEnd , ##__VA_ARGS__))
 
 #endif /* ICALL_LITE */
 #ifdef __cplusplus

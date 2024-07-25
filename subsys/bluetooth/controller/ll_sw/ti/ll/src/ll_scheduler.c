@@ -18,7 +18,6 @@
 /*******************************************************************************
  * INCLUDES
  */
-
 #include "ll_common.h"
 #include "ll_scheduler.h"
 #include "hal_mcu.h"
@@ -37,10 +36,14 @@
 #define DBG_ENABLE
 #include "dbgid_sys_mst.h"
 #endif // DEBUG_SW_TRACE
+#include "cs/ll_cs_rcl.h"
 
 /*******************************************************************************
  * MACROS
  */
+
+// Returns the state of a handle whether it is open or not
+#define IS_HANDLE_ACTIVE(handleType) rclHandles[handleType].state
 
 /*******************************************************************************
  * CONSTANTS
@@ -79,6 +82,16 @@ extern uint8 numActiveAdvSets;
 
 // handle to radio driver for BLE client
 extern RCL_Handle    rfHandle;
+extern RCL_Client    rfClient;
+
+// rcl handles list {0: standard BLE, 1: CS }
+rclHandleList_t rclHandles[NUM_RCL_HANDLES] = {0};
+
+
+/*******************************************************************************
+ * Internal Functions
+ */
+void llScheduler_rclClose(uint8 handleType);
 
 /*******************************************************************************
  * Functions
@@ -236,10 +249,12 @@ void llScheduler( void )
       // check if there are any active connections (Central or Peripheral)
       if ( llConns.numActiveConns != 0 )
       {
-        uint8          startType;
+        uint8          startType = LL_SCHED_START_PRIMARY;
         llConnState_t *nextConnPtr  = MAP_llDataGetConnPtr( MAP_llGetNextConn() );
         taskInfo_t    *nextConnTask = nextConnPtr->llTask;
         void          *nextConnCmd  = ((void *)nextConnTask->command);
+        taskInfo_t    *csTask       = MAP_llGetTask(LL_TASK_ID_CS);
+        RCL_Command    *csCmd = (RCL_Command *)llSchedulerGetCsCmd();
 
         // Set the next connection variable
         llConns.nextConn = nextConnPtr->connId;
@@ -247,7 +262,29 @@ void llScheduler( void )
         // check if there is a command
         if ( nextSecCmd == NULL )
         {
-          startType = LL_SCHED_START_PRIMARY;
+          if ( csCmd != NULL )
+          {
+            uint32 connMinTime = RAT_TICKS_IN_500US +
+                                 MAP_llScheduler_getSwitchTime(nextConnPtr->taskID) +
+                                 LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
+
+            // If the CS command is active and the secondary isn't the decision should
+            // be done between the CS and the connection
+            if ( csCmd != NULL )
+            {
+              // If the connection is the CS connection and it scheduled before
+              // the CS commands schedule the connection else the CS command
+              if( (MAP_llTimeCompare(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
+                  (MAP_llTimeDelta(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
+              {
+                startType = LL_SCHED_START_PRIMARY;
+              }
+              else
+              {
+                startType = LL_SCHED_START_CS;
+              }
+            }
+          }
         }
         else
         {
@@ -279,7 +316,7 @@ void llScheduler( void )
                 }
 
         // check if the secondary task can start
-        if ( startType != LL_SCHED_START_PRIMARY )
+        if ( (startType != LL_SCHED_START_PRIMARY) && (startType != LL_SCHED_START_CS) )
         {
           if ( nextSecTask == NULL )
           {
@@ -330,7 +367,7 @@ void llScheduler( void )
               break;
           }  // switch on next secondary task ID
         }
-        else // start type is PRIMARY (a connection)
+        else if (startType == LL_SCHED_START_PRIMARY)// start type is PRIMARY (a connection)
         {
           // which LL state based on role
           if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
@@ -350,6 +387,18 @@ void llScheduler( void )
           // Note: Sets curTask.
           MAP_llScheduleTask( nextConnTask );
         }  // if start type is not PRIMARY
+        else // The start type is CS
+        {
+          uint16 csConnTaskID = llGetCsConnTaskID();
+          if ( csConnTaskID == LL_TASK_ID_CENTRAL )
+          {
+            llState = LL_STATE_CONN_CENTRAL;
+          }
+          else
+          {
+            llState = LL_STATE_CONN_PERIPHERAL;
+          }
+        }
       }
       else // there are no active connections
 #endif  // INIT_CFG | ADV_CONN_CFG
@@ -494,13 +543,18 @@ void llScheduler( void )
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG | ADV_CONN_CFG))
     case LL_TASK_ID_PERIPHERAL:
     case LL_TASK_ID_CENTRAL:
+    case LL_TASK_ID_CS:
       // check if there are any active connections
       if ( llConns.numActiveConns != 0 )
       {
-        uint8          startType;
+        uint8          startType = LL_SCHED_START_PRIMARY;
         llConnState_t *nextConnPtr  = MAP_llDataGetConnPtr( MAP_llGetNextConn() );
         taskInfo_t    *nextConnTask = nextConnPtr->llTask;
+        taskInfo_t    *nextSecTask  = MAP_llFindNextSecTask( llTaskList.lastSecTask );
         void          *nextConnCmd  = ((void *)nextConnTask->command);
+        llConnState_t *curConnPtr   = MAP_llDataGetConnPtr( llConns.currentConn );
+        taskInfo_t    *csTask       = MAP_llGetTask(LL_TASK_ID_CS);
+        RCL_Command    *csCmd        = (RCL_Command *)llSchedulerGetCsCmd();
 
         // Set the next connection variable
         llConns.nextConn = nextConnPtr->connId;
@@ -532,6 +586,34 @@ void llScheduler( void )
             return;
           }
         }
+
+        // check if there is a command
+        {
+          if ( csCmd != NULL )
+          {
+            uint32 connMinTime = RAT_TICKS_IN_500US +
+                                 MAP_llScheduler_getSwitchTime(nextConnPtr->taskID) +
+                                 LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
+
+            // If the CS command is active and the secondary isn't the decision should
+            // be done between the CS and the connection
+            if ( csCmd != NULL )
+            {
+              // If the connection is the CS connection and it scheduled before
+              // the CS commands schedule the connection else the CS command
+              if( (MAP_llTimeCompare(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
+                  (MAP_llTimeDelta(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
+              {
+                startType = LL_SCHED_START_PRIMARY;
+              }
+              else
+              {
+                startType = LL_SCHED_START_CS;
+              }
+            }
+          }
+        }
+
         // check if there are any active secondary tasks
         if ( MAP_llGetActiveTasks() & LL_TASK_ID_SECONDARY_TASKS )
         {
@@ -573,7 +655,29 @@ void llScheduler( void )
           // check if there is a command
           if ( nextSecCmd == NULL )
           {
-            startType = LL_SCHED_START_PRIMARY;
+              if ( csCmd != NULL )
+              {
+                uint32 connMinTime = RAT_TICKS_IN_500US +
+                                     MAP_llScheduler_getSwitchTime(nextConnPtr->taskID) +
+                                     LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
+
+                // If the CS command is active and the secondary isn't the decision should
+                // be done between the CS and the connection
+                if ( csCmd != NULL )
+                {
+                  // If the connection is the CS connection and it scheduled before
+                  // the CS commands schedule the connection else the CS command
+                  if( (MAP_llTimeCompare(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
+                       (MAP_llTimeDelta(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
+                  {
+                    startType = LL_SCHED_START_PRIMARY;
+                  }
+                  else
+                  {
+                    startType = LL_SCHED_START_CS;
+                  }
+                }
+              }
           }
           else
           {
@@ -605,7 +709,7 @@ void llScheduler( void )
           }
 
           // check if the secondary task can start
-          if ( startType != LL_SCHED_START_PRIMARY )
+          if ( (startType != LL_SCHED_START_PRIMARY) && (startType != LL_SCHED_START_CS) )
           {
             if ( nextSecTask == NULL )
             {
@@ -667,28 +771,50 @@ void llScheduler( void )
           }  // if start type is not PRIMARY
         }  // if any secondary tasks
 
-        // either there is a next secondary task but it can't be started
-        // before the next connection, or there are no secondary tasks;
-        // either way, start next connection
-
-        // which LL state based on role
-        // Note: Currently, Central+Peripheral combo isn't permitted, but will be
-        //       in the future, so leave this here.
-        if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
+        if (startType == LL_SCHED_START_PRIMARY)
         {
-          MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
-        }
-        else // assume taskId == LL_TASK_ID_PERIPHERAL
-        {
-          MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
-        }
+          // either there is a next secondary task but it can't be started
+          // before the next connection, or there are no secondary tasks;
+          // either way, start next connection
+          // check if the next connection is different from the current one
+          // Note: This is only possible witht he Central connection.
+          if ( curConnPtr != nextConnPtr )
+          {
+            // which LL state based on role
+            // Note: Currently, Central+Peripheral combo isn't permitted, but will be
+            //       in the future, so leave this here.
+            if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
+            {
+              MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
+            }
+            else // assume taskId == LL_TASK_ID_PERIPHERAL
+            {
+              MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
+            }
+          }
 
-        // either way, nextConnPtr is the connection to schedule; if the current
-        // connection isn't the next connection, then its context was saved and
-        // the next task is nextConnTask; if the current connection is the next
-        // connection, then it's still nextConnTask that is the next task
-        // Note: Sets curTask.
-        MAP_llScheduleTask( nextConnTask );
+          // either way, nextConnPtr is the connection to schedule; if the current
+          // connection isn't the next connection, then its context was saved and
+          // the next task is nextConnTask; if the current connection is the next
+          // connection, then it's still nextConnTask that is the next task
+          // Note: Sets curTask.
+          MAP_llScheduleTask( nextConnTask );
+        }
+        else // The start type is CS
+        {
+          // the way of choosing the llState is still correct
+          uint16 csConnTaskID = llGetCsConnTaskID();
+          if ( csConnTaskID == LL_TASK_ID_CENTRAL )
+          {
+            llState = LL_STATE_CONN_CENTRAL;
+          }
+          else
+          {
+            llState = LL_STATE_CONN_PERIPHERAL;
+          }
+
+          MAP_llScheduleTask( csTask );
+        }
       }
       else // there are no active connections
       {
@@ -1299,6 +1425,9 @@ uint8 llFindStartType( taskInfo_t *secTask,
   uint32      curTime;
   RCL_Command *primCmd = NULL;
   RCL_Command *secCmd = NULL;
+  RCL_Command  *csCmd = NULL;
+  RCL_Command  *tempCmd = NULL;
+
   // Check Valid input
   if ( primTask == NULL )
   {
@@ -1314,6 +1443,7 @@ uint8 llFindStartType( taskInfo_t *secTask,
 
   primCmd = (RCL_Command *)primTask->command;
   secCmd = (RCL_Command *)secTask->command;
+  csCmd = (RCL_Command *)llSchedulerGetCsCmd();
 
   // take a snapshot of the current time
   // Note: Add one tick of pad.
@@ -1400,12 +1530,39 @@ uint8 llFindStartType( taskInfo_t *secTask,
   }
 #endif
 #endif  // SCAN_CFG
-  // check if there's enough time for the secondary task to run
-  // Note: While it is assumed the primary task's start time is before the
-  //       current time (otherwise the task would hang), we still have to handle
-  //       counter wrap.
-  if ( ((MAP_llTimeDelta( primCmd->timing.absStartTime, curTime ) > timeGap) &&
-       (MAP_llTimeCompare( secCmd->timing.absStartTime, primCmd->timing.absStartTime - timeGap ) == FALSE)) )
+
+  if( csCmd != NULL)
+  {
+    uint32 connMinTime = RAT_TICKS_IN_500US +
+                         MAP_llScheduler_getSwitchTime(primTask->taskID) +
+                         LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
+
+    // If the connection is the CS connection and it scheduled before
+    // the CS commands schedule the connection else the CS command
+    if((MAP_llTimeCompare(primCmd->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
+		(MAP_llTimeDelta(primCmd->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
+    {
+      // Go to check Conn VS secondary
+	  tempCmd = primCmd;
+    }
+	  else
+	  {
+	    tempCmd = csCmd;
+	  }
+    }
+    else
+    {
+      tempCmd = primCmd;
+    }
+
+  /*******************************************************************************/
+  /* check if there's enough time for the secondary task to run                  */
+  /* Note: While it is assumed the primary task's start time is before the       */
+  /*       current time (otherwise the task would hang), we still have to handle */
+  /*       counter wrap.                                                         */
+  /*******************************************************************************/
+  if ( ((MAP_llTimeDelta( tempCmd->timing.absStartTime, curTime ) > timeGap) &&
+       (MAP_llTimeCompare( secCmd->timing.absStartTime, tempCmd->timing.absStartTime - timeGap ) == FALSE)) )
   {
     // the secondary task has enough time to start relative to the primary
     // task's cutoff, but check if there's enough time relative to current time
@@ -1461,6 +1618,10 @@ uint8 llFindStartType( taskInfo_t *secTask,
     }
 #endif
     // so resume the primary task
+    if ( tempCmd == csCmd )
+    {
+      return ( LL_SCHED_START_CS );
+    }
     return( LL_SCHED_START_PRIMARY );
   }
 }
@@ -1490,7 +1651,7 @@ uint8 llFindStartType( taskInfo_t *secTask,
  *
  * @return      Pointer to next secondary task, or NULL if none.
  */
-taskInfo_t *llFindNextSecTask( uint8 secTaskID )
+taskInfo_t *llFindNextSecTask( uint16 secTaskID )
 {
   uint32 timeGap = LL_SCHED_PRE_CUTOFF;
 
@@ -1902,9 +2063,9 @@ taskInfo_t *llSelectTaskScan( uint8 secTaskID, uint32 timeGap )
 taskInfo_t *llSelectTaskPeriodicScan( uint8 secTaskID, uint32 timeGap )
 {
   taskInfo_t *curSecTask = MAP_llGetTask( secTaskID );
-  ble5OpCmd_t *curSecCmd  = (curSecTask != NULL)?(ble5OpCmd_t *)curSecTask->command:NULL;
+  RCL_CmdBle5PeriodicScanner *curSecCmd  = (curSecTask != NULL)?(RCL_CmdBle5PeriodicScanner *)curSecTask->command:NULL;
   taskInfo_t *nextSecTask = MAP_llGetTask( LL_TASK_ID_PERIODIC_SCANNER );
-  ble5OpCmd_t *nextSecCmd  = (ble5OpCmd_t *)nextSecTask->command;
+  RCL_CmdBle5PeriodicScanner *nextSecCmd  = (RCL_CmdBle5PeriodicScanner *)nextSecTask->command;
 
   // check valid periodic scan command
   // the command will be null in case the selection procedure (llFindNextPeriodicScan)
@@ -1916,7 +2077,7 @@ taskInfo_t *llSelectTaskPeriodicScan( uint8 secTaskID, uint32 timeGap )
       return( curSecTask );
     }
     nextSecTask = MAP_llGetTask( LL_TASK_ID_SCANNER );
-    nextSecCmd  = (ble5OpCmd_t *)nextSecTask->command;
+    nextSecCmd  = (RCL_CmdBle5PeriodicScanner *)nextSecTask->command;
   }
 
   // make sure current task is still active
@@ -1924,8 +2085,8 @@ taskInfo_t *llSelectTaskPeriodicScan( uint8 secTaskID, uint32 timeGap )
   {
     // check if current task has enough time to run again before next periodic adv
     // TRUE when first parameter is GT the second parameter
-    if ( MAP_llTimeCompare( curSecCmd->rfOpCmd.startTime,
-                            nextSecCmd->rfOpCmd.startTime - timeGap ) == FALSE )
+    if ( MAP_llTimeCompare( curSecCmd->common.timing.absStartTime,
+                            nextSecCmd->common.timing.absStartTime - timeGap ) == FALSE )
     {
       // there is, so current task is next
       return( curSecTask );
@@ -1961,13 +2122,14 @@ taskInfo_t *llSelectTaskPeriodicScan( uint8 secTaskID, uint32 timeGap )
 taskInfo_t *llSelectTaskPeriodicAdv( uint8 secTaskID, uint32 timeGap )
 {
   taskInfo_t *curSecTask = MAP_llGetTask( secTaskID );
-  ble5OpCmd_t *curSecCmd  = (curSecTask != NULL)?(ble5OpCmd_t *)curSecTask->command:NULL;
   taskInfo_t *nextSecTask = MAP_llGetTask( LL_TASK_ID_PERIODIC_ADVERTISER );
-  ble5OpCmd_t *nextSecCmd  = (ble5OpCmd_t *)nextSecTask->command;
 
-  // check valid periodic adv command
-  // the command will be null in case the selection procedure (llFindNextPeriodicAdv)
-  // selected the ext adv over the periodic adv
+  RCL_Command *curSecCmd  = (curSecTask != NULL)?(RCL_Command *)curSecTask->command:NULL;
+  RCL_Command *nextSecCmd  = (RCL_Command *)nextSecTask->command;
+
+  // Check valid periodic adv command
+  // The command will be null in case the selection procedure (llFindNextPeriodicAdv)
+  // Selected the ext adv over the periodic adv
   if ((nextSecCmd == NULL) && (MAP_llActiveTask(LL_TASK_ID_ADVERTISER)))
   {
     if (secTaskID == LL_TASK_ID_ADVERTISER)
@@ -1975,22 +2137,23 @@ taskInfo_t *llSelectTaskPeriodicAdv( uint8 secTaskID, uint32 timeGap )
       return( curSecTask );
     }
     nextSecTask = MAP_llGetTask( LL_TASK_ID_ADVERTISER );
-    nextSecCmd  = (ble5OpCmd_t *)nextSecTask->command;
+    nextSecCmd  = (RCL_Command *)nextSecTask->command;
   }
-  // make sure current task is still active
-  if ( MAP_llActiveTask(secTaskID) )
+
+  // Make sure current task is still active
+  if ((curSecCmd != NULL) && (MAP_llActiveTask(secTaskID)))
   {
-    // check if current task has enough time to run again before next periodic adv
-    // TRUE when first parameter is GT the second parameter
-    if ( MAP_llTimeCompare( curSecCmd->rfOpCmd.startTime,
-                            nextSecCmd->rfOpCmd.startTime-timeGap ) == FALSE )
+     // Check if current task has enough time before next Scan
+    if ( (nextSecCmd != NULL) &&
+         (MAP_llTimeCompare( curSecCmd->timing.absStartTime,
+                             nextSecCmd->timing.absStartTime-timeGap ) == FALSE ) )
     {
-      // there is, so current task is next
+      // There is, so current task is next
       return( curSecTask );
     }
   }
 
-  // either the curTask is not active, or it is active and there's
+  // Either the curTask is not active, or it is active and there's
   // enough time before the next secondary task
   return( nextSecTask );
 }
@@ -2014,7 +2177,7 @@ taskInfo_t *llSelectTaskPeriodicAdv( uint8 secTaskID, uint32 timeGap )
  *
  * @return      Pointer to llTask block, or NULL.
  */
-taskInfo_t *llAllocTask( uint8 llTaskID )
+taskInfo_t *llAllocTask( uint16 llTaskID )
 {
   uint8 i;
 
@@ -2281,6 +2444,36 @@ taskInfo_t *llGetCurrentTask( void )
   return( NULL );
 }
 
+/*******************************************************************************
+ * @fn          llSchedulerGetCsCmd
+ *
+ * @brief       This function will search in the system task list if the CS task
+ *              is active and will return the pointer to the CS task info
+ *
+ * input parameters
+ *
+ * @param       None.
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Pointer to the CS task in the task list or NULL
+ */
+RCL_Command *llSchedulerGetCsCmd( void )
+{
+  taskInfo_t *csTask = NULL;
+
+  csTask = llGetTask(LL_TASK_ID_CS);
+
+  if (csTask != NULL )
+  {
+    return (RCL_Command *)csTask->command;
+  }
+
+  // No active CS task
+  return NULL;
+}
 
 /*******************************************************************************
  * @fn          llGetTaskState
@@ -2298,7 +2491,7 @@ taskInfo_t *llGetCurrentTask( void )
  *
  * @return      LL_TASK_STATE_ACTIVE or LL_TASK_STATE_INACTIVE
  */
-uint8 llGetTaskState( uint8 llTaskID )
+uint8 llGetTaskState( uint16 llTaskID )
 {
   uint8 i;
 
@@ -2331,7 +2524,7 @@ uint8 llGetTaskState( uint8 llTaskID )
  * @return      TRUE:  Task is active.
  *              FALSE: Task is inactive.
  */
-uint8 llActiveTask( uint8 llTaskID )
+uint8 llActiveTask( uint16 llTaskID )
 {
   uint8 i;
 
@@ -2386,7 +2579,7 @@ uint8 llGetActiveTasks( void )
  *
  * @return      Pointer to the specified task, or NULL if inactive.
  */
-taskInfo_t *llGetTask( uint8 llTaskID )
+taskInfo_t *llGetTask( uint16 llTaskID )
 {
   uint8 i;
 
@@ -2556,6 +2749,7 @@ void llPeriodicAdvSchedSetup( taskInfo_t *llTask )
   {
     pPeriodicAdv->intPriority = LL_QOS_LOW_PRIORITY;
   }
+#ifdef RTLS_CTE
   // check that the CTE sampling is enable
   if (llCteSamples.pAutoCopyBuffers != NULL)
   {
@@ -2564,6 +2758,7 @@ void llPeriodicAdvSchedSetup( taskInfo_t *llTask )
     // disable the auto copy
     llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
   }
+#endif
 }
 #endif // USE_PERIODIC_ADV
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
@@ -2668,21 +2863,6 @@ void llExtScanSchedSetup( taskInfo_t *llTask )
 void llPeriodicScanSchedSetup( taskInfo_t *llTask )
 {
   llPeriodicScanSet_t *pPeriodicScan = MAP_llGetCurrentPeriodicScan(PERIODIC_SCAN_STATE_SYNCED);
-
-  // clear the output
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nTxReq            = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nBoffScanReq      = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxAdvOk          = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxAdvIgn         = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxAdvNok         = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxScanRspOk      = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxScanRspIgn     = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxScanRspNok     = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxAdvBufFull     = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->nRxScanRspBufFull = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->lastRssi          = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->reserved          = 0;
-  ((extScanOut_t *)pPeriodicScan->rfCmd.pOutput)->timeStamp         = 0;
 
 #ifdef RTLS_CTE
   // check that the CTE sampling is enable
@@ -3038,7 +3218,7 @@ void llScheduleTask( taskInfo_t *llTask )
   }
 
   // post the command
-  status = RCL_Command_submit(rfHandle, (RCL_Command_Handle)llTask->command);
+  status = RCL_Command_submit(MAP_llScheduler_getHandle(llTask->taskID), (RCL_Command_Handle)llTask->command);
 
   if ((status >= RCL_CommandStatus_Error)||
       (status >= RCL_CommandStatus_Finished) ||
@@ -3057,5 +3237,176 @@ void llScheduleTask( taskInfo_t *llTask )
   return;
 }
 
+/*******************************************************************************
+ * @fn          llScheduler_getBleHandle
+ *
+ * @brief       This function adds the BLE Handle to the rclHandles list,
+ *              Opens it and sets its status to Active if needed.
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      BLE handle
+ */
+RCL_Handle llScheduler_getBleHandle( void )
+{
+  // Check if BLE handle is inactive
+  if ( !IS_HANDLE_ACTIVE(BLE_RCL_HANDLE) )
+  {
+    // Open the BLE handle
+    rclHandles[BLE_RCL_HANDLE].rclHandle = RCL_open(&rfClient, llUserConfig.lrfConfigPtr);
+    // Set status to active
+    rclHandles[BLE_RCL_HANDLE].state = HANDLE_ACTIVE;
+  }
+  // Return BLE handle
+  return rclHandles[BLE_RCL_HANDLE].rclHandle;
+}
+
+/*******************************************************************************
+ * @fn          llScheduler_getHandle
+ *
+ * @brief       This function returns the RCL handle based on the given taskID.
+ *              It also opens the needed RCL handle and closes the other, and
+ *              adds it to the RCL handles list.
+ *
+ * input parameters
+ *
+ * @param       taskID - can either be the CS task, or all other BLE tasks.
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Standard BLE Handle, or the CS Handle
+ */
+RCL_Handle llScheduler_getHandle( uint16 taskID )
+{
+  // Check if taskID is a standard BLE task (not CS)
+  if ( (taskID < LL_TASK_ID_CS) || (taskID == LL_TASK_ID_STANDARD_BLE) )
+  {
+    // Check if the CS handle is open
+    if ( IS_HANDLE_ACTIVE(CS_RCL_HANDLE) )
+    {
+      // Close the CS handle since this is a standard BLE task
+      llScheduler_rclClose(CS_RCL_HANDLE);
+    }
+
+    // Check if BLE handle is closed
+    if ( !IS_HANDLE_ACTIVE(BLE_RCL_HANDLE) )
+    {
+      // Open the BKE handle
+      rclHandles[BLE_RCL_HANDLE].rclHandle = RCL_open(&rfClient, llUserConfig.lrfConfigPtr);
+      // Set status to Active
+      rclHandles[BLE_RCL_HANDLE].state = HANDLE_ACTIVE;
+    }
+    // Return the BLE handle
+    return rclHandles[BLE_RCL_HANDLE].rclHandle;
+  }
+  else
+  {
+    // Check if BLE handle is open
+    if ( IS_HANDLE_ACTIVE(BLE_RCL_HANDLE) )
+    {
+      // Close it since we need the CS handle
+      llScheduler_rclClose(BLE_RCL_HANDLE);
+    }
+
+    // Check if the CS handle is closed
+    if ( !IS_HANDLE_ACTIVE(CS_RCL_HANDLE) )
+    {
+      // Open the CS handle
+      rclHandles[CS_RCL_HANDLE].rclHandle = RCL_open(&rfClient, llUserConfig.lrfConfigCsPtr);
+      // Set status to Active
+      rclHandles[CS_RCL_HANDLE].state = HANDLE_ACTIVE;
+    }
+    // return CS handle
+    return rclHandles[CS_RCL_HANDLE].rclHandle;
+  }
+}
+
+/*******************************************************************************
+ * @fn          llScheduler_getSwitchTime
+ *
+ * @brief       This function returns the switch time of a given task.
+ *              A task could be a CS task or Standard BLE Task (all others)
+ *              If the current task handle is active, the switch time is 0.
+ *              Otherwise it is 120us.
+ *
+ * input parameters
+ *
+ * @param       taskID - the task ID to get switch time for
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      switch time
+ */
+uint32 llScheduler_getSwitchTime(uint16 taskID)
+{
+  // If this is a standard BLE task
+  if ( (taskID < LL_TASK_ID_CS) || (taskID == LL_TASK_ID_STANDARD_BLE) )
+  {
+    // If BLE handle is open
+    if ( IS_HANDLE_ACTIVE(BLE_RCL_HANDLE) )
+    {
+      // Standard BLE task and BLE handle open
+      // No switch time
+      return 0;
+    }
+    else
+    {
+      // Standarb BLE task but handle not open
+      // Switch time 120us
+      return RAT_TICKS_IN_120US;
+    }
+  }
+
+  // If this is a CS task
+  if ( taskID == LL_TASK_ID_CS )
+  {
+    // If the CS handle is open
+    if ( IS_HANDLE_ACTIVE(CS_RCL_HANDLE) )
+    {
+      // CS task and CS handle open
+      // No switch time
+      return 0;
+    }
+    else
+    {
+      // CS task and CS handle closed
+      // Switch time 120us
+      return RAT_TICKS_IN_120US;
+    }
+  }
+  return 0;
+}
+
+/*******************************************************************************
+ * @fn          llScheduler_rclClose
+ *
+ * @brief       Close the RCL given RCL handle and set status to inactive.
+ *
+ * input parameters
+ *
+ * @param       handleType - BLE_RCL_HANDLE or CS_RCL_HANDLE
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llScheduler_rclClose(uint8 handleType)
+{
+  // CS Handle should be closed
+  RCL_close(rclHandles[handleType].rclHandle);
+  rclHandles[handleType].state = HANDLE_INACTIVE;
+}
 /*******************************************************************************
  */

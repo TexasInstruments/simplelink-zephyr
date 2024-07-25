@@ -366,93 +366,6 @@ uint32 osal_build_uint32( uint8 *swapped, uint8 len )
     return ( (uint32)swapped[0] );
 }
 
-#if !defined ( ZBIT ) && !defined ( ZBIT2 ) && !defined (UBIT) && !defined (CC33xx)
-/*********************************************************************
- * @fn      _ltoa
- *
- * @brief
- *
- *   convert a long unsigned int to a string.
- *
- * @param  l - long to convert
- * @param  buf - buffer to convert to
- * @param  radix - 10 dec, 16 hex
- *
- * @return  pointer to buffer
- */
-unsigned char * _ltoa(unsigned long l, unsigned char *buf, unsigned char radix)
-{
-#if defined (__TI_COMPILER_VERSION) || defined (__TI_COMPILER_VERSION__)
-    #if (((defined(__TI_ARM__) || defined(__MSP430__) || defined(__TMS320C2000__)) && __TI_COMPILER_VERSION__ < 19006000) || \
-         (defined(__ARP32__) && __TI_COMPILER_VERSION__ < 1001000) ||       \
-         (defined(__PRU__) && __TI_COMPILER_VERSION__ < 2003002) ||         \
-         (defined(__TMS320C6X__) && __TI_COMPILER_VERSION__ < 8002006) ||   \
-         (defined(__TMS320C6X__) && __TI_COMPILER_VERSION__ >= 8003000 && __TI_COMPILER_VERSION__ < 8003003))
-        return (unsigned char*)ltoa( l, (char *)buf);
-    #else
-        return ( (unsigned char*)ltoa( l, (char *)buf, radix ) );
-    #endif
-#elif defined( __GNUC__ )
-  return ( (unsigned char *)ltoa( l, (char *)buf, radix ) );
-#else
-  unsigned char tmp1[10] = "", tmp2[10] = "", tmp3[10] = "";
-  unsigned short num1, num2, num3;
-  unsigned char i;
-
-  buf[0] = '\0';
-
-  if ( radix == 10 )
-  {
-    num1 = l % 10000;
-    num2 = (l / 10000) % 10000;
-    num3 = (unsigned short)(l / 100000000);
-
-    if (num3) _itoa(num3, tmp3, 10);
-    if (num2) _itoa(num2, tmp2, 10);
-    if (num1) _itoa(num1, tmp1, 10);
-
-    if (num3)
-    {
-      strcpy((char*)buf, (char const*)tmp3);
-      for (i = 0; i < 4 - strlen((char const*)tmp2); i++)
-        strcat((char*)buf, "0");
-    }
-    strcat((char*)buf, (char const*)tmp2);
-    if (num3 || num2)
-    {
-      for (i = 0; i < 4 - strlen((char const*)tmp1); i++)
-        strcat((char*)buf, "0");
-    }
-    strcat((char*)buf, (char const*)tmp1);
-    if (!num3 && !num2 && !num1)
-      strcpy((char*)buf, "0");
-  }
-  else if ( radix == 16 )
-  {
-    num1 = l & 0x0000FFFF;
-    num2 = l >> 16;
-
-    if (num2) _itoa(num2, tmp2, 16);
-    if (num1) _itoa(num1, tmp1, 16);
-
-    if (num2)
-    {
-      strcpy((char*)buf,(char const*)tmp2);
-      for (i = 0; i < 4 - strlen((char const*)tmp1); i++)
-        strcat((char*)buf, "0");
-    }
-    strcat((char*)buf, (char const*)tmp1);
-    if (!num2 && !num1)
-      strcpy((char*)buf, "0");
-  }
-  else
-    return NULL;
-
-  return buf;
-#endif
-}
-#endif // !defined(ZBIT) && !defined(ZBIT2) && !defined (UBIT) && !defined (CC33xx)
-
 /*********************************************************************
  * @fn        osal_rand
  *
@@ -573,6 +486,49 @@ uint8 * osal_msg_allocate( uint16 len )
     return ( NULL );
 
   hdr = (osal_msg_hdr_t *) osal_mem_alloc( (short)(len + sizeof( osal_msg_hdr_t )) );
+  if ( hdr )
+  {
+    hdr->next = NULL;
+    hdr->len = len;
+    hdr->dest_id = TASK_NO_TASK;
+    return ( (uint8 *) (hdr + 1) );
+  }
+  else
+    return ( NULL );
+}
+
+/*********************************************************************
+ * @fn      osal_msg_allocateLimited
+ *
+ * @brief
+ *
+ *    This function is called by a task to allocate a message buffer
+ *    into which the task will encode the particular message it wishes
+ *    to send.  This common buffer scheme is used to strictly limit the
+ *    creation of message buffers within the system due to RAM size
+ *    limitations on the microprocessor.   Note that all message buffers
+ *    are a fixed size (at least initially).  The parameter len is kept
+ *    in case a message pool with varying fixed message sizes is later
+ *    created (for example, a pool of message buffers of size LARGE,
+ *    MEDIUM and SMALL could be maintained and allocated based on request
+ *    from the tasks).
+ *    Note that this function will first check if there is enough heap
+ *    memory left after the allocation.
+ *
+ *
+ * @param   uint8 len  - wanted buffer length
+ *
+ *
+ * @return  pointer to allocated buffer or NULL if allocation failed.
+ */
+uint8 * osal_msg_allocateLimited( uint16 len )
+{
+  osal_msg_hdr_t *hdr;
+
+  if ( len == 0 )
+    return ( NULL );
+
+  hdr = (osal_msg_hdr_t *) osal_mem_allocLimited( (short)(len + sizeof( osal_msg_hdr_t )) );
   if ( hdr )
   {
     hdr->next = NULL;

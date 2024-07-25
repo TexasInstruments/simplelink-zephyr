@@ -135,12 +135,15 @@
 #define RAT_TICKS_IN_10US              40        // Connection Jitter
 #define RAT_TICKS_IN_15_5US            62        // TP/TIM/SLA/BV-05
 #define RAT_TICKS_IN_16US              64        // Connection Jitter
+#define RAT_TICKS_IN_20US              80
+#define RAT_TICKS_IN_30US              120
 #define RAT_TICKS_IN_40US              160       // Primary Channel Branch Delay
 #define RAT_TICKS_IN_64US              256       // Radio Rx Settle Time
 #define RAT_TICKS_IN_72US              288       // Agama AP timing adjustment due to pilot tone
 #define RAT_TICKS_IN_85US              340       // Radio Rx Synch Time
 #define RAT_TICKS_IN_90US              360       // Agama CC13X2P AP timing adjustment due to pilot tone
 #define RAT_TICKS_IN_100US             400       // 1M / 2500 RAT ticks (SCA PPM)
+#define RAT_TICKS_IN_120US             480       // Total time to close and open the RCL
 #define RAT_TICKS_IN_140US             560       // Rx Back-end Time
 #define RAT_TICKS_IN_150US             600       // T_IFS
 #define RAT_TICKS_IN_166US             664       // Frequency synthesizer delay for RX window
@@ -149,6 +152,7 @@
 #define RAT_TICKS_IN_700US             2800      // LL_TEST_MODE JIRA-2756
 #define RAT_TICKS_IN_256US             1024      // Radio Overhead + FS Calibration
 #define RAT_TICKS_IN_280US             1120      // Radio Overhead + FS Calibration
+#define RAT_TICKS_IN_285US             1140
 #define RAT_TICKS_IN_300US             1200      // T_MAFS (AE)
 #define RAT_TICKS_IN_352US             1408      // CONNECT_IND is 44 bytes
 #define RAT_TICKS_IN_500US             2000      // Periodic Adv addition process command
@@ -564,11 +568,13 @@ extern void          llProcessPeripheralControlPacket( llConnState_t *, uint8 * 
 extern void          llProcessCentralControlPacket( llConnState_t *, uint8 * );
 extern void          llMoveTempTxDataEntries( llConnState_t * );
 extern void         *llSetupScanDataEntryQueue( void );
+extern void         *llSetupPeriodicScanDataEntryQueue( void );
 extern void         *llSetupInitDataEntryQueue( void );
 extern void         *llSetupAdvDataEntryQueue( void );
 extern void         *llSetupConnRxDataEntryQueue( uint8 connId );
 extern void          llClearRxDataEntry( void *, List_List * );
 extern void          llClearScanDataQueue( uint8 );
+extern void          llClearPeriodicScanDataQueue( uint8 );
 
 
 /*******************************************************************************

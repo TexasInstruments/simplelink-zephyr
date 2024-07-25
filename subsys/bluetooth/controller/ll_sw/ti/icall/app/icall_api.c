@@ -807,7 +807,7 @@ bStatus_t GATTServApp_AddService(uint32 services)
  */
 bStatus_t GATTServApp_RegisterService(gattAttribute_t *pAttrs,
                                       uint16 numAttrs, uint8 encKeySize,
-                                      CONST gattServiceCBs_t *pServiceCBs)
+                                      const gattServiceCBs_t *pServiceCBs)
 {
   // Allocate message buffer space
   ICall_GSA_RegService *msg =
@@ -5283,20 +5283,6 @@ static bool matchHciLeTestEndCS(ICall_ServiceEnum src, ICall_EntityID dest,
  *
  * Public function defined in hci.h.
  */
-hciStatus_t HCI_EXT_SetTxPowerCmd(uint8 txPower)
-{
-  return hciSendParamsCmd(HCI_EXT_SET_TX_POWER, txPower,
-                          HCI_NO_PARAM, HCI_NO_PARAM,
-                          matchHciExtSetTxPowerCS);
-}
-
-/*******************************************************************************
- * This API is used to set this device's TX Power
- *
- * Note: This command is only allowed when the device's state is Standby.
- *
- * Public function defined in hci.h.
- */
 hciStatus_t HCI_EXT_SetTxPowerDbmCmd(int8 txPower, uint8 fraction)
 {
   return hciSendParamsCmd(HCI_EXT_SET_TX_POWER_DBM, txPower,
@@ -5464,18 +5450,6 @@ hciStatus_t HCI_EXT_SetSCACmd(uint16 scaInPPM)
 hciStatus_t HCI_EXT_EnablePTMCmd(void)
 {
   return hciSendCmd(HCI_EXT_ENABLE_PTM, matchHciExtEnablePTMCS);
-}
-
-/*******************************************************************************
- * This HCI Extension API is used to set the max TX power for Direct Test Mode.
- *
- * Public function defined in hci.h.
- */
-hciStatus_t HCI_EXT_SetMaxDtmTxPowerCmd(uint8 txPower)
-{
-  return hciSendParamsCmd(HCI_EXT_SET_MAX_DTM_TX_POWER, txPower,
-                          HCI_NO_PARAM, HCI_NO_PARAM,
-                          matchHciExtSetMaxDtmTxPwrCS);
 }
 
 /*******************************************************************************

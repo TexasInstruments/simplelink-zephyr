@@ -26,6 +26,8 @@ extern "C"
  * INCLUDES
  */
 
+#include "icall_ble_apimsg.h"
+
 /*********************************************************************
  * CONSTANTS
  */

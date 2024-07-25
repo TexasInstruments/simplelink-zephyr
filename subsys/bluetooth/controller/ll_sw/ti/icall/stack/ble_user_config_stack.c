@@ -25,11 +25,11 @@
 #include "ll_user_config.h"
 #include "ble_user_config.h"
 
-#ifdef ZEPHYR_OS
+#ifdef CONFIG_ZEPHYR
 #include "rcl_settings_ble.h"
 #else
 #include "ti_radio_config.h"
-#endif
+#endif // CONFIG_ZEPHYR
 
 #ifdef SYSCFG
 #include "ti_ble_config.h"
@@ -282,6 +282,9 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
 
     llUserConfig.lrfTxPowerTablePtr = &LRF_txPowerTable;
     llUserConfig.lrfConfigPtr = &LRF_config;
+#ifdef CHANNEL_SOUNDING
+    llUserConfig.lrfConfigCsPtr = &LRF_configBleCsHp;
+#endif
     llUserConfig.defaultTxPowerDbm = defaultTxPowerDbm;
     llUserConfig.defaultTxPowerFraction = 0;
     llUserConfig.rclPhyFeature1MBPS = RCL_PHY_FEATURE_SUB_PHY_1_MBPS;
@@ -314,6 +317,25 @@ void setBleUserConfig( icall_userCfg_t *userCfg )
 
   llUserConfig.useSrcClkLFOSC = SRC_CLK_IS_LFOSC;
   llUserConfig.cfgLFOSCExtraPPM = USER_CFG_LFOSC_EXTRA_PPM;
+
+#ifdef USE_AE
+  llUserConfig.useAE = TRUE;
+#else
+  llUserConfig.useAE = FALSE;
+#endif
+
+  // Set useDFL to false initially
+  llUserConfig.useDFL = FALSE;
+
+
+  // Use dynamic filter list when the device role is advertiser only and number of bond is greater than 5.
+  #if defined(DeviceFamily_CC27XX) || defined(DeviceFamily_CC23X0R5)
+  #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG)) && !(CTRL_CONFIG & (SCAN_CFG | INIT_CFG)) // (If the device role is advertiser only)
+  #if defined(GAP_BOND_MGR) && (GAP_BONDINGS_MAX > 5) // If number of bondings greater than 5
+  llUserConfig.useDFL = TRUE;
+  #endif // (advertiser only)
+  #endif // (number of bondings greater than 5)
+  #endif // (supported devices)
 
   return;
 }
@@ -432,6 +454,9 @@ void setBleUserConfig( bleUserCfg_t *userCfg )
 
     llUserConfig.lrfTxPowerTablePtr = &LRF_txPowerTable;
     llUserConfig.lrfConfigPtr = &LRF_config;
+#ifdef CHANNEL_SOUNDING
+    llUserConfig.lrfConfigCsPtr = &LRF_configBleCsHp;
+#endif
     llUserConfig.defaultTxPowerDbm = defaultTxPowerDbm;
     llUserConfig.defaultTxPowerFraction = 0;
     llUserConfig.rclPhyFeature1MBPS = RCL_PHY_FEATURE_SUB_PHY_1_MBPS;
@@ -445,6 +470,12 @@ void setBleUserConfig( bleUserCfg_t *userCfg )
     halAssertInit( **userCfg->assertCback, HAL_ASSERT_LEGACY_MODE_DISABLED );
 #endif // CC33xx
   }
+
+#ifdef USE_AE
+  llUserConfig.useAE = TRUE;
+#else
+  llUserConfig.useAE = FALSE;
+#endif
 
   llUserConfig.useSrcClkLFOSC = SRC_CLK_IS_LFOSC;
   llUserConfig.cfgLFOSCExtraPPM = USER_CFG_LFOSC_EXTRA_PPM;

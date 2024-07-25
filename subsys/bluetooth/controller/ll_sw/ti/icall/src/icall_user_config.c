@@ -26,13 +26,11 @@
 #include <ti/drivers/AESCCM.h>
 #include <ti/drivers/AESECB.h>
 
-#ifdef CC23X0
 #include <ti/drivers/aesccm/AESCCMLPF3.h>
 #include <ti/drivers/aesecb/AESECBLPF3.h>
 #include <ti/drivers/ecdh/ECDHLPF3SW.h>
 #include <ti/drivers/cryptoutils/sharedresources/CryptoResourceLPF3.h>
 #include <ti/drivers/RNG.h>
-#endif // CC23X0
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 
 #ifdef SYSCFG

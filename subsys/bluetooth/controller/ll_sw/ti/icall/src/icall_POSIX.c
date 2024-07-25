@@ -52,11 +52,8 @@
 #include <icall_addrs.h>
 #endif /* ICALL_FEATURE_SEPARATE_IMGINFO */
 
-
-#ifndef Task_self
-#define Task_self ICall_taskSelf
-#endif
-
+#define ICALL_THREAD_NAME "BLE_Stack"
+#define ICALL_WORKER_THREAD_NAME "Icall_Worker"
 
 #ifndef ICALL_MAX_NUM_ENTITIES
 /**
@@ -158,13 +155,6 @@
 #define ICALL_SYNC_HANDLE_PEND(x, t)    (Semaphore_pend(x, t))
 #define ICALL_SYNC_HANDLE_PEND_WM(x, t) (Semaphore_pend(x, t))  /* Semaphore does not have event ID */
 #endif  /* ICALL_EVENTS */
-
-/**
- * @internal
-   * ticks
- */
-#define CLOCK_TICKS_PERIOD (10)
-
 
 /**
  * @internal
@@ -377,6 +367,8 @@ void ICall_heapMgrGetMetrics(uint32_t *pBlkMax,
 /* worker thread stack size was selected after the ECC SW operation
    usage was determined (~800 bytes) */
 #define ICALL_WORKER_THREAD_STACKSIZE   1024
+
+#define ICALL_WORKER_THREAD_QUEUE_SIZE    8
 
 /** @internal data structure for the Worker Thread entity */
 typedef struct
@@ -607,7 +599,8 @@ void ICall_workerThreadEntry(void *arg)
   typedef void (*ICall_workerThreadFuncArg)(void *arg);
   typedef void (*ICall_workerThreadFunc)(void);
 
-  workerThreadEntity.queueHandle = MessageQueueP_create(sizeof(ICall_WorkerThreadMsg_t), 8);
+  workerThreadEntity.queueHandle = MessageQueueP_create(sizeof(ICall_WorkerThreadMsg_t),
+                                                        ICALL_WORKER_THREAD_QUEUE_SIZE);
 
   if (NULL != workerThreadEntity.queueHandle)
   {
@@ -646,10 +639,17 @@ int ICall_createWorkerThread(void)
   TaskP_Params_init(&workerThreadEntity.taskParams);
   workerThreadEntity.taskParams.priority      = ICALL_WORKER_THREAD_PRIORITY;
   workerThreadEntity.taskParams.stackSize     = ICALL_WORKER_THREAD_STACKSIZE;
+  workerThreadEntity.taskParams.name          = ICALL_WORKER_THREAD_NAME;
 
   workerThreadEntity.threadId = TaskP_create(ICall_workerThreadEntry, &workerThreadEntity.taskParams);
 
-  return (workerThreadEntity.threadId == NULL) ? 0 : -1;
+  if (NULL == workerThreadEntity.threadId)
+  {
+    /* Initialization Thread through DPL didn't succeed */
+    ICall_abort();
+  }
+
+  return 0;
 }
 
 /* See header file for comments. */
@@ -707,6 +707,7 @@ void ICall_createRemoteTasksAtRuntime(ICall_RemoteTask_t *remoteTaskTable, uint8
     POSIX_args.arg0                = (void*)remoteTaskTable[i].startupEntry;
     POSIX_args.arg1                = (void*)remoteTaskTable[i].ICall_imgInitParam;
     remoteTaskParams.arg           = &POSIX_args;
+    remoteTaskParams.name          = ICALL_THREAD_NAME;
 
     RemoteTask = TaskP_create(ICall_taskEntry, &remoteTaskParams);
 
@@ -939,7 +940,7 @@ ICall_Errno ICall_registerApp(ICall_EntityID *entity,
 {
 
   size_t i;
-  ICall_TaskEntry *taskentry = ICall_newTask(Task_self());
+  ICall_TaskEntry *taskentry = ICall_newTask(ICall_taskSelf());
   ICall_CSState key;
 
   if (!taskentry)
@@ -981,10 +982,6 @@ void *ICall_allocMsg(size_t size)
 {
   void * msg = NULL;
   ICall_MsgHdr *hdr = NULL;
-  ICall_CSState key;
-
-  // Enter CS to avoid race with allocation from interrupt context
-  key = ICall_enterCSImpl();
 
   hdr = (ICall_MsgHdr *) ICall_heapMalloc(sizeof(ICall_MsgHdr) + size);
 
@@ -998,7 +995,6 @@ void *ICall_allocMsg(size_t size)
 
   // Point to the start of the msg
   msg = ((void *) (hdr + 1));
-  ICall_leaveCSImpl(key);
 
   return msg;
 }
@@ -1158,7 +1154,7 @@ ICall_fetchServiceMsg(ICall_ServiceEnum *src,
  */
 ICall_Errno ICall_wait(uint_fast32_t milliseconds)
 {
-    TaskP_Handle taskhandle = Task_self();
+    TaskP_Handle taskhandle = ICall_taskSelf();
     ICall_TaskEntry *taskentry = ICall_searchTask(taskhandle);
     uint32_t timeout;
 
@@ -1227,7 +1223,7 @@ ICall_enrollService(ICall_ServiceEnum service,
                     ICall_SyncHandle *msgSyncHdl)
 {
   size_t i;
-  ICall_TaskEntry *taskentry = ICall_newTask(Task_self());
+  ICall_TaskEntry *taskentry = ICall_newTask(ICall_taskSelf());
   ICall_CSState key;
 
   /* Note that certain service does not handle a message
@@ -1500,7 +1496,7 @@ ICall_Errno ICall_fetchMsg(ICall_EntityID *src,
                                          void **msg)
 {
   void *msgTemp;
-  TaskP_Handle taskhandle = Task_self();
+  TaskP_Handle taskhandle = ICall_taskSelf();
   ICall_TaskEntry *taskentry = ICall_searchTask(taskhandle);
   ICall_MsgHdr *hdr;
 
@@ -1532,7 +1528,7 @@ ICall_Errno ICall_fetchMsg(ICall_EntityID *src,
  */
 uint8 ICall_IsQueueEmpty()
 {
-  TaskP_Handle taskhandle = Task_self();
+  TaskP_Handle taskhandle = ICall_taskSelf();
   ICall_TaskEntry *taskentry = ICall_searchTask(taskhandle);
   if(taskentry->queue == NULL)
       return true;
@@ -1613,14 +1609,6 @@ ICall_disableint(int intnum)
   return (ICALL_ERRNO_SUCCESS);
 }
 
-/**
- * Registers an interrupt service routine
- * @param intnum   interrupt number
- * @param isrfunc  pointer to the interrupt service function
- * @return @ref ICALL_ERRNO_SUCCESS when successful.<br>
- *         @ref ICALL_ERRNO_NO_RESOURCE when the registration
- *         failed due to lack of resources.
- */
 
 uint_fast32_t GetTickCount(void)
 {
@@ -1645,7 +1633,7 @@ ICall_getTicks(void)
 uint_fast32_t
 ICall_getTickPeriod(void)
 {
-    return CLOCK_TICKS_PERIOD;
+    return ClockP_getSystemTickPeriod();
 }
 
 /**
@@ -1657,7 +1645,6 @@ ICall_getTickPeriod(void)
 uint_fast32_t
 ICall_getMaxMSecs(void)
 {
-
     uint_fast64_t tmp = ((uint_fast64_t) 0x7ffffffful) * (ICall_getTickPeriod());
     tmp /= 1000;
     if (tmp >= 0x80000000ul)
@@ -2245,7 +2232,7 @@ ICall_waitMatch(uint_least32_t milliseconds,
                 ICall_EntityID *dest,
                 void **msg)
 {
-  TaskP_Handle taskhandle = Task_self();
+  TaskP_Handle taskhandle = ICall_taskSelf();
   ICall_TaskEntry *taskentry = ICall_searchTask(taskhandle);
   ICall_MsgQueue prependQueue = NULL;
 #ifndef ICALL_EVENTS
@@ -2381,7 +2368,7 @@ ICall_EntityID
 ICall_getEntityId(void)
 {
   ICall_EntityID id;
-  TaskP_Handle taskhandle = Task_self();
+  TaskP_Handle taskhandle = ICall_taskSelf();
   ICall_CSState key;
   size_t i;
   key = ICall_enterCSImpl();
@@ -2420,7 +2407,7 @@ ICall_threadServes(ICall_ServiceEnum service)
   TaskP_Handle taskhandle;
   ICall_CSState key;
   size_t i;
-  taskhandle = Task_self();
+  taskhandle = ICall_taskSelf();
 
   key = ICall_enterCSImpl();
   for (i = 0; i < ICALL_MAX_NUM_ENTITIES; i++)

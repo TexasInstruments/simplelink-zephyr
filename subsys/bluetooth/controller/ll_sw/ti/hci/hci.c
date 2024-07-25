@@ -30,6 +30,7 @@
 #include "hci.h"
 #include "ll_ecc.h"
 #include "ll_ae.h"
+#include "cs/ll_cs_mgr.h"
 
 #if defined( CC26XX ) || defined( CC13XX ) || defined( CC23X0 )
 #include "ll_config.h"
@@ -2345,7 +2346,10 @@ hciStatus_t HCI_LE_EncryptCmd( uint8 *key,
 {
   // 0:     Status
   // 1..16: Ciphertext Data
-  uint8 rtnParam[17];
+  uint8 rtnParam[KEYLEN + 1] = {0};
+
+  // for alignment purposes, we set another buffer to store the ciphertext data, which will be copied to rtnParam buffer later
+  uint8 CipherTextData[KEYLEN] = {0};
 
   // reverse byte order of key to MSO..LSO, as required by FIPS.
   MAP_HCI_ReverseBytes( &key[0], KEYLEN );
@@ -2355,13 +2359,16 @@ hciStatus_t HCI_LE_EncryptCmd( uint8 *key,
 
   rtnParam[0] = MAP_LL_Encrypt(  key,
                                  plainText,
-                                &rtnParam[1] );
+                                 CipherTextData );
 
   // check for success
   if ( rtnParam[0] == LL_STATUS_SUCCESS )
   {
     // reverse byte order of ciphertext to LSO..MSO for transport layer
-    MAP_HCI_ReverseBytes( &rtnParam[1], KEYLEN );
+    MAP_HCI_ReverseBytes( CipherTextData, KEYLEN );
+
+    // copy the ciphertext data to rtnParamd, after ensuring it is aligned
+    (void)MAP_osal_memcpy( &rtnParam[1], CipherTextData, KEYLEN );
 
     MAP_HCI_CommandCompleteEvent( HCI_LE_ENCRYPT, sizeof(rtnParam), rtnParam );
   }
@@ -3773,14 +3780,10 @@ hciStatus_t HCI_LE_SetPeriodicAdvParamsCmd( uint8 advHandle,
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_SetPeriodicAdvParams(advHandle,
                                               periodicAdvIntervalMin,
                                               periodicAdvIntervalMax,
                                               periodicAdvProp);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_SET_PERIODIC_ADV_PARAMETERS,
@@ -3811,14 +3814,10 @@ hciStatus_t HCI_LE_SetPeriodicAdvDataCmd( uint8 advHandle,
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_SetPeriodicAdvData(advHandle,
                                             operation,
                                             dataLength,
                                             data);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_SET_PERIODIC_ADV_DATA,
@@ -3848,12 +3847,8 @@ hciStatus_t HCI_LE_SetPeriodicAdvEnableCmd( uint8 enable,
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_SetPeriodicAdvEnable(enable,
                                               advHandle);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_SET_PERIODIC_ADV_ENABLE,
@@ -3878,7 +3873,7 @@ hciStatus_t HCI_LE_SetConnectionlessCteTransmitParamsCmd( uint8 advHandle,
 {
   // 0: Status
   uint8 rtnParam[1];
-#ifdef CC23X0
+#ifndef RTLS_CTE
   rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
 #else
   // status
@@ -3950,9 +3945,6 @@ hciStatus_t HCI_LE_PeriodicAdvCreateSyncCmd( uint8  options,
   }
   else
   {
-#ifdef CC23X0
-    status = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     status = MAP_LE_PeriodicAdvCreateSync( options,
                                            advSID,
                                            advAddrType,
@@ -3960,7 +3952,6 @@ hciStatus_t HCI_LE_PeriodicAdvCreateSyncCmd( uint8  options,
                                            skip,
                                            syncTimeout,
                                            syncCteType );
-#endif
   }
 
   MAP_HCI_CommandStatusEvent( status, HCI_LE_PERIODIC_ADV_CREATE_SYNC );
@@ -3987,11 +3978,7 @@ hciStatus_t HCI_LE_PeriodicAdvCreateSyncCancelCmd( void )
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_PeriodicAdvCreateSyncCancel();
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_PERIODIC_ADV_CREATE_SYNC_CANCEL,
@@ -4020,11 +4007,7 @@ hciStatus_t HCI_LE_PeriodicAdvTerminateSyncCmd( uint16 syncHandle )
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_PeriodicAdvTerminateSync(syncHandle);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_PERIODIC_ADV_TERMINATE_SYNC,
@@ -4055,13 +4038,9 @@ hciStatus_t HCI_LE_AddDeviceToPeriodicAdvListCmd( uint8 advAddrType,
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_AddDeviceToPeriodicAdvList(advAddrType,
                                                     advAddress,
                                                     advSID);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_ADD_DEVICE_TO_PERIODIC_ADV_LIST,
@@ -4092,13 +4071,9 @@ hciStatus_t HCI_LE_RemoveDeviceFromPeriodicAdvListCmd( uint8 advAddrType,
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_RemoveDeviceFromPeriodicAdvList(advAddrType,
                                                          advAddress,
                                                          advSID);
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_REMOVE_DEVICE_FROM_PERIODIC_ADV_LIST,
@@ -4127,11 +4102,7 @@ hciStatus_t HCI_LE_ClearPeriodicAdvListCmd( void )
   }
   else
   {
-#ifdef CC23X0
-  rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
   rtnParam[0] = MAP_LE_ClearPeriodicAdvList();
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_CLEAR_PERIODIC_ADV_LIST,
@@ -4161,11 +4132,7 @@ hciStatus_t HCI_LE_ReadPeriodicAdvListSizeCmd( void )
   }
   else
   {
-#ifdef CC23X0
-    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
     rtnParam[0] = MAP_LE_ReadPeriodicAdvListSize( &rtnParam[1] );
-#endif
   }
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_READ_PERIODIC_ADV_LIST_SIZE,
@@ -4186,13 +4153,9 @@ hciStatus_t HCI_LE_SetPeriodicAdvReceiveEnableCmd( uint16 syncHandle,
 {
   // 0: Status
   uint8 rtnParam[1];
-#ifdef CC23X0
-  rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
   // status
   rtnParam[0] = MAP_LE_SetPeriodicAdvReceiveEnable(syncHandle,
                                                enable);
-#endif
 
   MAP_HCI_CommandCompleteEvent( HCI_LE_SET_PERIODIC_ADV_RECEIVE_ENABLE,
                                 sizeof(rtnParam),
@@ -4243,6 +4206,36 @@ hciStatus_t HCI_LE_SetConnectionlessIqSamplingEnableCmd( uint16 syncHandle,
 }
 #endif
 
+/*******************************************************************************
+ * Enable/Disable the Host feature bit
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_SetHostFeature( uint8 bitNumber,
+                                   uint8 bitValue )
+{
+  // 0: Status
+  uint8 rtnParam[1];
+
+  // status
+  // Check if a legacy/extended command mixing is allowed
+  if(MAP_checkLegacyHCICmdStatus(HCI_LE_READ_PERIODIC_ADV_LIST_SIZE))
+  {
+    rtnParam[0] = LL_STATUS_ERROR_COMMAND_DISALLOWED;
+  }
+  else
+  {
+    rtnParam[0] = MAP_LL_SetHostFeature( bitNumber,
+                                         bitValue );
+  }
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_SET_HOST_FEATURE,
+                                sizeof(rtnParam),
+                                rtnParam );
+
+  return( HCI_SUCCESS );
+}
+
 /*
 ** HCI Vendor Specific Comamnds: Link Layer Extensions
 */
@@ -4279,40 +4272,6 @@ hciStatus_t HCI_EXT_SetRxGainCmd( uint8 rxGain )
 
   return( HCI_SUCCESS );
 }
-
-
-/*******************************************************************************
- * This HCI Extension API is used to set the transmit power.
- *
- * Note: If the LL can not perform the command immediately, the HCI will be
- *       notified by a corresonding LL callback.
- *
- * Public function defined in hci.h.
- */
-hciStatus_t HCI_EXT_SetTxPowerCmd( uint8 txPower )
-{
-  // 0: Event Opcode (LSB)
-  // 1: Event Opcode (MSB)
-  // 2: Status
-  uint8 rtnParam[3];
-  uint8 cmdComplete = TRUE;
-
-  rtnParam[0] = LO_UINT16( HCI_EXT_SET_TX_POWER_EVENT );
-  rtnParam[1] = HI_UINT16( HCI_EXT_SET_TX_POWER_EVENT );
-  rtnParam[2] = MAP_LL_EXT_SetTxPower( txPower, &cmdComplete );
-
-  // check if the command was performed, or if it was delayed
-  // Note: If delayed, a callback will be generated by the LL.
-  if ( cmdComplete == TRUE )
-  {
-    MAP_HCI_VendorSpecifcCommandCompleteEvent( HCI_EXT_SET_TX_POWER,
-                                               sizeof(rtnParam),
-                                               rtnParam );
-  }
-
-  return( HCI_SUCCESS );
-}
-
 
 /*******************************************************************************
  * This HCI Extension API is used to set the transmit power in dBm.
@@ -4464,7 +4423,10 @@ hciStatus_t HCI_EXT_DecryptCmd( uint8 *key,
   // 1: Event Opcode (MSB)
   // 2: Status
   // 3..18: Plaintext Data
-  uint8 rtnParam[19];
+  uint8 rtnParam[KEYLEN + 3] = {0};
+
+  // for alignment purposes, we set another buffer to store the plaintext data, which will be copied to rtnParam buffer later
+  uint8 PlainTextData[KEYLEN] = {0};
 
   rtnParam[0] = LO_UINT16( HCI_EXT_DECRYPT_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_DECRYPT_EVENT );
@@ -4476,12 +4438,15 @@ hciStatus_t HCI_EXT_DecryptCmd( uint8 *key,
   MAP_HCI_ReverseBytes( &encText[0], KEYLEN );
   rtnParam[2] = MAP_LL_EXT_Decrypt(  key,
                                      encText,
-                                    &rtnParam[3] );
+                                     PlainTextData );
   // check if okay
   if ( rtnParam[2] == LL_STATUS_SUCCESS )
   {
     // reverse byte order of plaintext to LSO..MSO for transport layer
-    MAP_HCI_ReverseBytes( &rtnParam[3], KEYLEN );
+    MAP_HCI_ReverseBytes( PlainTextData, KEYLEN );
+
+    // copy the plaintext data to rtnParamd, after ensuring it is aligned
+    (void)MAP_osal_memcpy( &rtnParam[3], PlainTextData, KEYLEN );
 
     MAP_HCI_VendorSpecifcCommandCompleteEvent( HCI_EXT_DECRYPT,
                                                sizeof(rtnParam),
@@ -4742,13 +4707,9 @@ hciStatus_t HCI_EXT_EnhancedModemHopTestTxCmd( uint8 payloadLen,
 
   rtnParam[0] = LO_UINT16( HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX_EVENT );
   rtnParam[1] = HI_UINT16( HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX_EVENT );
-#ifdef CC23X0
-  rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#else
   rtnParam[2] = MAP_LL_EXT_EnhancedModemHopTestTx( payloadLen,
                                                    payloadType,
                                                    rfPhy );
-#endif
 
   MAP_HCI_VendorSpecifcCommandCompleteEvent( HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX,
                                              sizeof(rtnParam),
@@ -5016,30 +4977,6 @@ hciStatus_t HCI_EXT_SaveFreqTuneCmd( void )
   rtnParam[2] = MAP_LL_EXT_SaveFreqTune();
 
   MAP_HCI_VendorSpecifcCommandCompleteEvent( HCI_EXT_SAVE_FREQ_TUNE,
-                                             sizeof(rtnParam),
-                                             rtnParam );
-
-  return( HCI_SUCCESS );
-}
-
-
-/*******************************************************************************
- * This HCI Extension API is used to set the max TX power for Direct Test Mode.
- *
- * Public function defined in hci.h.
- */
-hciStatus_t HCI_EXT_SetMaxDtmTxPowerCmd( uint8 txPower )
-{
-  // 0: Event Opcode (LSB)
-  // 1: Event Opcode (MSB)
-  // 2: Status
-  uint8 rtnParam[3];
-
-  rtnParam[0] = LO_UINT16( HCI_EXT_SET_MAX_DTM_TX_POWER_EVENT );
-  rtnParam[1] = HI_UINT16( HCI_EXT_SET_MAX_DTM_TX_POWER_EVENT );
-  rtnParam[2] = MAP_LL_EXT_SetMaxDtmTxPower( txPower );
-
-  MAP_HCI_VendorSpecifcCommandCompleteEvent( HCI_EXT_SET_MAX_DTM_TX_POWER,
                                              sizeof(rtnParam),
                                              rtnParam );
 
@@ -6281,5 +6218,323 @@ void LL_EXT_GetCoexStatsCback( uint32 grants,
 
   return;
 }
+
+/*******************************************************************************
+ * This BT API is used to read the local Supported CS capabilities
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_ReadLocalSupportedCapabilities(void)
+{
+    // 0: Status
+    // 1-27: CS Capabilities
+    uint8  rtnParam[28];
+    csCapabilities_t localCsCapabilities;
+    // status
+    rtnParam[0] = MAP_LL_CS_ReadLocalSupportedCapabilites(&localCsCapabilities);
+    rtnParam[1] = localCsCapabilities.numConfig;
+    rtnParam[2] = LO_UINT16(localCsCapabilities.maxProcedures);
+    rtnParam[3] = HI_UINT16(localCsCapabilities.maxProcedures);
+    rtnParam[4] = localCsCapabilities.numAntennas;
+    rtnParam[5] = localCsCapabilities.maxAntPath;
+    rtnParam[6] = localCsCapabilities.role;
+    rtnParam[7] = localCsCapabilities.optionalModes;
+    rtnParam[8] = localCsCapabilities.rttCap;
+    rtnParam[9] = localCsCapabilities.rttAAOnlyN;
+    rtnParam[10] = localCsCapabilities.rttSoundingN;
+    rtnParam[11] = localCsCapabilities.rttRandomPayloadN;
+    rtnParam[12] = LO_UINT16(localCsCapabilities.nadmSounding);
+    rtnParam[13] = HI_UINT16(localCsCapabilities.nadmSounding);
+    rtnParam[14] = LO_UINT16(localCsCapabilities.nadmRandomSeq);
+    rtnParam[15] = HI_UINT16(localCsCapabilities.nadmRandomSeq);
+    rtnParam[16] = localCsCapabilities.optionalCsSyncPhy;
+    rtnParam[17] = LO_UINT16 (localCsCapabilities.companionSignal| localCsCapabilities.noFAE << 1 |
+                   localCsCapabilities.chSel3c << 2 | localCsCapabilities.csBasedRanging << 3);
+    rtnParam[18] = HI_UINT16(0);
+    rtnParam[19] = LO_UINT16(localCsCapabilities.tIp1Cap);
+    rtnParam[20] = HI_UINT16(localCsCapabilities.tIp1Cap);
+    rtnParam[21] = LO_UINT16(localCsCapabilities.tIp2Cap);
+    rtnParam[22] = HI_UINT16(localCsCapabilities.tIp2Cap);
+    rtnParam[23] = LO_UINT16(localCsCapabilities.tFcsCap);
+    rtnParam[24] = HI_UINT16(localCsCapabilities.tFcsCap);
+    rtnParam[25] = LO_UINT16(localCsCapabilities.tPmCsap);
+    rtnParam[26] = HI_UINT16(localCsCapabilities.tPmCsap);
+    rtnParam[27] = localCsCapabilities.tSwCap;
+
+    MAP_HCI_CommandCompleteEvent( HCI_LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES,
+                                  sizeof(rtnParam),
+                                  rtnParam );
+
+    return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to read the remote Supported CS capabilities.
+ * If the remote capabilities are not known, a CS_CAPABILITIES_REQ is sent.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_ReadRemoteSupportedCapabilities(uint16 connHandle)
+{
+  hciStatus_t status;
+
+  status = MAP_LL_CS_ReadRemoteSupportedCapabilities( connHandle );
+
+  MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES );
+
+  return( HCI_SUCCESS );
+}
+
+/******************************************************************************* 
+ * This BT API is used to start or restart the CS security procedure
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_SecurityEnable( uint16 connHandle )
+{
+  // 0: Status
+  hciStatus_t status;
+
+  status = MAP_LL_CS_SecurityEnable(connHandle);
+
+  // send the HCI_Command_Status event to the Host
+  MAP_HCI_CommandStatusEvent(status, HCI_LE_CS_SECURITY_ENABLE);
+
+  return (HCI_SUCCESS);
+}
+
+/*******************************************************************************
+ * This BT API is used to set default CS settings in the local contoller
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_SetDefaultSettings( uint16 connHandle,
+                                          uint8  roleEnable,
+                                          uint8  csSyncAntennaSelection,
+                                          int8   maxTxPower)
+{
+  uint8  rtnParam[3];
+  csDefaultSettings_t defSettings;
+
+  defSettings.roleEn = roleEnable;
+  defSettings.csSyncAntennaSelection = csSyncAntennaSelection;
+  defSettings.maxTxPower = maxTxPower;
+
+  rtnParam[0] = MAP_LL_CS_SetDefaultSettings(connHandle, &defSettings);
+  rtnParam[1] = LO_UINT16(connHandle);
+  rtnParam[2] = HI_UINT16(connHandle);
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_CS_SET_DEFAULT_SETTINGS,
+                                sizeof(rtnParam),
+                                rtnParam );
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used by a Host to read the per-channel Mode 0 Frequency
+ * Actuation Error table of the local Controller.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_ReadLocalFAETable( void )
+{
+  int8  rtnParam[73];
+  int8  localFaeTbl[CS_FAE_TBL_LEN];
+
+  rtnParam[0] = MAP_LL_CS_ReadLocalFAETable((csFaeTbl_t*)&localFaeTbl);
+
+  if (rtnParam[0] == LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED)
+  {
+    MAP_osal_memset(&localFaeTbl, 0, CS_FAE_TBL_LEN);
+  }
+
+  for (uint8 i = 1; i <= CS_FAE_TBL_LEN; i++)
+  {
+    rtnParam[i] = localFaeTbl[i-1];
+  }
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_CS_READ_LOCAL_FAE_TABLE,
+                                sizeof(rtnParam),
+                                (uint8*)rtnParam );
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used by a Host to read the per-channel Mode 0 Frequency
+ * Actuation Error table of the remote Controller.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_ReadRemoteFAETable(uint16 connHandle)
+{
+  hciStatus_t status;
+
+  status = MAP_LL_CS_ReadRemoteFAETable(connHandle);
+
+  // send the HCI_Command_Status event to the Host
+  MAP_HCI_CommandStatusEvent(status, HCI_LE_CS_READ_REMOTE_FAE_TABLE);
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used by a Host to write the per-channel Mode 0 FAE table of
+ * the remote Controller in a reflector role. If the remote Controller does not
+ * support non-zero Frequency Actuation Error in the reflector role, the
+ * Controller shall return the error code Unsupported Feature (0x11).
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_WriteRemoteFAETable( uint16 ConnHandle, void* reflectorFaeTable)
+{
+  uint8 rtnParam[3];
+  rtnParam[0] = MAP_LL_CS_WriteRemoteFAETable(ConnHandle, (int8*)reflectorFaeTable);
+  rtnParam[1] = LO_UINT16(ConnHandle);
+  rtnParam[2] = HI_UINT16(ConnHandle);
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_CS_WRITE_REMOTE_FAE_TABLE,
+                                sizeof(rtnParam),
+                                (uint8*)rtnParam );
+
+    return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to create a new CS configuration in the local and remote
+ * controller.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_CreateConfig( uint16 connHandle,
+                                    uint8 configID,
+                                    uint8 createContext,
+                                    uint8* pBufConfig )
+{
+  hciStatus_t  status;
+  csConfigurationSet_t csConfig = {0};
+  csConfig.configId = configID;
+  csConfig.mainMode = *pBufConfig++;
+  csConfig.subMode = *pBufConfig++;
+  csConfig.mainModeMinSteps = *pBufConfig++;
+  csConfig.mainModeMaxSteps = *pBufConfig++;
+  csConfig.mainModeRepetition = *pBufConfig++;
+  csConfig.modeZeroSteps = *pBufConfig++;
+  csConfig.role = *pBufConfig++;
+  csConfig.rttType = *pBufConfig++;
+  csConfig.csSyncPhy = *pBufConfig++;
+  (void)MAP_osal_memcpy(&csConfig.channelMap, pBufConfig, CS_CHM_SIZE);
+  pBufConfig = pBufConfig+CS_CHM_SIZE;
+  csConfig.chMRepetition = *pBufConfig++;
+  csConfig.chSel = *pBufConfig++;
+  csConfig.ch3cShape = *pBufConfig++;
+  csConfig.ch3CJump = *pBufConfig++;
+  csConfig.companionSignal = *pBufConfig++;
+
+  status = MAP_LL_CS_CreateConfig(connHandle, &csConfig, createContext);
+
+  MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_CREATE_CONFIG );
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to remove a CS configuration from the local controller.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_RemoveConfig( uint16 connHandle, uint8 configID )
+{
+  hciStatus_t  status = MAP_LL_CS_RemoveConfig(connHandle, configID);
+
+  MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_REMOVE_CONFIG );
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to to update the channel classification based on its
+ * local information.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_SetChannelClassification( uint8* channelClassification )
+{
+  uint8 rtnParam;
+
+  rtnParam = MAP_LL_CS_SetChannelClassification( channelClassification );
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_CS_SET_CHANNEL_CLASSIFICATION,
+                                sizeof(rtnParam),
+                                &rtnParam );
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to set the parameters for the scheduling of one or more
+ * CS procedures by the local Controller with the remote device.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_SetProcedureParameters( uint16 connHandle,
+                                              uint8 configID,
+                                              uint8* pParams )
+{
+  uint8 rtnParam[3];
+  csProcedureParams_t csProcedureParams = {0};
+  MAP_osal_memcpy(&csProcedureParams, pParams, 20);
+
+  rtnParam[0] = MAP_LL_CS_SetProcedureParameters(connHandle, configID, &csProcedureParams);
+  rtnParam[1] = LO_UINT16(connHandle);
+  rtnParam[2] = HI_UINT16(connHandle);
+
+  MAP_HCI_CommandCompleteEvent( HCI_LE_CS_SET_PROCEDURE_PARAMS,
+                                sizeof(rtnParam),
+                                rtnParam );
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to enable or disable the scheduling of CS procedures
+ * by the local Controller with the remote device
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_ProcedureEnable( uint16 connHandle,
+                                        uint8 enable,
+                                        uint8 configID )
+{
+  hciStatus_t  status = MAP_LL_CS_ProcedureEnable(connHandle, enable, configID);
+
+  MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_PROCEDURE_ENABLE );
+
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * This BT API is used to start a CS test where the DUT (Device Under Test) is
+ * placed in the role of either the initiator or reflector.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_Test(void)
+{
+  // TODO: this will be completed at a later stage of the implementation
+  return( HCI_SUCCESS );
+}
+
+/*******************************************************************************
+ * The HCI_LE_CS_Test End command is used to stop any CS test that is in
+ * progress.
+ *
+ * Public function defined in hci.h.
+ */
+hciStatus_t HCI_LE_CS_TestEnd(void)
+{
+  // TODO: this will be completed at a later stage of the implementation
+  return( HCI_SUCCESS );
+}
+
 /***************************************************************************************************
  */

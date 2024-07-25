@@ -28,18 +28,12 @@
 #include "ll.h"
 #include "map_direct.h"
 
-#ifdef CC33xx
-#include "icall_porting.h"
-#include "npi_ble.h"
-#include "npi_task.h"
-#else
-#include "util.h"
-
+#ifndef CONFIG_ZEPHYR
 #if (defined(HCI_TL_FULL) || defined(PTM_MODE))
 #include "inc/npi_ble.h"
 #include "inc/npi_task.h"
 #endif // (defined(HCI_TL_FULL) || defined(PTM_MODE))
-#endif // CC33xx
+#endif //CONFIG_ZEPHYR
 
 #ifndef CONTROLLER_ONLY
 #include "gap_internal.h"
@@ -438,6 +432,7 @@ static hciEntry_t hciTranslationTable[] =
   HCI_TRANSLATION_ENTRY(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,          IDX_CAST IDX_HCI_LE_ReadLocalSupportedFeaturesCmd,         HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_LE_READ_BUFFER_SIZE,                       IDX_CAST IDX_HCI_LE_ReadBufSizeCmd,                        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_LE_SET_RANDOM_ADDR,                        IDX_CAST IDX_HCI_LE_SetRandomAddressCmd,                   HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_SET_HOST_FEATURE,                       IDX_CAST IDX_HCI_LE_SetHostFeature,                        HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
   HCI_TRANSLATION_ENTRY(HCI_LE_READ_ADV_CHANNEL_TX_POWER,              IDX_CAST IDX_HCI_LE_ReadAdvChanTxPowerCmd,                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
@@ -574,7 +569,6 @@ static hciEntry_t hciTranslationTable[] =
 #endif
 
   // Vendor Specific HCI Commands
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER,                          IDX_CAST IDX_HCI_EXT_SetTxPowerCmd,                        HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER_DBM,                      IDX_CAST IDX_HCI_EXT_SetTxPowerDbmCmd,                     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_BUILD_REVISION,                        IDX_CAST IDX_HCI_EXT_BuildRevisionCmd,                     HU8,     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_DELAY_SLEEP,                           IDX_CAST IDX_HCI_EXT_DelaySleepCmd,                        HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
@@ -590,7 +584,6 @@ static hciEntry_t hciTranslationTable[] =
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_BDADDR,                            IDX_CAST IDX_HCI_EXT_SetBDADDRCmd,                         HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_RESET_SYSTEM,                          IDX_CAST IDX_HCI_EXT_ResetSystemCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_LOCAL_SUPPORTED_FEATURES,          IDX_CAST IDX_HCI_EXT_SetLocalSupportedFeaturesCmd,         H8B,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER,                  IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerCmd,                  HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER_DBM,              IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_RX_GAIN,                           IDX_CAST IDX_HCI_EXT_SetRxGainCmd,                         HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_EXTEND_RF_RANGE,                       IDX_CAST IDX_HCI_EXT_ExtendRfRangeCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
@@ -639,6 +632,21 @@ static hciEntry_t hciTranslationTable[] =
   HCI_TRANSLATION_ENTRY(HCI_EXT_GET_TX_STATS,                          IDX_CAST IDX_HCI_EXT_GetTxStatisticsCmd,                   HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_GET_COEX_STATS,                        IDX_CAST IDX_HCI_EXT_GetCoexStatisticsCmd,                 HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
 
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES,   IDX_CAST IDX_HCI_LE_CS_ReadLocalSupportedCapabilities,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES,  IDX_CAST IDX_HCI_LE_CS_ReadRemoteSupportedCapabilities,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_CREATE_CONFIG,                       IDX_CAST IDX_HCI_LE_CS_CreateConfig,                       HU16,    HU8,     HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_REMOVE_CONFIG,                       IDX_CAST IDX_HCI_LE_CS_RemoveConfig,                       HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SECURITY_ENABLE,                     IDX_CAST IDX_HCI_LE_CS_SecurityEnable,                     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_DEFAULT_SETTINGS,                IDX_CAST IDX_HCI_LE_CS_SetDefaultSettings,                 HU16,    HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_LOCAL_FAE_TABLE,                IDX_CAST IDX_HCI_LE_CS_ReadLocalFAETable,                  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_REMOTE_FAE_TABLE,               IDX_CAST IDX_HCI_LE_CS_ReadRemoteFAETable,                 HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_WRITE_REMOTE_FAE_TABLE,              IDX_CAST IDX_HCI_LE_CS_WriteRemoteFAETable,                HU16,    HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_CHANNEL_CLASSIFICATION,          IDX_CAST IDX_HCI_LE_CS_SetChannelClassification,           HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_PROCEDURE_PARAMS,                IDX_CAST IDX_HCI_LE_CS_SetProcedureParameters,             HU16,    HU8,  HU8PTR,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_PROCEDURE_ENABLE,                    IDX_CAST IDX_HCI_LE_CS_ProcedureEnable,                    HU16,    HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
+  // The next two commands will be completed at later stage of the implementation.
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_TEST,                                IDX_CAST IDX_HCI_LE_CS_Test,                               HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
+  HCI_TRANSLATION_ENTRY(HCI_LE_CS_TEST_END,                            IDX_CAST IDX_HCI_LE_CS_TestEnd,                            HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   // LL Test Mode
 #ifdef LL_TEST_MODE
   HCI_TRANSLATION_ENTRY(HCI_EXT_LL_TEST_MODE,                          IDX_CAST IDX_HCI_EXT_LLTestModeCmd,                        HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP)
@@ -669,9 +677,7 @@ static hciEntry_t hciTranslationTable[] =
   // LE Commands - General
   HCI_TRANSLATION_ENTRY(HCI_READ_BDADDR,                               IDX_CAST IDX_HCI_ReadBDADDRCmd,                            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_BDADDR,                            IDX_CAST IDX_HCI_EXT_SetBDADDRCmd,                         HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER,                          IDX_CAST IDX_HCI_EXT_SetTxPowerCmd,                        HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER_DBM,                      IDX_CAST IDX_HCI_EXT_SetTxPowerDbmCmd,                     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER,                  IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerCmd,                  HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER_DBM,              IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_EXTEND_RF_RANGE,                       IDX_CAST IDX_HCI_EXT_ExtendRfRangeCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
   HCI_TRANSLATION_ENTRY(HCI_EXT_HALT_DURING_RF,                        IDX_CAST IDX_HCI_EXT_HaltDuringRfCmd,                      HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
@@ -735,34 +741,36 @@ uint8_t legacyCmdStatusScan = HCI_LEGACY_CMD_STATUS_UNDEFINED;
 //                                         skip.
 uint8 isDataLenLessThanMaxDataSize( hci_tl_advSet_t *pAdvSet )
 {
-    uint8 arrayIntMax[4];
+    uint32 intMax;
+    uint16 eventprops;
 
-    // adv set exists
+    // Check that adv set exists
     if( pAdvSet == NULL )
     {
       return TRUE;
     }
 
-    arrayIntMax[3] = 0;
-    osal_memcpy( &arrayIntMax, &pAdvSet->advCmdParams.primIntMax, 3);
+    // Construct integer variables that contains max interval and event properties
+    intMax = BUILD_UINT32(pAdvSet->advCmdParams.primIntMax[0], pAdvSet->advCmdParams.primIntMax[1], pAdvSet->advCmdParams.primIntMax[2], 0);
+    eventprops = BUILD_UINT16(pAdvSet->advCmdParams.eventProps[0], pAdvSet->advCmdParams.eventProps[1]);
 
-    //TO_DO:
-    //Need to check the rate of sending data
+    // TO_DO:
+    // Need to check the rate of sending data
     // with consider the parameter: max_interval,
     //                              properties,
     //                              primary_PHY,
     //                              primary_PHY,
     //                              skip.
-    // to check if the device can advertise the data.
+    // To check if the device can advertise the data.
 
-    //For now this function check only specific case that required
+    // For now this function check only specific case that required
     // in the spec (test: HCI/DDI/BI-62-C), only to pass hci qual.
 
-    if ( ( pAdvSet->advCmdData.dataLen >= 0xFB )                &&   // dataLen >=251
-         ( *(uint16*)(pAdvSet->advCmdParams.eventProps) == 0 )  &&   // properties = 0
-         ( pAdvSet->advCmdParams.secMaxSkip == 0 )              &&   // skip = 0
-         ( pAdvSet->advCmdParams.primPhy == AE_PHY_CODED )      &&   // primary_PHY = CODED
-         ( *(int*)arrayIntMax == 0x20 )                              // max_interval = 32(0x20)
+    if ( ( pAdvSet->advCmdData.dataLen >= 0xFB )              &&   // dataLen >=251
+         ( eventprops == 0 )                                  &&   // properties = 0
+         ( pAdvSet->advCmdParams.secMaxSkip == 0 )            &&   // skip = 0
+         ( pAdvSet->advCmdParams.primPhy == AE_PHY_CODED )    &&   // primary_PHY = CODED
+         ( intMax == 0x20 )                                        // max_interval = 32(0x20)
        )
     {
       return FALSE;
@@ -900,7 +908,7 @@ static uint8     hci_tl_isValidRandomAddressForAdv (hci_tl_advSet_t *pAdvSet);
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 static void      hci_tl_setDefaultScanParams (aeSetScanParamCmd_t *pcmdScanParams);
-static uint8     hci_tl_isValidRandomAddressForScan (aeSetScanParamCmd_t hci_tl_cmdScanParams);
+static uint8     hci_tl_isValidRandomAddressForScan (aeSetScanParamCmd_t *cmdScanParams);
 #ifdef LEGACY_CMD
 static void      hci_tl_legacyScanCback(uint8_t event, aeExtAdvRptEvt_t *extAdvRpt);
 static void      hci_tl_legacyScanEventCallbackProcess(hci_tl_ScanEvtCallback_t *extAdvRpt);
@@ -1214,9 +1222,10 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
             // Copy the raw hci data
             memcpy(pCmdPkt->pData, pHciPkt, cmdPktTotalLen);
 
+#if (defined(HCI_TL_FULL) || defined(PTM_MODE))
             // Handoff the packet to the controller
             HCI_TL_SendCommandPkt(pCmdPkt);
-
+#endif
             // Free the allocated packet and its pData
             ICall_freeMsg(pCmdPkt);
 
@@ -2087,7 +2096,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
 
             // Check if HCI_LE_SetRandomAddressCmd() function not called before
             // while the own address type is random.
-            if ( hci_tl_isValidRandomAddressForScan(hci_tl_cmdScanParams) == FALSE )
+            if ( hci_tl_isValidRandomAddressForScan(&hci_tl_cmdScanParams) == FALSE )
             {
                 status = LL_STATUS_ERROR_BAD_PARAMETER;
                 HCI_CommandCompleteEvent(cmdOpCode,
@@ -2218,11 +2227,14 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
 #ifndef CONTROLLER_ONLY
                 pAdvSet->advCmdParams.zeroDelay = FALSE;
 #endif
+
                 // Check if data len is smaller from the max data len,
                 // max data len configure as function of:  max_interval,
                 //                                         properties,
                 //                                         primary_PHY,
                 //                                         skip.
+                // For now this part checks only specific case that required
+                // in the spec (test: HCI/DDI/BI-62-C), only to pass hci qual.
                 if ( isDataLenLessThanMaxDataSize( pAdvSet ) == FALSE )
                 {
                   rsp[0] = LL_STATUS_ERROR_PACKET_TOO_LONG;
@@ -2641,7 +2653,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
 
             // Check if HCI_LE_SetRandomAddressCmd() function not called before
             // while the own address type is random.
-            if ( hci_tl_isValidRandomAddressForScan(hci_tl_cmdScanParams) == FALSE )
+            if ( hci_tl_isValidRandomAddressForScan(&hci_tl_cmdScanParams) == FALSE )
             {
                 status = LL_STATUS_ERROR_BAD_PARAMETER;
                 HCI_CommandCompleteEvent(cmdOpCode,
@@ -2881,11 +2893,11 @@ static void hci_tl_legacyScanCback(uint8_t event, aeExtAdvRptEvt_t *extAdvRpt)
  * check that if the own address type for scan is random, HCI_LE_SetRandomAddressCmd was called.
  * If the own address Type is not random return TRUE.
  */
-uint8 hci_tl_isValidRandomAddressForScan (aeSetScanParamCmd_t hci_tl_cmdScanParams)
+uint8 hci_tl_isValidRandomAddressForScan (aeSetScanParamCmd_t *cmdScanParams)
 {
   // If the own address Type is not random return TRUE
-  if ((hci_tl_cmdScanParams.ownAddrType != LL_DEV_ADDR_TYPE_RANDOM) &&
-      (hci_tl_cmdScanParams.ownAddrType != LL_DEV_ADDR_TYPE_RANDOM_ID))
+  if ((cmdScanParams->ownAddrType != LL_DEV_ADDR_TYPE_RANDOM) &&
+      (cmdScanParams->ownAddrType != LL_DEV_ADDR_TYPE_RANDOM_ID))
   {
     return TRUE;
   }
