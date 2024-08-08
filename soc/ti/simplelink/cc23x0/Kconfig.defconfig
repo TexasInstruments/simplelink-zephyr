@@ -19,7 +19,7 @@ if SOC_SERIES_CC23X0
 			default 48000000
 
 		config SYS_CLOCK_TICKS_PER_SEC
-			default 1000
+			default 1000000
 	endif
 
 	config NUM_IRQS
