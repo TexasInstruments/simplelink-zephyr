@@ -31,7 +31,7 @@
 #include <inc/hw_evtsvt.h>
 
 /* Kernel tick period in microseconds (same timebase as systim) */
-#define TICK_PERIOD_MICRO_SEC (1000000 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#define TICK_PERIOD_SYS (USEC_PER_SEC / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
 /*
  * Max number of systim ticks into the future
@@ -54,6 +54,8 @@ static uint32_t last_systim_count;
 
 static void systim_isr(const void *arg);
 static int sys_clock_driver_init(void);
+static uint32_t sys_clock_elapsed_ticks(uint32_t current, uint32_t last);
+
 
 /*
  * Set system clock timeout.
@@ -67,10 +69,18 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	if (ticks != K_TICKS_FOREVER) {
 		/* Get current value as early as possible */
 		uint32_t nowTick = HWREG(SYSTIM_BASE + SYSTIM_O_TIME1U);
-		uint32_t timeout = ticks * TICK_PERIOD_MICRO_SEC;
+
+		/* Round down to nearest multiple of TICK_PERIOD_SYS.
+		 * That is, round down to the last tick
+		 */
+		nowTick -= nowTick % TICK_PERIOD_SYS;
+
+		uint32_t timeout = ticks * TICK_PERIOD_SYS;
 
 		if (timeout > SYSTIM_TIMEOUT_MAX) {
 			timeout = SYSTIM_TIMEOUT_MAX;
+			/* Make sure timeout is a multiple of TICK_PERIOD_SYS */
+			timeout -= timeout % TICK_PERIOD_SYS;
 		}
 		/* This should wrap around */
 		HWREG(SYSTIM_BASE + SYSTIM_O_CH0CC) = nowTick + timeout;
@@ -83,15 +93,9 @@ uint32_t sys_clock_elapsed(void)
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	/* Get current value as early as possible */
 	uint32_t current_systim_count = HWREG(SYSTIM_BASE + SYSTIM_O_TIME1U);
-	uint32_t elapsed_systim;
 
-	if (current_systim_count >= last_systim_count) {
-		elapsed_systim = current_systim_count - last_systim_count;
-	} else {
-		elapsed_systim = (0xFFFFFFFF - last_systim_count) + current_systim_count;
-	}
+	int32_t elapsed_ticks = sys_clock_elapsed_ticks(current_systim_count, last_systim_count);
 
-	int32_t elapsed_ticks = elapsed_systim / TICK_PERIOD_MICRO_SEC;
 	k_spin_unlock(&lock, key);
 	return elapsed_ticks;
 }
@@ -106,17 +110,8 @@ void systim_isr(const void *arg)
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	/* Get current value as early as possible */
 	uint32_t current_systim_count = HWREG(SYSTIM_BASE + SYSTIM_O_TIME1U);
-	uint32_t elapsed_systim;
-
-	if (current_systim_count >= last_systim_count) {
-		elapsed_systim = current_systim_count - last_systim_count;
-	} else {
-		elapsed_systim = (0xFFFFFFFF - last_systim_count) + current_systim_count;
-	}
-
-	int32_t elapsed_ticks = elapsed_systim / TICK_PERIOD_MICRO_SEC;
+	uint32_t elapsed_ticks = sys_clock_elapsed_ticks(current_systim_count, last_systim_count);
 	k_spin_unlock(&lock, key);
-
 	sys_clock_announce(elapsed_ticks);
 
 	last_systim_count = current_systim_count;
@@ -160,6 +155,16 @@ static int sys_clock_driver_init(void)
 	irq_enable(CPUIRQ16_IRQn);
 
 	return 0;
+}
+
+static uint32_t sys_clock_elapsed_ticks(uint32_t current, uint32_t last)
+{
+	if (current >= last) {
+		return (current / TICK_PERIOD_SYS) - (last / TICK_PERIOD_SYS);
+	} else {
+		return ((0xFFFFFFFF - last) / TICK_PERIOD_SYS) +
+		(current / TICK_PERIOD_SYS);
+	}
 }
 
 SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2, CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);
