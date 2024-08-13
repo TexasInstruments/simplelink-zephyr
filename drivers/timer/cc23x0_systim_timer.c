@@ -20,7 +20,11 @@
 #include <zephyr/spinlock.h>
 #include <zephyr/sys_clock.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/spinlock.h>
 
+#include <ti/drivers/dpl/HwiP.h>
+
+#include <inc/hw_ints.h>
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
 #include <inc/hw_systim.h>
@@ -43,6 +47,8 @@
 /* Set systim interrupt to lowest priority */
 #define SYSTIM_ISR_PRIORITY 3U
 
+static struct k_spinlock lock;
+
 /* Keep track of systim counter at previous announcement to the kernel */
 static uint32_t last_systim_count;
 
@@ -56,6 +62,7 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 {
 	ARG_UNUSED(idle);
 
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	/* If timeout is necessary */
 	if (ticks != K_TICKS_FOREVER) {
 		/* Get current value as early as possible */
@@ -68,10 +75,12 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 		/* This should wrap around */
 		HWREG(SYSTIM_BASE + SYSTIM_O_CH0CC) = nowTick + timeout;
 	}
+	k_spin_unlock(&lock, key);
 }
 
 uint32_t sys_clock_elapsed(void)
 {
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	/* Get current value as early as possible */
 	uint32_t current_systim_count = HWREG(SYSTIM_BASE + SYSTIM_O_TIME1U);
 	uint32_t elapsed_systim;
@@ -83,7 +92,7 @@ uint32_t sys_clock_elapsed(void)
 	}
 
 	int32_t elapsed_ticks = elapsed_systim / TICK_PERIOD_MICRO_SEC;
-
+	k_spin_unlock(&lock, key);
 	return elapsed_ticks;
 }
 
@@ -94,6 +103,7 @@ uint32_t sys_clock_cycle_get_32(void)
 
 void systim_isr(const void *arg)
 {
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	/* Get current value as early as possible */
 	uint32_t current_systim_count = HWREG(SYSTIM_BASE + SYSTIM_O_TIME1U);
 	uint32_t elapsed_systim;
@@ -105,6 +115,7 @@ void systim_isr(const void *arg)
 	}
 
 	int32_t elapsed_ticks = elapsed_systim / TICK_PERIOD_MICRO_SEC;
+	k_spin_unlock(&lock, key);
 
 	sys_clock_announce(elapsed_ticks);
 
