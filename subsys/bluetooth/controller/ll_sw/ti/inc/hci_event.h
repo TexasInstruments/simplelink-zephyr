@@ -418,11 +418,11 @@ typedef struct hci_c2h_cbs_t
 /*******************************************************************************
  * @fn          HCI_ControllerToHostRegisterCb
  *
- * @brief       This function register callback function to HCI events
+ * @brief       This function registers Host callbacks for HCI module
  *
  * input parameters
  *
- * @param       hci_c2h_cbs_t cb - callback function.
+ * @param       hci_c2h_cbs_t cbs - pointer to the callbacks structure.
  *
  * output parameters
  *
@@ -430,7 +430,27 @@ typedef struct hci_c2h_cbs_t
  *
  * @return      SUCCESS / FAILURE.
  */
-uint8 HCI_ControllerToHostRegisterCb( hci_c2h_cbs_t cbs );
+uint8 HCI_ControllerToHostRegisterCb( const hci_c2h_cbs_t *cbs );
+
+/*******************************************************************************
+ * @fn          HCI_CommandStatusCb
+ *
+ * @brief       This function is a wrapper for a callback provided by the Host.
+ *              It was created to align the typecasts of the HCI_TL_CommandStatusCB_t
+ *              and the hci2HostCBs.send (the return type is different).
+ *
+ * input parameters
+ *
+ * @param       pBuf - Pointer to an HCI packet.
+ * @param       len  - Lenght of the HCI packet.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      void
+ */
+void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len);
 
 /*******************************************************************************
  * @fn          HCI_SendEventToHost

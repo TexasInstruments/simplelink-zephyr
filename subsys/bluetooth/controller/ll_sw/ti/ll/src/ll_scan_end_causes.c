@@ -401,14 +401,26 @@ void llPeriodicScan_PostProcess( void )
     }
     else
     {
-      // drift time in RAT ticks per event (no drift in case drift learning in progress)
+      // Drift time in RAT ticks per event (no drift in case drift learning in progress)
       int16 drift = (pPeriodicScan->driftLearnCounter <= PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)?0:pPeriodicScan->driftFactor;
 
-      // update next sync indication receive time
+      // Update next sync indication receive time
       if (pPeriodicScan->numMissed == 0)
       {
-        pPeriodicScan->rfCmd.common.timing.absStartTime += ((pPeriodicScan->syncCmd.skip + 1) * ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift));
-        // update event counter
+
+        // Calculate the SCA drift using the advertiser SCA and the device SCA
+        uint32 scaDrift = MAP_llCalcPeriodicScaDriftPerInterval(pPeriodicScan->syncInfo.sca, pPeriodicScan->interval);
+
+        // Add the SCA value and the drift value that calculated by stack and multiple that in the number of skips
+        pPeriodicScan->rfCmd.common.timing.absStartTime += (pPeriodicScan->syncCmd.skip + 1) *
+                                                           ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) - scaDrift + drift);
+
+        // When using big skip value, the device will start early due to big drift that calculate by the SCA factor,
+        // the scanner could lose the interval, so increase the RX window according to the skip value size
+        pPeriodicScan->rfCmd.common.timing.relGracefulStopTime = PER_SUCCESS_SOFTSTOPTIME_DEFAULT +
+                                                                 (pPeriodicScan->syncCmd.skip * PER_SOFTSTOP_ADDITION_PER_SKIP);
+
+        // Update event counter
         pPeriodicScan->eventCounter += (pPeriodicScan->syncCmd.skip + 1);
       }
       else

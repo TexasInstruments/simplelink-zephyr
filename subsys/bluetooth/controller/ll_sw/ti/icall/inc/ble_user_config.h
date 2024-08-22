@@ -259,6 +259,17 @@ extern "C"
   #define L2CAP_NUM_CO_CHANNELS         8
 #endif
 
+// Use dynamic filter list when the device role is advertiser only and number of bond is greater than 5
+#ifndef USE_DFL
+#if defined(DeviceFamily_CC27XX) || defined(DeviceFamily_CC23X0R5)
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG)) && !(CTRL_CONFIG & (SCAN_CFG | INIT_CFG)) // (If the device role is advertiser only)
+#if defined(GAP_BOND_MGR) && (GAP_BONDINGS_MAX > 5) // If number of bondings greater than 5
+    #define USE_DFL
+#endif // (advertiser only)
+#endif // (number of bondings greater than 5)
+#endif // (supported devices)
+#endif // !USE_DFL
+
 #ifndef MAX_NUM_AL_ENTRIES // MAX_NUM_AL_ENTRIES
 #ifdef CC23X0 // CC23X0
 #if defined(USE_DFL) && defined(GAP_BOND_MGR) // (Radio core using dynamic filter list)

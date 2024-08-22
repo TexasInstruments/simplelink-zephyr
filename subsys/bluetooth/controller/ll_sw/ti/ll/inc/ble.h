@@ -564,6 +564,7 @@ extern RCL_CmdBle5TxTest     txTestCmd;
  * APIs
  */
 extern void          llAddTxDataEntry( void *, void * );
+extern void          llClearTxDataQueue(txDataQ_t *);
 extern void          llProcessPeripheralControlPacket( llConnState_t *, uint8 * );
 extern void          llProcessCentralControlPacket( llConnState_t *, uint8 * );
 extern void          llMoveTempTxDataEntries( llConnState_t * );

@@ -4221,7 +4221,7 @@ hciStatus_t HCI_LE_SetHostFeature( uint8 bitNumber,
   // Check if a legacy/extended command mixing is allowed
   if(MAP_checkLegacyHCICmdStatus(HCI_LE_READ_PERIODIC_ADV_LIST_SIZE))
   {
-    rtnParam[0] = LL_STATUS_ERROR_COMMAND_DISALLOWED;
+    rtnParam[0] = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
   }
   else
   {

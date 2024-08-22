@@ -29,6 +29,7 @@
 #include "osal_tasks.h"
 #include "osal_pwrmgr.h"
 #include "osal_clock.h"
+#include "map_direct.h"
 
 #include "onboard.h"
 
@@ -1456,6 +1457,11 @@ void osal_timer_init(uint_least32_t tickPeriod, uint_least32_t osalMaxMsecs )
  */
 void osal_start_system( void )
 {
+
+  /* The Stack Initialization has completed.
+   * Notify the Synchronous Task Create */
+  MAP_bleStack_initCompleteNotify(SUCCESS);
+
 #ifdef USE_ICALL
   /* Kick off timer service in order to allocate resources upfront.
    * The first timeout is required to schedule next OSAL timer event

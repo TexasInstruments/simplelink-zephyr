@@ -230,6 +230,7 @@
 #define MAP_llAtLeastTwoChans                                        llAtLeastTwoChans
 #define MAP_llCBTimer_AptoExpiredCback                               llCBTimer_AptoExpiredCback
 #define MAP_llCalcScaFactor                                          llCalcScaFactor
+#define MAP_llCalcPeriodicScaDriftPerInterval                        llCalcPeriodicScaDriftPerInterval
 #define MAP_llCheckForLstoDuringSL                                   llCheckForLstoDuringSL
 #define MAP_llCheckRxBuffers                                         llCheckRxBuffers
 #define MAP_llCheckAcceptListUsage                                   llCheckAcceptListUsage
@@ -1275,6 +1276,7 @@ extern void  MAP_llAlignToNextEvent( void * );
 extern uint8 MAP_LL_SetSecAdvChanMap( uint8 * );
 extern uint8 MAP_LL_ChanMapUpdate( uint8 *, uint16 );
 extern uint8 MAP_llConnExists( uint8 *, uint8 );
+extern void  MAP_llClearAdvSets( void );
 
 /*******************************************************************************
  * RTLS hooks
@@ -1448,6 +1450,7 @@ extern uint8 MAP_gapAdv_handleAdvHciCmdComplete( void *pMsg );
 extern void  MAP_llInitFeatureSet( void );
 extern uint8 MAP_llAddExtAdvPacketToTx(void *pAdvSet, uint8 pktType, uint8 payloadLen);
 extern uint8 MAP_llBuildExtAdvPacket(void *pPkt, void *comPkt, uint8 pktType, uint8 payloadLen, uint8 peerAddrType, uint8 ownAddrType);
+extern uint8 MAP_llupdateAuxHdrPacket(void *pAdvSet);
 extern uint8 MAP_llAddPeriodicAdvPacketToTx(void *pPeriodicAdv, uint8 pktType, uint8 payloadLen);
 
 /*******************************************************************************
@@ -1575,6 +1578,12 @@ void MAP_llPostSetupCtrlPktPeri(llConnState_t *connPtr, uint8_t ctrlPkt);
 void MAP_llPostSetupCtrlPktCent(llConnState_t *connPtr, uint8_t ctrlPkt);
 
 /*******************************************************************************
+ * BLE Scheduler preemption
+ */
+
+uint8 MAP_llCheckRfCmdPreemption( uint32 endTime ,uint8 priority);
+
+/*******************************************************************************
  * Channel Sounding
  */
 
@@ -1614,6 +1623,7 @@ extern void MAP_llCsSubevent_PostProcess(void);
 extern void MAP_llCsSteps_PostProcess(void);
 extern void *MAP_llScheduler_getHandle(uint16);
 extern uint32 MAP_llScheduler_getSwitchTime(uint16);
+extern void MAP_bleStack_initCompleteNotify(int status);
 
 /*******************************************************************************/
 #endif // MAP_DIRECT_H

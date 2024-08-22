@@ -308,6 +308,10 @@ void llInit_TaskConnect( void )
   txDataQ[connPtr->connId].rfDataBuffers = &linkParam[connPtr->connId].txBuffers;
 
   connPtr->pTxDataEntryQ = (void *) &txDataQ[connPtr->connId];
+
+  /* Clear the pTxDataEntryQ */
+  llClearTxDataQueue(connPtr->pTxDataEntryQ);
+
   connPtr->pRxDataEntryQ = (void *) &linkParam[connPtr->connId].rxBuffers;
 
   // set access address

@@ -236,6 +236,10 @@
 
 #define AE_EXT_HDR_ADV_TYPE_FIELD_SIZE                      1 // 6 bits extended header size and 2 bits for the adv type
 
+// Periodic soft stop Time values - gracefulStopTime when using RCL
+#define PER_SUCCESS_SOFTSTOPTIME_DEFAULT                 RAT_TICKS_IN_10MS
+#define PER_SOFTSTOP_ADDITION_PER_SKIP                   RAT_TICKS_IN_140US   // increase the soft stop time for each skip
+
 // Auxilary Offset Units
 #define AE_AUX_OFFSET_UNITS_30_US                           0
 #define AE_AUX_OFFSET_UNITS_300_US                          1
@@ -386,9 +390,16 @@
 #define LE_COUNT_ALL_ADV_SETS                               0
 #define LE_COUNT_ENABLED_ADV_SETS                           1
 
-// parameter to indicate if common data operation is for Adv or Scan Response
+// Parameters to indicate if common data set operation is for Adv, Scan Response or update during Adv
 #define LE_AE_EXT_DATA_CMD_ADV                              0
 #define LE_AE_EXT_DATA_CMD_SCAN_RSP                         1
+#define LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE                2
+#define LE_AE_EXT_DATA_CMD_SCAN_LAST_CMD_DONE               3
+
+// Flags to identify which data was updated
+#define LE_AE_EXT_DATA_NO_PENDING                           0
+#define LE_AE_EXT_DATA_ADV_PENDING                          1
+#define LE_AE_EXT_DATA_SCAN_RSP_PENDING                     2
 
 // Indicate that the adv data was not changed during advertising
 #define EXT_DATA_NO_UPDATE_DURING_ADV                       0xFF
@@ -1333,6 +1344,8 @@ struct advSet_t
   uint8           fragLen;                        // length of fragment
   uint8           lastFragLen;                    // length of last fragment
   uint8           numFrags;                       // number of advertising data fragments
+  aeSetDataCmd_t  *pPendingData;                  // pointer to the ext data that is pending while adv is on
+  uint8           pendingDataUpdate;              // flag to signal if there is a pending data update
 #endif
   uint16          dataLen;                        // original length of data
   uint8          *pData;                          // pointer to raw data
@@ -1735,6 +1748,7 @@ extern llStatus_t    llSetExtendedAdvParams( advSet_t *, aeSetParamCmd_t * );
 #endif
 extern void          llSetRfCmdPreemptionParams( uint32 );
 extern uint8         llGetRfCmdPreemptionEnable( void );
+extern void          llClearAdvSets( void );
 
 /*******************************************************************************
  * LL Internal API
@@ -1749,6 +1763,7 @@ extern void          llAllocRfMem( advSet_t * );
 extern llStatus_t    llSetupExtAdv( advSet_t * );
 extern llStatus_t    llBuildExtAdvPacket(aePacket *pPkt, comExtPktFormat_t *comPkt, uint8 pktType, uint8 payloadLen, uint8 peerAddrType, uint8 ownAddrType);
 extern llStatus_t    llAddExtAdvPacketToTx(advSet_t *pAdvSet, uint8 pktType, uint8 payloadLen);
+extern llStatus_t    llupdateAuxHdrPacket(advSet_t *pAdvSet);
 
 extern llStatus_t    llSetupExtAdvLegacy( advSet_t * );
 extern llStatus_t    llGetNextOrPreviousExtScanChannelIndex( uint8 );
@@ -1788,7 +1803,7 @@ extern void          llSetPeriodicScanChmapUpdate( llPeriodicScanSet_t *, uint8 
 extern void          llSetPeriodicChanMap( llPeriodicChanMap_t *, uint8 * );
 extern uint8         llSetNextPeriodicAdvChan( llPeriodicChanMap_t *, uint32 , uint16  );
 #endif
-extern extScanReportState_t *llManageExtScanStateList(uint8 , uint8 , uint32 );
+extern extScanReportState_t *llManageExtScanStateList(uint8 , uint8 , uint32 , uint8 );
 extern uint8         llCompareSecondaryPrimaryTasksQoSParam( uint8 , taskInfo_t *, llConnState_t * );
 extern uint32        llGetSecondaryTaskEndTime( taskInfo_t *, uint32 , llConnState_t *);
 extern uint8         llCheckRfCmdPreemption( uint32, uint8 );

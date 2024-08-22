@@ -28,13 +28,6 @@
 #include "ll.h"
 #include "map_direct.h"
 
-#ifndef CONFIG_ZEPHYR
-#if (defined(HCI_TL_FULL) || defined(PTM_MODE))
-#include "inc/npi_ble.h"
-#include "inc/npi_task.h"
-#endif // (defined(HCI_TL_FULL) || defined(PTM_MODE))
-#endif //CONFIG_ZEPHYR
-
 #ifndef CONTROLLER_ONLY
 #include "gap_internal.h"
 #include "sm_internal.h"
@@ -1183,9 +1176,9 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
       if ((pktType == HCI_CMD_PACKET) || (pktType == HCI_EXTENDED_CMD_PACKET))
       {
         hciPacket_t *pCmdPkt = NULL;
-        uint8 cmdPktHdrLen = 0;
-        uint16 cmdPktParamLen = 0;
-        uint16 cmdPktTotalLen = 0;
+        uint8  cmdPktHdrLen   = 0;      // size of the HCI command header
+        uint16 cmdPktParamLen = 0;      // size of the HCI command payload
+        uint16 cmdPktTotalLen = 0;      // size of whole pHciPkt, including the HCI data header
 
         // Parse the packet len
         if (pktType == HCI_CMD_PACKET)
@@ -1193,7 +1186,7 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
           cmdPktHdrLen = HCI_CMD_MIN_LENGTH;
           cmdPktParamLen = pHciPkt[3];
         }
-        else
+        else // Extended command packet
         {
           cmdPktHdrLen = HCI_CMD_MIN_LENGTH + 1;
           cmdPktParamLen = BUILD_UINT16(pHciPkt[3], pHciPkt[4]);
@@ -1202,10 +1195,16 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
         // Set command packet total length
         cmdPktTotalLen = cmdPktHdrLen + cmdPktParamLen;
 
-        // Validate the packet length
+        // Verify that the input packet length (pktLen) is equal to the
+        // calculated packet length (cmdPktTotalLen).
+        // cmdPktHdrLen   is the size of the HCI command header
+        // cmdPktParamLen is the size of the HCI command payload
+        // cmdPktTotalLen is the whole pHciPkt size, including the HCI data header
         if (cmdPktTotalLen == pktLen)
         {
-          // Allocate memory for the command packet and its header + params
+          // Allocate memory for the command packet.
+          // This will include hciPacket_t header which will hold the whole command
+          // (hci header + hci payload), as received from the host
           pCmdPkt = (hciPacket_t *) ICall_allocMsg(sizeof(hciPacket_t) + cmdPktTotalLen);
 
           if(pCmdPkt)
@@ -1244,7 +1243,7 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
       {
         hciDataPacket_t *pDataPkt = NULL;
         uint16 dataPktHandle = 0;
-        uint16 dataPktLen = 0;
+        uint16 dataPktLen    = 0;        // size of the HCI data payload
 
         // Parse the data packet connection handle and flags
         dataPktHandle = BUILD_UINT16(pHciPkt[1], pHciPkt[2]);
@@ -1252,10 +1251,15 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
         // Parse the data packet length
         dataPktLen = BUILD_UINT16(pHciPkt[3], pHciPkt[4]);
 
-        // Validate the packet length
-        if (dataPktLen == pktLen)
+        // pktLen     is the whole pHciPkt size, including the HCI data header
+        // dataPktLen is the size of the HCI data payload
+        // Verify that the input packet length (pktLen - HCI_DATA_MIN_LENGTH) is equal to the
+        // calculated data packet length (dataPktLen).
+        if (dataPktLen == pktLen - HCI_DATA_MIN_LENGTH)
         {
-          // Allocate memory for the data pakets
+          // Allocate memory for the data packet.
+          // hciDataPacket_t holds the meta-data information for the received data packet
+          // Thus, we drop the received HCI data header and save only the raw data payload.
           pDataPkt = (hciDataPacket_t *) ICall_allocMsg(sizeof(hciDataPacket_t) + dataPktLen);
 
           if (pDataPkt)
@@ -1275,8 +1279,8 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
             // Set pData to the first byte after the hciDataPacket_t osal header and packet attributes
             pDataPkt->pData = (uint8_t *)pDataPkt + sizeof(hciDataPacket_t);
 
-            // Copy the payload portion to pData
-            memcpy(pDataPkt->pData, pHciPkt, dataPktLen);
+            // Drop the received HCI data header and copy only the raw data payload.
+            memcpy(pDataPkt->pData, pHciPkt + HCI_DATA_MIN_LENGTH, dataPktLen);
 
             // Handoff the packet to the controller
             HCI_TL_SendDataPkt((uint8_t *)pDataPkt);
@@ -1509,18 +1513,20 @@ static void HCI_TL_SendCommandPkt(hciPacket_t *pMsg)
 #ifndef HOST_CONFIG
   else
   {
-      // Some HCI command are not send directly to the Controller and are
-      // instead interpreted in the application
-      if(cmdOpCode == HCI_EXT_HOST_TO_CONTROLLER)
-      {
-        uint16 hciPktLen = BUILD_UINT16(param[0], param[1]);
-        uint8* pHciPkt = param + 2;
-        HCI_HostToController(pHciPkt, hciPktLen);
-      }
-      else
-      {
-          processExtraHCICmd(cmdOpCode, param);
-      }
+    if(cmdOpCode == HCI_EXT_HOST_TO_CONTROLLER)
+    {
+      // This is a testing hook to activate the direct HCI_HostToController API.
+      // In order to activate it, The external host should create a raw
+      // HCI buffer with the HCI_EXT_HOST_TO_CONTROLLER prefix set in the
+      // first two bytes.
+      uint16 hciPktLen = BUILD_UINT16(param[0], param[1]);
+      uint8* pHciPkt = param + 2;
+      HCI_HostToController(pHciPkt, hciPktLen);
+    }
+    else
+    {
+        processExtraHCICmd(cmdOpCode, param);
+    }
   }
 #endif //!HOST_CONFIG
 }
@@ -2917,11 +2923,11 @@ uint8 hci_tl_isValidRandomAddressForScan (aeSetScanParamCmd_t *cmdScanParams)
  *
  * @return  none
  */
+extern uint8* hciAllocAndPrepHciLeEvtPkt( uint8 **pData, uint8 hciLeEvtType,
+                                   uint8 hciPktLen );
 static void hci_tl_legacyScanEventCallbackProcess(hci_tl_ScanEvtCallback_t *evtCallback)
 {
   uint8_t dataLen;
-  npiPkt_t *msg;
-  uint8_t totalLength = 0;
   uint8_t status = LL_STATUS_SUCCESS;
   if (evtCallback != NULL)
   {
@@ -2934,6 +2940,9 @@ static void hci_tl_legacyScanEventCallbackProcess(hci_tl_ScanEvtCallback_t *evtC
           // Translate the report to the legacy report
           aeExtAdvRptEvt_t *extAdvRpt;
           extAdvRpt = (aeExtAdvRptEvt_t*) evtCallback->pData;
+          uint8 *pEvt;
+          // Pointer to data inside pEvt, that pointer point next slot to be filled
+          uint8 *pData;
 
           // DEBUG CODE.
           // Add a Filter on RSSI to avoid being flooded and doomed by
@@ -2955,36 +2964,23 @@ static void hci_tl_legacyScanEventCallbackProcess(hci_tl_ScanEvtCallback_t *evtC
               if (extAdvRpt->directAddrType == AE_EXT_ADV_RPT_DIR_ADDR_TYPE_UNRESOLVED_RPA)
               {
                   // Got the Report, Map it to the LEGACY Directed Report Event...
+                  pEvt = hciAllocAndPrepHciLeEvtPkt( &pData,
+                                                     HCI_BLE_DIRECT_ADVERTISING_REPORT_EVENT,
+                                                     HCI_ADV_DIRECTED_REPORT_EVENT_LEN);
 
-                  totalLength = sizeof(npiPkt_t) + HCI_EVENT_MIN_LENGTH + HCI_ADV_DIRECTED_REPORT_EVENT_LEN;
-                  msg = (npiPkt_t *)ICall_allocMsg(totalLength);
-                  if(msg)
+                  if(pEvt)
                   {
-                    //Complete the packet and send it
-                    // Icall message event, status, and pointer to packet
-                    msg->hdr.event  = HCI_EVENT_PACKET;
-                    msg->hdr.status = 0xFF;
+                    *pData++ = extAdvRpt->numRpts;
+                    *pData++ = 1; //Connectable directed legacy advertising
+                    *pData++  = extAdvRpt->addrType;
+                    memcpy(pData, extAdvRpt->addr, B_ADDR_LEN);
+                    pData += B_ADDR_LEN;
+                    *pData++ = LL_DEV_ADDR_TYPE_RANDOM;
+                    memcpy(pData, extAdvRpt->directAddr, B_ADDR_LEN);
+                    pData += B_ADDR_LEN;
+                    *pData++ = extAdvRpt->rssi;
 
-                    // fill in length and data pointer
-                    msg->pktLen = HCI_EVENT_MIN_LENGTH + HCI_ADV_DIRECTED_REPORT_EVENT_LEN;
-                    msg->pData  = (uint8*)(msg+1);
-                    // fill in BLE Complete Event data
-                    msg->pData[0] = HCI_EVENT_PACKET;
-                    msg->pData[1] = HCI_LE_EVENT_CODE;
-                    msg->pData[2] = HCI_ADV_DIRECTED_REPORT_EVENT_LEN;
-
-                    // We keep all the information the same across report, only the data type will change.
-                    msg->pData[3]  = HCI_BLE_DIRECT_ADVERTISING_REPORT_EVENT;  //Forced
-                    msg->pData[4]  = extAdvRpt->numRpts;
-                    msg->pData[5]  = 1; //Connectable directed legacy advertising
-
-                    msg->pData[6]  = extAdvRpt->addrType;
-                    memcpy(&msg->pData[7], extAdvRpt->addr, B_ADDR_LEN);
-                    msg->pData[13] = LL_DEV_ADDR_TYPE_RANDOM;
-                    memcpy(&msg->pData[14], extAdvRpt->directAddr, B_ADDR_LEN);
-                    msg->pData[20] = extAdvRpt->rssi;
-
-                    NPITask_sendToHost((uint8_t *)msg);
+                    HCI_SendEventToHost( pEvt );
                   }
                   else
                   {
@@ -3003,80 +2999,70 @@ static void hci_tl_legacyScanEventCallbackProcess(hci_tl_ScanEvtCallback_t *evtC
                     break;
                   }
 
-                  // Got the Report, Map it to the LEGACY Report Event...
+                   // Got the Report, Map it to the LEGACY Report Event...
                   dataLen = extAdvRpt->dataLen;
 
-                  totalLength = sizeof(npiPkt_t) + HCI_EVENT_MIN_LENGTH + HCI_ADV_REPORT_EVENT_LEN + dataLen;
-                  msg = (npiPkt_t *)ICall_allocMsg(totalLength);
-                  if(msg)
+                  pEvt = hciAllocAndPrepHciLeEvtPkt( &pData,
+                                                     HCI_BLE_ADV_REPORT_EVENT,
+                                                     HCI_ADV_REPORT_EVENT_LEN + dataLen );
+
+                  if(pEvt)
                   {
-                    //Complete the packet and send it
-                    // Icall message event, status, and pointer to packet
-                    msg->hdr.event  = HCI_EVENT_PACKET;
-                    msg->hdr.status = 0xFF;
-
-                    // fill in length and data pointer
-                    msg->pktLen = HCI_EVENT_MIN_LENGTH + HCI_ADV_REPORT_EVENT_LEN + dataLen;
-                    msg->pData  = (uint8*)(msg+1);
-                    // fill in BLE Complete Event data
-                    msg->pData[0] = HCI_EVENT_PACKET;
-                    msg->pData[1] = HCI_LE_EVENT_CODE;
-                    msg->pData[2] = HCI_ADV_REPORT_EVENT_LEN + dataLen;
-
-                    // We keep all the information the same across report, only the data type will change.
-                    msg->pData[3]  = HCI_BLE_ADV_REPORT_EVENT;  //Forced
-                    msg->pData[4]  = extAdvRpt->numRpts;
+                    *pData++  = extAdvRpt->numRpts;
                     switch (extAdvRpt->evtType)
                     {
                       case AE_EXT_ADV_RPT_EVT_TYPE_ADV_IND:
                       {
-                        msg->pData[5] = 0;
+                        *pData = 0;
                         break;
                       }
                       case AE_EXT_ADV_RPT_EVT_TYPE_DIRECT_IND:
                       {
-                        msg->pData[5] = 1;
+                        *pData = 1;
                         break;
                       }
                       case AE_EXT_ADV_RPT_EVT_TYPE_SCAN_IND:
                       {
-                        msg->pData[5] = 2;
+                        *pData = 2;
                         break;
                       }
                       case AE_EXT_ADV_RPT_EVT_TYPE_NONCONN_IND:
                       {
-                        msg->pData[5] = 3;
+                        *pData = 3;
                         break;
                       }
                       case AE_EXT_ADV_RPT_EVT_TYPE_SCAN_RSP_ADV_IND:
                       case AE_EXT_ADV_RPT_EVT_TYPE_SCAN_RSP_ADV_SCAN_IND:
                       case AE_EXT_ADV_RPT_EVT_TYPE_SCAN_RSP:
                       {
-                        msg->pData[5] = 4;
+                        *pData = 4;
                         break;
                       }
                       default:
                       {
                         // Ignore any other event type....
-                        ICall_freeMsg(msg);
+                        ICall_freeMsg(pEvt);
                         status = LL_STATUS_ERROR_UNEXPECTED_PARAMETER;
                       }
                     }
                     if (status == LL_STATUS_SUCCESS)
                     {
-                      msg->pData[6]  = extAdvRpt->addrType;
-                      memcpy(&msg->pData[7], extAdvRpt->addr, B_ADDR_LEN);
-                      msg->pData[13] = dataLen;
+                      /* Increase the pData after evtType field */
+                      pData++;
+
+                      *pData++  = extAdvRpt->addrType;
+                      memcpy(pData, extAdvRpt->addr, B_ADDR_LEN);
+                      pData += B_ADDR_LEN;
+                      *pData++ = dataLen;
 
                       if (dataLen)
                       {
-                        memcpy( &msg->pData[14],
-                                extAdvRpt->pData,
-                                dataLen);
+                        memcpy( pData, extAdvRpt->pData, dataLen);
+                        pData += dataLen;
                       }
-                      msg->pData[14 + dataLen] = extAdvRpt->rssi;
+                      *pData = extAdvRpt->rssi;
 
-                      NPITask_sendToHost((uint8_t *)msg);
+                      HCI_SendEventToHost( pEvt );
                     }
                   }
                   else
@@ -3862,16 +3848,10 @@ static void hci_tl_managedAEdata(uint16_t mode, aeSetDataCmd_t *pCmdData, uint8_
             }
             case AE_DATA_OP_COMPLETE:
             {
-                // if the length of the data is 0 return SUCCESS and do not continue to memory allocation
-                if (pCmdData->dataLen == 0)
-                {
-                    status = LL_STATUS_SUCCESS;
-                    break;
-                }
-
+                // Free the previous allocated data and allocate the a pointer for the new data
                 pCmdData->pData = hci_tl_createPendingData(pCmdData->pData, pCmdData->dataLen, pData);
 
-                if(pCmdData->pData)
+                if(pCmdData->dataLen == 0 || pCmdData->pData != NULL)
                 {
                     if ((mode == HCI_LE_SET_EXT_ADV_DATA)     ||
                         (mode == HCI_EXT_LE_SET_EXT_ADV_DATA) ||
@@ -3940,19 +3920,22 @@ static void hci_tl_removePendingData(uint8_t* pendingAdvData)
  */
 static uint8_t* hci_tl_createPendingData(uint8_t *pStorage, uint16_t len, uint8_t* pData)
 {
-    uint8_t* pDataStore;
-    pDataStore = ICall_malloc(len);
-    if (pDataStore)
+    uint8_t* pDataStore = NULL;
+    if(len > 0)
     {
-        memcpy(pDataStore, pData, len);
+        pDataStore = ICall_malloc(len);
+        if(pDataStore != NULL)
+        {
+            memcpy(pDataStore, pData, len);
+        }
     }
-    if(pStorage)
+    if(pStorage != NULL)
     {
         ICall_free(pStorage);
     }
     return pDataStore;
-
 }
+
 /*********************************************************************
  * @fn      hci_tl_appendPendingData
  *

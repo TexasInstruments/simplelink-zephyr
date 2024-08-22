@@ -1180,11 +1180,8 @@ llStatus_t LL_Reset( void )
   pRfPathComp->rfTxPathCompVal   = 0;
   pRfPathComp->rfRxPathCompVal   = 0;
 
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  // init the Adv parameters to their default values
-  // TODO: REPLACE WITH ROUTINE THAT DISABLES ALL ACTIVE ADV SETS
-  //pAdvSet->advMode = LL_ADV_MODE_OFF;
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
+  // Clears the adv sets
+  MAP_llClearAdvSets();
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
   // disable scanning, if there's a scanner
@@ -1192,6 +1189,13 @@ llStatus_t LL_Reset( void )
   {
     // disable scanning
     extScanInfo->scanMode = LL_SCAN_STOP;
+
+    // if the scan command is active stop it
+    if(MAP_llGetCurrentTask() == extScanInfo->llTask)
+    {
+      // stop the scan command
+      MAP_llHaltRadio( (uint32)&extScanCmd );
+    }
   }
 #endif // SCAN_CFG
 
@@ -1200,6 +1204,13 @@ llStatus_t LL_Reset( void )
   if ( extInitInfo )
   {
     extInitInfo->scanMode = LL_SCAN_STOP;
+
+    // if the initiator command is active stop it
+    if(MAP_llGetCurrentTask() == extInitInfo->llTask)
+    {
+        // stop the command
+        MAP_llHaltRadio( (uint32)&extInitCmd );
+    }
   }
 #endif // INIT_CFG
 
@@ -2785,7 +2796,7 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
    rxTestCmd.common.runtime.lrfCallbackMask.value = 0;
    rxTestCmd.common.runtime.rclCallbackMask.value =  RCL_EventLastCmdDone.value;
    // post the command
-   RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
+   RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&rxTestCmd);
 
    return( LL_STATUS_SUCCESS );
 }
@@ -2802,7 +2813,9 @@ llStatus_t LL_DirectTestRxTest( uint8 rxChan,
 llStatus_t LL_DirectTestEnd( void )
 {
   RCL_CommandStatus status;
-  uint32 cmd;
+  RCL_Command_Handle cmd;
+  RCL_StopType stopType;
+  RCL_CommandStatus stopTypeStatus;
 
   // first check if we are already in a Direct TX or RX test
   if ( (llState != LL_STATE_DIRECT_TEST_MODE_TX) &&
@@ -2811,14 +2824,27 @@ llStatus_t LL_DirectTestEnd( void )
     return( LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE );
   }
 
-  // issue STOP command
-  cmd = (((llState == LL_STATE_DIRECT_TEST_MODE_TX)?(uint32)&txDtmTestCmd:(uint32)&rxTestCmd));
-  status = RCL_Command_stop((RCL_Command_Handle)cmd, RCL_StopType_Graceful);
+  // Get the stop commands parameters
+  if(llState == LL_STATE_DIRECT_TEST_MODE_TX)
+  {
+    cmd = (RCL_Command_Handle)&txDtmTestCmd;
+    stopType = RCL_StopType_Graceful;
+    stopTypeStatus = RCL_CommandStatus_GracefulStopApi;
+  }
+  else
+  {
+    cmd = (RCL_Command_Handle)&rxTestCmd;
+    stopType = RCL_StopType_Hard;
+    stopTypeStatus = RCL_CommandStatus_HardStopApi;
+  }
+
+  // Issue STOP command
+  status = RCL_Command_stop(cmd, stopType);
 
   // In case of error in 'RCL_Command_stop'
   if ( (status != RCL_CommandStatus_Active)   &&
        (status != RCL_CommandStatus_Finished) &&
-       (status != RCL_CommandStatus_GracefulStopApi))
+       (status != stopTypeStatus))
   {
       return( LL_STATUS_ERROR_HW_FAILURE );
   }
@@ -3528,17 +3554,18 @@ llStatus_t LE_SetExtAdvParams( aeSetParamCmd_t *pCmdParams,
     }
   }
 
-  // save the pointer for parameters
-  pAdvSet->pAdvParam = pCmdParams;
-
-  // assume there will be a problem with the parameters
-  pAdvSet->paramValid = FALSE;
-
   // check if this Adv Set is already
   if ( pAdvSet->advMode == LL_ADV_MODE_ON )
   {
     return( LL_STATUS_ERROR_COMMAND_DISALLOWED );
   }
+
+  // at this point the set is OFF so we can safely update the parameters
+  // assume there will be a problem with the parameters
+  pAdvSet->paramValid = FALSE;
+
+  // save the pointer for parameters
+  pAdvSet->pAdvParam = pCmdParams;
 
   // count the number of primary advertising channels
   // Note: Need to count number of channels, not for allocation, but
@@ -4286,7 +4313,6 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
 
       if ((advSortedEntry != NULL) && (pAdvSet->pRfCmds != NULL))
       {
-#ifndef USE_PREEMTION
         /*
          * Disable Task preemption for LOKI
          * Preemption allows a task to preempt scheduled command in case there is
@@ -4298,8 +4324,7 @@ llStatus_t LE_SetExtAdvEnable( aeEnableCmd_t *pCmdParams )
                          (pAdvSet->advStartTime + US_TO_RAT_TICKS(advSortedEntry->timeConsume)):
                          (pAdvSet->advStartTime + ((aeRf_t *)pAdvSet->pRfCmds)->advCmd.common.timing.relHardStopTime);
         // check RF command preemption
-        llCheckRfCmdPreemption(endTime,pAdvSet->priority);
-#endif
+        MAP_llCheckRfCmdPreemption(endTime,pAdvSet->priority);
       }
     }
   }
@@ -4581,9 +4606,6 @@ llStatus_t LE_SetExtScanParams( aeSetScanParamCmd_t *pCmdParams )
     return( LL_STATUS_ERROR_OUT_OF_HEAP );
   }
 
-  // assume there will be a problem with the parameters
-  extScanInfo->paramValid = FALSE;
-
   // check the parameters
   if ( (!pCmdParams)                                                               ||
        (
@@ -4630,6 +4652,10 @@ llStatus_t LE_SetExtScanParams( aeSetScanParamCmd_t *pCmdParams )
   {
     return( LL_STATUS_ERROR_COMMAND_DISALLOWED );
   }
+
+  // at this point the set is OFF so we can safely update the parameters
+  // assume there will be a problem with the parameters
+  extScanInfo->paramValid = FALSE;
 
   // always set scan index to zero
   // Note: If both PHYs are present, we'll start with 1M.
@@ -4885,7 +4911,7 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
        }
 #ifdef USE_AE //scanner
       // reset scanner report state machine
-      llManageExtScanStateList(EXT_SCAN_STATE_LIST_CLEAR_ALL, 0, 0);
+      llManageExtScanStateList(EXT_SCAN_STATE_LIST_CLEAR_ALL, 0, 0, 0);
       scanState = WAIT_FOR_ADV_EXT_IND;
 #endif
       // set LL state
@@ -4898,7 +4924,6 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
     }
     else
     {
-#ifndef USE_PREEMTION
       /*
        * Disable Task preemption for LOKI
        * Preemption allows a task to preempt scheduled command in case there is
@@ -4911,8 +4936,7 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
                        EXT_SCAN_MARGIN_TIME_RAT_TICKS;
 
       // check RF command preemption
-      llCheckRfCmdPreemption(endTime,extScanInfo->priority);
-#endif
+      MAP_llCheckRfCmdPreemption(endTime,extScanInfo->priority);
     }
   }
   else // disable
@@ -5370,7 +5394,6 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
   }
   else
   {
-#ifndef USE_PREEMTION
     /*
      * Disable Task preemption for LOKI
      * Preemption allows a task to preempt scheduled command in case there is
@@ -5382,9 +5405,8 @@ llStatus_t LE_ExtCreateConn( aeCreateConnCmd_t *pCmdParams )
                     (extInitInfo->pCreateConn->extInitParam[extInitIndex].scanWindow * RAT_TICKS_IN_625US) +
                      EXT_INIT_MARGIN_TIME_RAT_TICKS;
 
-    // Check RF command preemption
-    llCheckRfCmdPreemption(endTime,extInitInfo->priority);
-#endif
+    // check RF command preemption
+    MAP_llCheckRfCmdPreemption(endTime,extInitInfo->priority);
   }
 
   return( LL_STATUS_SUCCESS );
@@ -5466,8 +5488,9 @@ llStatus_t LL_CreateConnCancel( void )
  *
  * @brief   Used by the Host to set the advertiser parameters for periodic advertising
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design  /ref did_286039104
+ * @Design: BLE_LOKI-1795
+ * @Design: BLE_LOKI-2034
  *
  * input parameters
  *
@@ -5531,7 +5554,7 @@ llStatus_t LE_SetPeriodicAdvParams( uint8 advHandle,
   // If periodic adv data exists for the set and the length of data
   // is greater than the maximum that the Controller can transmit within
   // a periodic advertising interval of periodicAdvIntervalMax, return error
-  if (pPeriodicAdv->pData != NULL)
+  if ((pPeriodicAdv != NULL) && (pPeriodicAdv->pData != NULL))
   {
     uint32 otaTime = llEstimatePeriodicAdvOtaTime(pPeriodicAdv->dataLen,pPeriodicAdv->maxAvailData,pPeriodicAdv->phy,0,0);
     if((otaTime + RAT_TICKS_TO_US(PERIODIC_ADV_MARGIN_TIME_RAT_TICKS)) >
@@ -5597,8 +5620,9 @@ llStatus_t LE_SetPeriodicAdvParams( uint8 advHandle,
  *          the Advertising_Handle parameter has been configured for periodic advertising
  *          using the HCI_LE_Set_Periodic_Advertising_Parameters command
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design  /ref did_286039104
+ * @Design: BLE_LOKI-1795
+ * @Design: BLE_LOKI-2034
  *
  * input parameters
  *
@@ -5674,6 +5698,9 @@ llStatus_t LE_SetPeriodicAdvData( uint8 advHandle,
     {
       pPeriodicAdv->dataUpdated = TRUE;
     }
+    // Update the advSet data pointer and length
+    pPeriodicAdv->pData = pPeriodicAdv->dataCmd.pData;
+    pPeriodicAdv->dataLen = pPeriodicAdv->dataCmd.dataLen;
   }
   else if (((operation == AE_DATA_OP_NEXT_FRAG) || (operation == AE_DATA_OP_LAST_FRAG)) &&
           ((pPeriodicAdv->dataCmd.operation == AE_DATA_OP_FIRST_FRAG) ||
@@ -5698,6 +5725,9 @@ llStatus_t LE_SetPeriodicAdvData( uint8 advHandle,
         pPeriodicAdv->dataCmd.pData = NULL;
         pPeriodicAdv->dataCmd.operation = AE_DATA_OP_NO_DATA;
         pPeriodicAdv->dataCmd.dataLen = 0;
+        // Update the advSet data pointer and length
+        pPeriodicAdv->pData = pPeriodicAdv->dataCmd.pData;
+        pPeriodicAdv->dataLen = pPeriodicAdv->dataCmd.dataLen;
         if (totalDataLen > maxExtAdvDataLen)
         {
           return (LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED);
@@ -5725,6 +5755,9 @@ llStatus_t LE_SetPeriodicAdvData( uint8 advHandle,
     }
     pPeriodicAdv->dataCmd.dataLen = totalDataLen;
     pPeriodicAdv->dataCmd.operation = operation;
+    // Update the advSet data pointer and length
+    pPeriodicAdv->pData = pPeriodicAdv->dataCmd.pData;
+    pPeriodicAdv->dataLen = pPeriodicAdv->dataCmd.dataLen;
 
     if (operation == AE_DATA_OP_LAST_FRAG)
     {
@@ -5745,8 +5778,9 @@ llStatus_t LE_SetPeriodicAdvData( uint8 advHandle,
  * @brief   Used to request the advertiser to enable or disable
  *          the periodic advertising for the advertising set
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design   /ref did_286039104
+ * @Design:  BLE_LOKI-1795
+ * @Design:  BLE_LOKI-2034
  *
  * input parameters
  *
@@ -6175,8 +6209,9 @@ llStatus_t LE_PeriodicAdvCreateSync( uint8  options,
  * @brief   Used a scanner to cancel the HCI_LE_Periodic_Advertising_Create_Sync
  *          command while it is pending.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-2022
+ * @Design  /ref did_286039104
+ * @Design: BLE_LOKI-2022
+ * @Design: BLE_LOKI-2034
  *
  * @param   None
  *
@@ -6232,8 +6267,10 @@ llStatus_t LE_PeriodicAdvCreateSyncCancel( void )
  * @brief   Used a scanner to stop reception of the periodic advertising
  *          train identified by the syncHandle parameter.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-2022
+ * @Design  /ref did_286039104
+ * @Design: BLE_LOKI-2022
+ * @Design: BLE_LOKI-2034
+ *
  *
  * @param   syncHandle - Handle identifying the periodic advertising train
  *                       (Range: 0x0000 to 0x0EFF)
@@ -10082,7 +10119,7 @@ llStatus_t LL_EXT_EnhancedModemHopTestTx( uint8 payloadLen,
   txDtmTestCmd.common.runtime.rclCallbackMask.value =  RCL_EventLastCmdDone.value | RCL_EventTxBufferFinished.value;
 
   // post the command
-  RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+  RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&txDtmTestCmd);
 
   return( LL_STATUS_SUCCESS );
 }

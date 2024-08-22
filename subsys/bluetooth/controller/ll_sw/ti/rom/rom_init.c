@@ -446,6 +446,7 @@ typedef void (*RT_Init_fp)(void);
  * TYPEDEFS
  */
 // Use dynamic filter list when the device role is advertiser only and number of bond is greater than 5.
+#ifndef USE_DFL
 #if defined(DeviceFamily_CC27XX) || defined(DeviceFamily_CC23X0R5)
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG)) && !(CTRL_CONFIG & (SCAN_CFG | INIT_CFG)) // (If the device role is advertiser only)
 #if defined(GAP_BOND_MGR) && (GAP_BONDINGS_MAX > 5) // If number of bondings greater than 5
@@ -453,6 +454,7 @@ typedef void (*RT_Init_fp)(void);
 #endif // (advertiser only)
 #endif // (number of bondings greater than 5)
 #endif // (supported devices)
+#endif // !USE_DFL
 
 
 /*******************************************************************************
@@ -582,6 +584,8 @@ extern llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet );
 extern uint8 llTxDoneEventHandleStateExtAdv( advSet_t *pAdvSet );
 extern void llSetupExtendedAdvData( advSet_t *pAdvSet );
 extern uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt, uint8 *pPkt, uint16 evtType,uint8 extHdrFlgs, uint8 pHdr, uint8 dataLen, uint8 **pSyncInfo,uint8 *secPhy, uint8 *pChannelIndex);
+
+extern void bleStack_initCompleteNotify(int status);
 
 /*******************************************************************************
  * INIT_CFG and SCAN_CFG hooks
@@ -1611,6 +1615,13 @@ void MAP_llClearPeriodicAdvSets( void )
 #endif // USE_PERIODIC_ADV
 }
 
+void MAP_llClearAdvSets( void )
+{
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+  llClearAdvSets();
+#endif
+}
+
 uint8 MAP_llAddPeriodicAdvPacketToTx( void *pPeriodicAdv, uint8 pktType, uint8 payloadLen )
 {
 #ifdef USE_PERIODIC_ADV
@@ -1781,46 +1792,49 @@ uint8 MAP_llGetPeriodicScanCteTasks( void )
 
 uint8_t MAP_gapScan_periodicAdvCmdCompleteCBs( void *pMsg )
 {
+  uint8_t status = TRUE;
 #ifndef CONTROLLER_ONLY
 #ifdef USE_PERIODIC_SCAN
-  #ifdef USE_PERIODIC_RTLS
-    hciEvt_CmdComplete_t *pEvt = (hciEvt_CmdComplete_t *)pMsg;
-    return RTLSSrv_processHciEvent(pEvt->cmdOpcode, sizeof(pEvt->pReturnParam), pEvt->pReturnParam);
-  #else
-    return gapScan_periodicAdvCmdCompleteCBs(pMsg);
-  #endif
+#ifdef USE_PERIODIC_RTLS
+  hciEvt_CmdComplete_t *pEvt = (hciEvt_CmdComplete_t *)pMsg;
+  status = RTLSSrv_processHciEvent(pEvt->cmdOpcode, sizeof(pEvt->pReturnParam), pEvt->pReturnParam);
+#else
+  status = gapScan_periodicAdvCmdCompleteCBs(pMsg);
+#endif
 #endif // USE_PERIODIC_SCAN
 #endif // CONTROLLER_ONLY
-  return TRUE;
+  return status;
 }
 
 uint8_t MAP_gapScan_periodicAdvCmdStatusCBs( void *pMsg )
 {
+  uint8_t status = TRUE;
 #ifndef CONTROLLER_ONLY
 #ifdef USE_PERIODIC_SCAN
-  #ifdef USE_PERIODIC_RTLS
-    hciEvt_CommandStatus_t *pEvt = (hciEvt_CommandStatus_t *)pMsg;
-    return RTLSSrv_processHciEvent(pEvt->cmdOpcode, sizeof(pEvt->cmdStatus), &pEvt->cmdStatus);
- #else
-    return gapScan_periodicAdvCmdStatusCBs(pMsg);
- #endif
+#ifdef USE_PERIODIC_RTLS
+  hciEvt_CommandStatus_t *pEvt = (hciEvt_CommandStatus_t *)pMsg;
+  status = RTLSSrv_processHciEvent(pEvt->cmdOpcode, sizeof(pEvt->cmdStatus), &pEvt->cmdStatus);
+#else
+  status = gapScan_periodicAdvCmdStatusCBs(pMsg);
+#endif
 #endif // USE_PERIODIC_SCAN
 #endif // CONTROLLER_ONLY
-  return TRUE;
+  return status;
 }
 
 uint8_t MAP_gapScan_processBLEPeriodicAdvCBs( void *pMsg )
 {
+  uint8_t status = TRUE;
 #ifndef CONTROLLER_ONLY
 #ifdef USE_PERIODIC_SCAN
-  #ifdef USE_PERIODIC_RTLS
-    return RTLSSrv_processPeriodicAdvEvent(pMsg);
-  #else
-    return gapScan_processBLEPeriodicAdvCBs(pMsg);
-  #endif
+#ifdef USE_PERIODIC_RTLS
+  status = RTLSSrv_processPeriodicAdvEvent(pMsg);
+#else
+  status = gapScan_processBLEPeriodicAdvCBs(pMsg);
+#endif
 #endif // USE_PERIODIC_SCAN
 #endif // CONTROLLER_ONLY
-  return TRUE;
+  return status;
 }
 
 void MAP_llClearPeriodicScanSets( void )
@@ -1913,7 +1927,16 @@ uint8 MAP_llAddExtAdvPacketToTx(void *pAdvSet, uint8 pktType, uint8 payloadLen)
 uint8 MAP_llBuildExtAdvPacket(void *pPkt, void *comPkt, uint8 pktType, uint8 payloadLen, uint8 peerAddrType, uint8 ownAddrType)
 {
 #ifdef USE_AE
-  return llBuildExtAdvPacket( pPkt, comPkt, pktType, payloadLen, peerAddrType, ownAddrType);
+  return llBuildExtAdvPacket(pPkt, comPkt, pktType, payloadLen, peerAddrType, ownAddrType);
+#else
+  return 1;
+#endif
+}
+
+uint8 MAP_llupdateAuxHdrPacket(void *pAdvSet)
+{
+#ifdef USE_AE
+  return llupdateAuxHdrPacket(pAdvSet);
 #else
   return 1;
 #endif
@@ -2450,6 +2473,19 @@ uint8_t MAP_DbgInf_addErrorRec(uint16_t newError)
 }
 
 /*******************************************************************************
+ * BLE Scheduler preemption
+ */
+
+uint8 MAP_llCheckRfCmdPreemption(uint32 endTime, uint8 priority)
+{
+#ifdef BLE_SCHEDULER_PREEMPTION
+    return llCheckRfCmdPreemption(endTime, priority);
+#else
+    return (FALSE);
+#endif
+}
+
+/*******************************************************************************
  * Channel Sounding
  */
 
@@ -2716,5 +2752,11 @@ uint32 MAP_llScheduler_getSwitchTime(uint16 taskID)
 #endif
 }
 
+void MAP_bleStack_initCompleteNotify(int status)
+{
+#ifdef BLE_LL_INIT_SYNC
+  return bleStack_initCompleteNotify(status);
+#endif // BLE_LL_INIT_SYNC
+}
 /*******************************************************************************
  */

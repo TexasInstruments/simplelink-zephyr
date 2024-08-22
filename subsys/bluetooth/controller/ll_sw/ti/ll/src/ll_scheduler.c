@@ -991,6 +991,16 @@ void llSetTaskAdv( uint8 startType, void *nextSecCmd )
     // it is, so base it on the current time
     ((RCL_Command *)nextSecCmd)->timing.absStartTime =
       MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
+
+#ifdef USE_AE
+    // If this is an extended adv and sync info is present
+    if (!TST_AE_PROPS_LEGACY(pNextAdvSet->AdvEntry->pAdvParam->eventProps) &&
+        TST_EXTHDR_FLAG(pNextAdvSet->AdvEntry->auxHdrFlags, EXTHDR_FLAG_SYNCINFO))
+    {
+      // Update AUX_ADV_IND header
+      MAP_llupdateAuxHdrPacket(pNextAdvSet->AdvEntry);
+    }
+#endif
   }
 
   // start adv task
@@ -2863,6 +2873,9 @@ void llExtScanSchedSetup( taskInfo_t *llTask )
 void llPeriodicScanSchedSetup( taskInfo_t *llTask )
 {
   llPeriodicScanSet_t *pPeriodicScan = MAP_llGetCurrentPeriodicScan(PERIODIC_SCAN_STATE_SYNCED);
+
+  // Update RCL buffer pointer to the global buffer address
+  pPeriodicScan->rfCmd.ctx->rxBuffers = llPeriodicScan.rxBuffers;
 
 #ifdef RTLS_CTE
   // check that the CTE sampling is enable

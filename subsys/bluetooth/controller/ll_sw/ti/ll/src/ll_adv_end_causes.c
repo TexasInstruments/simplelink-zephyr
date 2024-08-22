@@ -71,9 +71,6 @@
 extern sortedAdv_t *pNextAdvSet;
 // number of enabled adv sets
 extern uint8 numActiveAdvSets;
-#ifdef QUAL_TEST
-extern uint8  aeDataUpdatedDuringAdv;
-#endif
 #endif
 
 extern void LL_rclPeripheralCallback(RCL_Command *cmd, LRF_Events lrfEvents, RCL_Events events);
@@ -493,6 +490,10 @@ void llAdv_TaskConnect( void )
     txDataQ[connPtr->connId].rfDataBuffers = &linkParam[connPtr->connId].txBuffers;
 
     connPtr->pTxDataEntryQ = (void *)&txDataQ[connPtr->connId];
+
+    /* Clear the pTxDataEntryQ */
+    llClearTxDataQueue(connPtr->pTxDataEntryQ);
+
     connPtr->pRxDataEntryQ = (void *)&linkParam[connPtr->connId].rxBuffers;
 
     connOutput = RCL_StatsConnection_DefaultRuntime();
@@ -905,8 +906,8 @@ void llExtAdv_PostProcess( void )
  * @brief       This routine is used to post process the periodic Advertising
  *              command.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design   /ref did_286039104
+ * @Design:  BLE_LOKI-1795
  *
  * input parameters
  *
@@ -1215,21 +1216,60 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
 #endif
   }
 
-#ifdef QUAL_TEST
-  // Check that Host updated the data for current adv set during advertising
-  if (pAdvSet->pAdvParam->handle == aeDataUpdatedDuringAdv)
+  // If there is a pending data update to the ext adv or scan response
+  switch (pAdvSet->pendingDataUpdate)
   {
-    aeDataUpdatedDuringAdv = EXT_DATA_NO_UPDATE_DURING_ADV;
-    MAP_llSetupExtAdv( pAdvSet );
+    case LE_AE_EXT_DATA_NO_PENDING:
+    {
+      // There is no data pending, break
+      break;
+    }
+
+    case LE_AE_EXT_DATA_ADV_PENDING:
+    {
+      // Call the AE set data function to update the pointer with the new data
+      status = LE_AE_SetData(pAdvSet->pPendingData, LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE);
+      if (status != LL_STATUS_SUCCESS)
+      {
+        // AE set data failed, do not proceed with the update data process
+        break;
+      }
+
+      // Set pPendingAdvData to NULL
+      pAdvSet->pPendingData = NULL;
+
+      // Set the pending update flag to no pending
+      pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_NO_PENDING;
+
+      break;
+    }
+
+    case LE_AE_EXT_DATA_SCAN_RSP_PENDING:
+    {
+      // Call the set data to update the pointer with the new data
+      status = LE_AE_SetData(pAdvSet->pPendingData, LE_AE_EXT_DATA_CMD_SCAN_LAST_CMD_DONE);
+      if (status != LL_STATUS_SUCCESS)
+      {
+        // Set data failed, do not proceed with the update data process
+        break;
+      }
+
+      // Set pPendingScanRspData to NULL
+      pAdvSet->pPendingData = NULL;
+
+      // Set the pending update flag to no pending
+      pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_NO_PENDING;
+
+      break;
+    }
+    default:
+        break;
   }
-  else
-#endif
-  {
-    // initialize the Extended Header Buffer
-    MAP_llSetupExtHdr( pAdvSet,
-                       pAdvSet->extHdrFlags,
-                       AE_AUX_OFFSET_AUTO_INSERT );
-  }
+
+  // initialize the Extended Header Buffer
+  MAP_llSetupExtHdr( pAdvSet,
+                      pAdvSet->extHdrFlags,
+                      AE_AUX_OFFSET_AUTO_INSERT );
 
   if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
   {

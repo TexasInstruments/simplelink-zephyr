@@ -2938,7 +2938,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
     {
       // The command will automatically stop if there is a Synth error
       // Post the command again in such a case and continue executing
-      RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+      RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&txDtmTestCmd);
     }
     else if (dtmInfo->txPktCnt != LL_EXT_DTM_TX_CONTINUOUS)
     {
@@ -2963,7 +2963,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
     if (taskEndStatus == RCL_CommandStatus_Error_Synth)
     {
       // post the command
-      RCL_Command_submit(rfHandle, (RCL_Command_Handle)&rxTestCmd);
+      RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&rxTestCmd);
     }
   }
 
@@ -2985,7 +2985,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
       if (taskEndStatus == RCL_CommandStatus_Error_Synth)
       {
         // post the command
-        RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+        RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&txDtmTestCmd);
       }
 
       // command finished successfully
@@ -3004,7 +3004,7 @@ uint8 llLastCmdDoneEventHandleStateTest( void )
           txDtmTestCmd.common.status = RCL_CommandStatus_Idle;
 
           // resubmit the command in the callback
-          RCL_Command_submit(rfHandle, (RCL_Command_Handle)&txDtmTestCmd);
+          RCL_Command_submit(MAP_llScheduler_getHandle(LL_TASK_ID_STANDARD_BLE), (RCL_Command_Handle)&txDtmTestCmd);
 
           return TRUE;
       }

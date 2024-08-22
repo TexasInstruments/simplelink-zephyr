@@ -134,6 +134,11 @@ void osal_bm_free( void *payload_ptr )
   bm_desc_t *loop_ptr;
   bm_desc_t *prev_ptr;
 
+  if (NULL == payload_ptr)
+  {
+    return;
+  }
+
   HAL_ENTER_CRITICAL_SECTION(cs);
 
   // start the search for the address inside the TX queue only if Health check was defined or the callback was defined

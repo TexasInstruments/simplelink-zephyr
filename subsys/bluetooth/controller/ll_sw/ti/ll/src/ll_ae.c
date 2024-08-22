@@ -104,12 +104,6 @@ typedef struct
 // ALT: Add these to ll_config/user config.
 uint16 maxExtAdvDataLen    = AE_DEFAULT_ADV_DATA_LEN; // 31..1650
 uint8  maxSupportedAdvSets = AE_DEFAULT_NUM_ADV_SETS; // 1..240
-#ifdef QUAL_TEST
-// indication for data was updated during advertising
-// represent the adv handle which the data was updated by Host
-// default value - EXT_DATA_NO_UPDATE_DURING_ADV (0xFF)
-uint8  aeDataUpdatedDuringAdv = EXT_DATA_NO_UPDATE_DURING_ADV;
-#endif
 
 #ifdef USE_AE //scanner
 // Scan report state
@@ -202,7 +196,7 @@ extern uint8 secondaryAdvChannelMapPopCount;
 #endif
 
 #ifdef USE_AE // scanner
-extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 timeOffset);
+extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 timeOffset, uint8 isPrimaryChan);
 #endif
 
 #ifdef USE_PERIODIC_ADV
@@ -447,8 +441,8 @@ void llSetPeriodicAdvData( llPeriodicAdvSet_t *pPeriodicAdv )
  *
  * @brief       This function is used to clear all periodic adv sets
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -488,10 +482,6 @@ void llClearPeriodicAdvSets(void)
     {
       MAP_osal_mem_free(llPeriodicAdv.advList->dataCmd.pData);
       llPeriodicAdv.advList->dataCmd.pData = NULL;
-    }
-    if (llPeriodicAdv.advList->pData != NULL)
-    {
-      MAP_osal_mem_free(llPeriodicAdv.advList->pData);
       llPeriodicAdv.advList->pData = NULL;
     }
     // Release periodic command
@@ -1327,8 +1317,12 @@ void llClearPeriodicScanSets(void)
     llPeriodicScan.currentScan = NULL;
     llPeriodicScan.scanNumActive = 0;
   }
+
   //release the periodic accept list
   LE_ClearPeriodicAdvList();
+
+  // clean Periodic rxBuffer list
+  List_clearList(&llPeriodicScan.rxBuffers);
 }
 
 /*******************************************************************************
@@ -2053,9 +2047,11 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
                           uint8           dataSrc )
 {
   // check parameter pointer
-  if ( (!pCmdParams) ||
-       ((dataSrc != LE_AE_EXT_DATA_CMD_ADV) &&
-        (dataSrc != LE_AE_EXT_DATA_CMD_SCAN_RSP)) )
+  if ( (!pCmdParams)                                      ||
+       ((dataSrc != LE_AE_EXT_DATA_CMD_ADV)               &&
+        (dataSrc != LE_AE_EXT_DATA_CMD_SCAN_RSP)          &&
+        (dataSrc != LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE) &&
+        (dataSrc != LE_AE_EXT_DATA_CMD_SCAN_LAST_CMD_DONE)) )
   {
     return( LL_STATUS_ERROR_BAD_PARAMETER );
   }
@@ -2079,13 +2075,48 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
     return( LL_STATUS_ERROR_UNKNOWN_ADVERTISING_IDENTIFIER );
   }
 
+#ifdef USE_AE
+  // If the pAdvSet->advMode is on and the function was called from the host
+  // we need to save the data and update later in the advSet in the ae post process
+  if (pAdvSet->advMode == LL_ADV_MODE_ON && dataSrc < LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE)
+  {
+    switch (dataSrc)
+    {
+      case LE_AE_EXT_DATA_CMD_ADV:
+      {
+        // Set the pointer to the new data
+        pAdvSet->pPendingData = pCmdParams;
+
+        // Set the flag that there is a pending data
+        pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_ADV_PENDING;
+
+        break;
+      }
+      case LE_AE_EXT_DATA_CMD_SCAN_RSP:
+      {
+        // Set the pointer to the new data
+        pAdvSet->pPendingData = pCmdParams;
+
+        // Set the flag that there is a pending data
+        pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_SCAN_RSP_PENDING;
+
+        break;
+      }
+      default:
+          break;
+    }
+    return( LL_STATUS_SUCCESS );
+  }
+#endif
+
   // check if there's no actual data yet
   if ( pCmdParams->operation == AE_DATA_OP_NO_DATA )
   {
     // save the pointers, even though there's no data yet
     // Note: This allows the Host to create the data structure prior to having
     //       a data pointer.
-    if ( dataSrc == LE_AE_EXT_DATA_CMD_ADV )
+    if ( (dataSrc == LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE) ||
+         (dataSrc == LE_AE_EXT_DATA_CMD_ADV) )
     {
       // save the pointer to advertising data parameters
       pAdvSet->pAdvData = pCmdParams;
@@ -2194,7 +2225,8 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
   // save the pointers
   // Note: No check is made here to see if there previously was a valid poniter.
   //       It is up to the Host to completely maintain and manage data.
-  if ( dataSrc == LE_AE_EXT_DATA_CMD_ADV )
+  if ( (dataSrc == LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE) ||
+       (dataSrc == LE_AE_EXT_DATA_CMD_ADV) )
   {
     // save the pointer to advertising data parameters
     pAdvSet->pAdvData = (pCmdParams->dataLen) ? pCmdParams : NULL;
@@ -2206,24 +2238,23 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
   }
 
 #ifdef USE_AE
-  // check if data was added after Set Params and before Enable
-  if ( (pAdvSet->pAdvData     != NULL) ||
-       (pAdvSet->pScanRspData != NULL) )
+  // Check if data was added after ext adv set parameters (before enable or while adv on)
+  // If so, we need to handle the extHdrFlags
+  if ( (pAdvSet->pAdvData     != NULL)                  ||
+       (pAdvSet->pScanRspData != NULL)                  ||
+       (pAdvSet->pAdvParam->primPhy == AE_PHY_CODED_S2) ||
+       (pAdvSet->pAdvParam->primPhy == AE_PHY_CODED_S8) ||
+       TST_EXTHDR_FLAG(pAdvSet->auxHdrFlags,EXTHDR_FLAG_SYNCINFO) )
   {
     // set auxPtr and ADI flags in extHdrFlags
     SET_EXTHDR_FLAG( pAdvSet->extHdrFlags,
                      EXTHDR_FLAG_AUXPTR | EXTHDR_FLAG_ADI );
   }
-#endif
-#ifdef QUAL_TEST
-  if ( pAdvSet->advMode == LL_ADV_MODE_ON )
-  {
-    // keep the adv handle as indication that the data was updated by Host
-    aeDataUpdatedDuringAdv = pCmdParams->handle;
-  }
   else
   {
-    aeDataUpdatedDuringAdv = EXT_DATA_NO_UPDATE_DURING_ADV;
+    // Need to clear the flags
+    CLR_EXTHDR_FLAG( pAdvSet->extHdrFlags,
+                     EXTHDR_FLAG_AUXPTR | EXTHDR_FLAG_ADI );
   }
 #endif
 
@@ -2379,14 +2410,16 @@ advSet_t *LL_GetAdvSet( uint8 handle,
 
     // clear various fields
 #ifdef USE_AE
-    pAdvSet->extHdrSize     = 0;
-    pAdvSet->extHdrFlags    = 0;
-    pAdvSet->auxExtHdrSize  = 0;
-    pAdvSet->auxHdrFlags    = 0;
-    pAdvSet->auxChanCounter = 0;
-    pAdvSet->fragLen        = 0;
-    pAdvSet->lastFragLen    = 0;
-    pAdvSet->numFrags       = 0;
+    pAdvSet->extHdrSize          = 0;
+    pAdvSet->extHdrFlags         = 0;
+    pAdvSet->auxExtHdrSize       = 0;
+    pAdvSet->auxHdrFlags         = 0;
+    pAdvSet->auxChanCounter      = 0;
+    pAdvSet->fragLen             = 0;
+    pAdvSet->lastFragLen         = 0;
+    pAdvSet->numFrags            = 0;
+    pAdvSet->pPendingData        = NULL;
+    pAdvSet->pendingDataUpdate   = LE_AE_EXT_DATA_NO_PENDING;
 #endif
     pAdvSet->maxAvailData   = 0;
     pAdvSet->dataLen        = 0;
@@ -2665,8 +2698,21 @@ void *llFindNextAdvSet( void )
   // save the handle of the next scheduled AE set
   aeCurHandle = pNextAdvSet->AdvEntry->pAdvParam->handle;
 
-  //update the start time
-  ((RCL_Command *)pNextAdvSet->AdvEntry->pRfCmds)->timing.absStartTime = pNextAdvSet->AdvEntry->advStartTime;
+  // Check if the start time changed
+  if ( ((RCL_Command *)pNextAdvSet->AdvEntry->pRfCmds)->timing.absStartTime != pNextAdvSet->AdvEntry->advStartTime)
+  {
+    // Update the start time
+    ((RCL_Command *)pNextAdvSet->AdvEntry->pRfCmds)->timing.absStartTime = pNextAdvSet->AdvEntry->advStartTime;
+#ifdef USE_AE
+    // Determine if sync info is present
+    if ( TST_EXTHDR_FLAG(pNextAdvSet->AdvEntry->auxHdrFlags, EXTHDR_FLAG_SYNCINFO) )
+    {
+      // Update AUX_ADV_IND header
+      MAP_llupdateAuxHdrPacket(pNextAdvSet->AdvEntry);
+    }
+#endif
+  }
+
   // set the correct rf cmd in the adv task
   pNextAdvSet->AdvEntry->llTask->command = (uint32)pNextAdvSet->AdvEntry->pRfCmds;
 
@@ -2911,8 +2957,8 @@ llPeriodicAdvSet_t *llSelectPeriodicAdv( llPeriodicAdvSet_t *pPeriodicAdv1, llPe
  *
  * @brief       This routine is used find next Periodic Adv Set in periodic adv sorted list.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -3099,10 +3145,11 @@ llStatus_t LL_AE_RegCBack( uint8  cBackId,
  *
  * input parameters
  *
- * @param       action     - EXT_SCAN_STATE_LIST_ADD / EXT_SCAN_STATE_LIST_FIND
- *                           EXT_SCAN_STATE_LIST_REMOVE / EXT_SCAN_STATE_LIST_CLEAR_ALL
- * @param       sid        - Set ID received from ADV_EXT_IND or AUX_ADV_IND
- * @param       timeOffset - time offset to receive the AUX PTR in usec
+ * @param       action        - EXT_SCAN_STATE_LIST_ADD / EXT_SCAN_STATE_LIST_FIND
+ *                              EXT_SCAN_STATE_LIST_REMOVE / EXT_SCAN_STATE_LIST_CLEAR_ALL
+ * @param       sid           - Set ID received from ADV_EXT_IND or AUX_ADV_IND
+ * @param       timeOffset    - time offset to receive the AUX PTR in usec
+ * @param       isPrimaryChan - Primary Channel Indication: FALSE - Secondary channel , TRUE - Primary channel
  *
  * output parameters
  *
@@ -3111,7 +3158,7 @@ llStatus_t LL_AE_RegCBack( uint8  cBackId,
  * @return      entry in scan state list or
  *              NULL
  */
-extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 timeOffset)
+extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 timeOffset, uint8 isPrimaryChan)
 {
   uint8 i;
   uint8 availble = 0xFF;
@@ -3130,9 +3177,16 @@ extScanReportState_t *llManageExtScanStateList(uint8 action, uint8 sid, uint32 t
     }
     else if (action == EXT_SCAN_STATE_LIST_ADD)
     {
+      // Handle the case where 2 Primary channel packets are received with no Aux packet between them
+      if ((isPrimaryChan == TRUE) && (extScanReportState[i].state != WAIT_FOR_ADV_EXT_IND))
+      {
+          extScanReportState[(i-1) % EXT_SCAN_STATE_LIST_MAX_ENTRIES].state = WAIT_FOR_ADV_EXT_IND;
+          extScanReportState[i].state = WAIT_FOR_AUX_ADV_IND;
+      }
       // Check for existing SID
       if ((extScanReportState[i].sid == sid) &&
-          (extScanReportState[i].state != WAIT_FOR_ADV_EXT_IND))
+          (extScanReportState[i].state != WAIT_FOR_ADV_EXT_IND) &&
+          (isPrimaryChan == FALSE))
       {
         // SID is already exist - drop the packet
         return NULL;
@@ -3370,20 +3424,20 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
     {
       // Get the entry from scan state list according to the received SID
       pScanState = llManageExtScanStateList(EXT_SCAN_STATE_LIST_FIND,extAdvRpt->advSid,
-                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME);
+                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME, FALSE);
       if (pScanState == NULL)
       {
         // case ADV_EXT_IND had no SID and the AUX has SID - we create the entry with SID = 0xFF
         // test case LL/DDI/SCN/BV-19-C round 10 and up.
         pScanState = llManageExtScanStateList(EXT_SCAN_STATE_LIST_FIND,EXT_SCAN_NO_ADI,
-                                              auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME);
+                                              auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME, FALSE);
       }
     }
     else // SID field does not exist in the current packet
     {
       // Get the entry from scan state list according to the previous received SID
       pScanState = llManageExtScanStateList(EXT_SCAN_STATE_LIST_FIND,lastScanAdvSid,
-                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME);
+                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME, FALSE);
       // case ADI was not includes in the AUX packet, state should be WAIT_FOR_AUX_CHAIN_IND after Scan response or
       // case ADI was not in scan response (V51_FEATURES permit to omit the ADI)
       if ((pScanState != NULL) &&
@@ -3601,7 +3655,7 @@ uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt,
 
       // create the state entry according to the SID
       pScanState = llManageExtScanStateList(EXT_SCAN_STATE_LIST_ADD,extAdvRpt->advSid,
-                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME);
+                                            auxTimeOffset + EXT_SCAN_STATE_RCV_AUX_GUARD_TIME, TRUE);
       if (pScanState == NULL)
       {
         // SID already exist - Drop packet
@@ -4113,10 +4167,13 @@ void llProcessPeriodicScanRxFIFO( void )
   {
     return;
   }
-  while ((pDataEntry = RCL_MultiBuffer_RxEntry_get(&pPeriodicScan->rfParam.rxBuffers, &scanDataQueue)) != NULL)
+  while ((pDataEntry = RCL_MultiBuffer_RxEntry_get(&llPeriodicScan.rxBuffers, &scanDataQueue)) != NULL)
   {
       // count the rx
       pPeriodicScan->rxCount++;
+
+      // get the RSSI using RCL API
+      rssi = RCL_BLE5_getRxRssi(pDataEntry);
 
       // get pointer to BLE PDU packet
       pPkt = (uint8 *)(pDataEntry->data + (pDataEntry->numPad - 1));
@@ -4304,11 +4361,10 @@ void llProcessPeriodicScanRxFIFO( void )
                 // check if reported was enable by host
                 if ((pPeriodicScan != llPeriodicScan.createSync) && (pPeriodicScan->reportEnable))
                 {
-                  rssi = ( llPeriodicScan.rfOutput.lastRssi != LRF_RSSI_INVALID ) ? llPeriodicScan.rfOutput.lastRssi : LRF_RSSI_INVALID;
                   // send report to host
                   HCI_PeriodicAdvReportEvent( pPeriodicScan->handle,
                                             txPower,
-                                            LL_CHECK_LAST_RSSI(rssi),
+                                            rssi,
                                             cteType,
                                             dataStatus,
                                             dataLen,
@@ -5054,7 +5110,7 @@ void llSetupExtHdr( advSet_t *pAdvSet,
     *pBuf++ = HI_UINT16( auxRem );
   }
 
-  // process synch info
+  // process sync info
   if ( TST_EXTHDR_FLAG(hdrFlags, EXTHDR_FLAG_SYNCINFO) )
   {
 #ifdef USE_PERIODIC_ADV
@@ -5217,6 +5273,69 @@ llStatus_t  llBuildExtAdvPacket(aePacket *pPkt, comExtPktFormat_t *comPkt, uint8
   // Return status value
   return status;
 }
+
+/*******************************************************************************
+ * @fn          llupdateAuxHdrPacket
+ *
+ * @brief       This routine is used to update the AUX_ADV_IND packet in the Tx buffer.
+ *
+ * input parameters
+ *
+ * @param       pAdvSet - Pointer to the advertising set for this command.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      LL_STATUS_SUCCESS
+ */
+llStatus_t llupdateAuxHdrPacket(advSet_t *pAdvSet)
+{
+  aeRf_t *pRfCmd = NULL;
+  aePacket *pPkt = NULL;
+  uint8 i = 0;
+  llStatus_t status = LL_STATUS_ERROR_BAD_PARAMETER;
+
+  // Check input parameter
+  if (pAdvSet == NULL )
+  {
+    status = LL_STATUS_ERROR_BAD_PARAMETER;
+  }
+  else
+  {
+    // Get pointer to RF command
+    pRfCmd = (aeRf_t *)pAdvSet->pRfCmds;
+    if ( pRfCmd == NULL)
+    {
+      status =  LL_STATUS_ERROR_BAD_PARAMETER;
+    }
+    else
+    {
+      // Check if AUX_ADV_IND packet exist in the Tx buffer
+      for ( i = 0; i < AE_NUM_TX_BUFFERS; i++)
+      {
+        pPkt = &(pRfCmd->txBuffer[i]);
+
+        // Determine if sync info is present
+        if( TST_EXTHDR_FLAG(pPkt->data[0], EXTHDR_FLAG_SYNCINFO) )
+        {
+          // Setup the the header
+          MAP_llSetupExtHdr( pAdvSet, pAdvSet->auxHdrFlags, AE_AUX_OFFSET_AUTO_INSERT );
+
+          // Copy the extended header to the command
+          MAP_osal_memcpy(pPkt->data, pRfCmd->extHdr, pPkt->extHdrLen);
+
+          status = LL_STATUS_SUCCESS;
+          break;
+        }
+      }
+    }
+  }
+
+  // Return status value
+  return (status);
+}
+
 
 /*******************************************************************************
  * @fn          llSetupExtAdv
@@ -5655,8 +5774,8 @@ llStatus_t llSetupExtAdv( advSet_t *pAdvSet )
  *
  * @brief       This routine is used to set the content of the sync info in AUX_ADV_IND
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5799,8 +5918,8 @@ void llSetPeriodicSyncInfo( advSet_t *pAdvSet, uint8 *pBuf )
  *
  * @brief       This routine is used to set the Periodic adv Header flags
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -5877,8 +5996,8 @@ uint8 llSetPeriodicHdrFlags( llPeriodicAdvSet_t *pPeriodicAdv)
  * @brief       This routine is used to set the content of the Periodic adv Header
  *              buffer.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -6005,8 +6124,8 @@ void llSetupPeriodicHdr( llPeriodicAdvSet_t *pPeriodicAdv )
  *
  * @brief       This routine is used to setup the periodic advertising command.
  *
- * @design  /ref did_286039104
- * @design  BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -6139,8 +6258,8 @@ llStatus_t llSetupPeriodicAdv( advSet_t *pAdvSet )
  *
  * @brief       This routine is used to execute the periodic advertising command.
  *
- * @design      /ref did_286039104
- * @design      BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -6204,7 +6323,7 @@ llStatus_t llTrigPeriodicAdv( advSet_t *pAdvSet, llPeriodicAdvSet_t *pPeriodicAd
  *              based on the advertising packet type and add it to the command
  *              TX queue
  *
- * @design      BLE_LOKI-1795
+ * @Design:      BLE_LOKI-1795
  *
  * input parameters
  *
@@ -6818,8 +6937,8 @@ llStatus_t llSetupExtScan( void )
  *
  * @brief       This routine is used to setup the periodic scan command.
  *
- * @design      /ref did_286039104
-*  @design      BLE_LOKI-2022
+ * @Design      /ref did_286039104
+*  @Design:     BLE_LOKI-2022
  *
  * input parameters
  *
@@ -6843,8 +6962,12 @@ llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   pPeriodicScan->rfCmd.common.status   = RCL_CommandStatus_Idle;
   pPeriodicScan->rfCmd.common.scheduling = RCL_Schedule_AbsTime;
 
-  // Setup Rx periodic scan buffers
-  MAP_llSetupPeriodicScanDataEntryQueue();
+  // setup buffer list only if the list is empty
+  if(List_empty(&llPeriodicScan.rxBuffers))
+  {
+    // Setup Rx periodic scan buffers
+    MAP_llSetupPeriodicScanDataEntryQueue();
+  }
 
 #ifdef QUAL_TEST
   // maxWaitForAux is a feature that can be used to get the device to enter
@@ -6866,7 +6989,7 @@ llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
   pPeriodicScan->rfCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value |
                                                               RCL_EventRxEntryAvail.value;
 
-  pPeriodicScan->rfCmd.ctx = &llPeriodicScan.createSync->rfParam;
+  pPeriodicScan->rfCmd.ctx = &pPeriodicScan->rfParam;
   pPeriodicScan->rfCmd.ctx->rxBuffers = llPeriodicScan.rxBuffers;
   pPeriodicScan->rfCmd.stats = &llPeriodicScan.rfOutput;
 
@@ -6878,8 +7001,8 @@ llStatus_t llSetupPeriodicScan( llPeriodicScanSet_t *pPeriodicScan )
  *
  * @brief       This routine is used to execute the periodic scan command.
  *
- * @design      /ref did_286039104
- * @design      BLE_LOKI-2022
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-2022
  *
  * input parameters
  *
@@ -7697,6 +7820,9 @@ void llEndPeriodicScanTask( llPeriodicScanSet_t *pPeriodicScan )
         {
           // free the associated task block
           MAP_llFreeTask( &llPeriodicScan.llTask );
+
+          // clean Periodic rxBuffer list
+          List_clearList(&llPeriodicScan.rxBuffers);
         }
       }
       // clear the set
@@ -7720,6 +7846,9 @@ void llEndPeriodicScanTask( llPeriodicScanSet_t *pPeriodicScan )
     {
       // free the associated task block
       MAP_llFreeTask( &llPeriodicScan.llTask );
+
+      // clean Periodic rxBuffer list
+      List_clearList(&llPeriodicScan.rxBuffers);
     }
     // update the next set pointer
     if (llPeriodicScan.scanList == pPeriodicScan)
@@ -8115,8 +8244,8 @@ llStatus_t llStartDurationTimer( uint16 eventID,
  * @brief       This routine is used to update RF command in case chain
  *              packet (AUX_CHAIN_IND) should be send on current periodic adv set
  *
- * @design      /ref did_286039104
- * @design      BLE_LOKI-1795
+ * @Design      /ref did_286039104
+ * @Design:     BLE_LOKI-1795
  *
  * input parameters
  *
@@ -8243,5 +8372,61 @@ void llPrepareAndUpdateAlEntry(RCL_FilterList *filterList, uint16 flags, uint8 *
                              alIndex );
 }
 #endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
+
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+/*******************************************************************************
+ * @fn          llClearAdvSets
+ *
+ * @brief       This function is used to clear all adv sets
+ *
+ * input parameters
+ *
+ * @param       void.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void llClearAdvSets(void)
+{
+  advSet_t *pAdvSet = NULL;
+
+  // Release all sets
+  while(advSetList != NULL)
+  {
+    pAdvSet = advSetList->next;
+
+    // Getting current ll task
+    if(MAP_llGetCurrentTask() == advSetList->llTask)
+    {
+      // Halt the radio
+      MAP_llHaltRadio( advSetList->llTask->command );
+    }
+
+    // Release ll task
+    if(advSetList->llTask != NULL)
+    {
+      MAP_llFreeTask( &advSetList->llTask );
+      advSetList->llTask = NULL;
+    }
+
+    // Release extended command
+    if(advSetList->pRfCmds != NULL)
+    {
+      MAP_osal_mem_free(advSetList->pRfCmds);
+      advSetList->pRfCmds = NULL;
+    }
+
+    // Delete the set
+    MAP_osal_mem_free(advSetList);
+
+    // Advance to next set
+    advSetList = pAdvSet;
+  }
+  advSetList = NULL;
+}
+#endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 /*******************************************************************************
  */

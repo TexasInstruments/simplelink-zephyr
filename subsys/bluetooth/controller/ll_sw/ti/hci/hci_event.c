@@ -103,13 +103,13 @@ void HCI_CommandCompleteEvent( uint16 opcode,
 
       (void)MAP_osal_msg_send( taskID, (uint8 *)pkt );
     }
-    else
-    {
-      MAP_HCI_SendCommandCompleteEvent( HCI_COMMAND_COMPLETE_EVENT_CODE,
-                                        opcode,
-                                        numParam,
-                                        param );
-    }
+  }
+  else
+  {
+    MAP_HCI_SendCommandCompleteEvent( HCI_COMMAND_COMPLETE_EVENT_CODE,
+                                      opcode,
+                                      numParam,
+                                      param );
   }
 }
 

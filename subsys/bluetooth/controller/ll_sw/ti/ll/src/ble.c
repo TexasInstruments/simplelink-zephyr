@@ -394,7 +394,7 @@ void *llSetupAdvDataEntryQueue( void )
   if (pAdvDataEntry == NULL)
   {
     pAdvDataEntry = (RCL_MultiBuffer *)&advDataEntry;
-    RCL_MultiBuffer_init(pAdvDataEntry, sizeof(advDataEntry)*RCL_NUM_ADV_RX);
+    RCL_MultiBuffer_init(pAdvDataEntry, sizeof(advDataEntry_t)*RCL_NUM_ADV_RX);
   }
   return (void *)(pAdvDataEntry);
 }
@@ -3949,6 +3949,41 @@ void llAddTxDataEntry( void *pDataEntryQ,
   return;
 }
 
+/*******************************************************************************
+ * @fn          llClearTxDataQueue API
+ *
+ * @brief       This function is used to clear a Tx Data Queue.
+ *              It should be called at connection creation, while there are no
+ *              entries added to the queue.
+ *
+ *              Note: It is assumed the Queue does not hold any entries.
+ *
+ *              Note: In case there are allocated entries - they will be lost.
+ *
+ * input parameters
+ *
+ * @param       txDataQueue   - Pointer to Tx Data queue.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void llClearTxDataQueue(txDataQ_t *txDataQueue)
+{
+  if (NULL != txDataQueue)
+  {
+    // clear the LL Tx data list
+    List_clearList(&txDataQueue->llDataBuffers);
+
+    // clear the Temp Tx data list
+    List_clearList(&txDataQueue->tmpDataBuffers);
+
+    // clear the RCL TX queue
+    List_clearList(txDataQueue->rfDataBuffers);
+  }
+}
 
 /*
 ** RF Hardware Abstraction Layer Application Programming Interface

@@ -72,6 +72,7 @@ extern "C"
  */
 
 extern uint16 llCalcScaFactor( uint8 centralSCA );
+extern uint32 llCalcPeriodicScaDriftPerInterval( uint8 perAdvSCA , uint16 periodicInterval);
 
 #ifdef __cplusplus
 }

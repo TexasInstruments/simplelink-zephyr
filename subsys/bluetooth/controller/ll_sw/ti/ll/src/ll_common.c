@@ -19,6 +19,7 @@
  * INCLUDES
  */
 
+#include "hal_mcu.h"
 #include "map_direct.h"
 #include <string.h>
 #include "stdint.h"
@@ -30,7 +31,6 @@
 #endif //!CC23X0 && !CC33xx
 #include "bcomdef.h"
 #include <ti/drivers/rcl/LRF.h>
-#include "hal_mcu.h"
 #include "osal_tasks.h"
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
@@ -3615,8 +3615,8 @@ void llConnCleanup( llConnState_t *connPtr )
         // free the TX data buffer
         MAP_osal_bm_free( (void *)pEntry );
       }
-      // clear the RCL TX queue
-      List_clearList(((txDataQ_t *)(connPtr->pTxDataEntryQ))->rfDataBuffers);
+      /* Clear the pTxDataEntryQ */
+      llClearTxDataQueue(connPtr->pTxDataEntryQ);
     }
 
     // reset the number of Tx data buffers
@@ -7621,13 +7621,14 @@ void llProcessConnectionEstablishFailed( uint8 role, uint8 reason )
 void llProcessAdvAddrResolutionTimeout( void )
 {
   advSet_t *pAdvSet = advSetList;
-  // get pointer to RF command
-  aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
 
-  // for each Adv Set that is enabled, is Directed, and uses an Identity
+  // For each Adv Set that is enabled, is Directed, and uses an Identity
   // address, update the peer InitA address' RPA, if in the RL
   while( pAdvSet )
   {
+    // Get pointer to RF command
+    aeLegacyRf_t *pRf = (aeLegacyRf_t *)pAdvSet->pRfCmds;
+
     if ( TST_AE_PROPS_DIR(pAdvSet->pAdvParam->eventProps)      &&
          (LL_IS_ADDR_TYPE_RPA(pAdvSet->ownAddrType)            ||
          (pAdvSet->peerAddrType == LL_DEV_ADDR_TYPE_RANDOM)) )
@@ -7651,12 +7652,15 @@ void llProcessAdvAddrResolutionTimeout( void )
           MAP_osal_memcpy( pAdvSet->peerAddr,
                            resolvingList[rlIndex].RPA,
                            B_ADDR_LEN );
-          // copy the peer address to the adv params
-          MAP_osal_memcpy(pRf->advParam.peerA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
-          // copy the peer address to the adv data
-          MAP_osal_memcpy(pRf->advPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
-          // copy the peer address to the scan rsp data
-          MAP_osal_memcpy(pRf->scanRspPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+          if (pRf)
+          {
+            // copy the peer address to the adv params
+            MAP_osal_memcpy(pRf->advParam.peerA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+            // copy the peer address to the adv data
+            MAP_osal_memcpy(pRf->advPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+            // copy the peer address to the scan rsp data
+            MAP_osal_memcpy(pRf->scanRspPacket.targetA,pAdvSet->peerAddr,LL_DEVICE_ADDR_LEN );
+          }
         }
       }
     }
@@ -7667,12 +7671,15 @@ void llProcessAdvAddrResolutionTimeout( void )
       MAP_osal_memcpy( pAdvSet->ownAddr,
                        resolvingList[LOCAL_RL_INDEX].RPA,
                        B_ADDR_LEN );
-      // copy the advertising address to the adv params
-      MAP_osal_memcpy(pRf->advParam.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
-      // copy the advertising address to the adv data
-      MAP_osal_memcpy(pRf->advPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
-      // copy the advertising address to the scan rsp data
-      MAP_osal_memcpy(pRf->scanRspPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
+      if (pRf)
+      {
+        // copy the advertising address to the adv params
+        MAP_osal_memcpy(pRf->advParam.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
+        // copy the advertising address to the adv data
+        MAP_osal_memcpy(pRf->advPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
+        // copy the advertising address to the scan rsp data
+        MAP_osal_memcpy(pRf->scanRspPacket.advA,pAdvSet->ownAddr,LL_DEVICE_ADDR_LEN );
+      }
     }
 
     pAdvSet = pAdvSet->next;
@@ -8682,15 +8689,46 @@ void RfBleDpl_setTxPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_HW_TYPE txPower)
 
   switch( cmdId )
   {
-    case RCL_CMDID_BLE5_SCANNER:
-    {
-      ((RCL_CmdBle5Connection *)pRfCmd)->txPower = txPower;
-      break;
-    }
 
     case RCL_CMDID_BLE5_ADVERTISER:
     {
-      ((RCL_CmdBle5Advertiser *)pRfCmd)->txPower = txPower;
+        ((RCL_CmdBle5Advertiser *)pRfCmd)->txPower = txPower;
+        break;
+    }
+
+    case RCL_CMDID_BLE5_INITIATOR:
+    {
+        ((RCL_CmdBle5Initiator *)pRfCmd)->txPower = txPower;
+        break;
+    }
+
+    case RCL_CMDID_BLE5_SCANNER:
+    {
+        ((RCL_CmdBle5Scanner *)pRfCmd)->txPower = txPower;
+        break;
+    }
+
+    case RCL_CMDID_BLE5_CONNECTION:
+    {
+        ((RCL_CmdBle5Connection *)pRfCmd)->txPower = txPower;
+        break;
+    }
+
+    case RCL_CMDID_BLE5_AUX_ADV:
+    {
+        ((RCL_CmdBle5AuxAdvertiser *)pRfCmd)->txPower = txPower;
+        break;
+    }
+
+    case RCL_CMDID_BLE5_PERIODIC_ADV:
+    {
+      ((RCL_CmdBle5PeriodicAdvertiser *)pRfCmd)->txPower = txPower;
+      break;
+    }
+
+    case RCL_CMDID_BLE5_PERIODIC_SCAN:
+    {
+      ((RCL_CmdBle5PeriodicScanner *)pRfCmd)->txPower = txPower;
       break;
     }
 

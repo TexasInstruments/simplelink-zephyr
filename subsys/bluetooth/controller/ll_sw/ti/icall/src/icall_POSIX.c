@@ -870,10 +870,8 @@ static ICall_Errno ICall_msecs2Ticks(uint_fast32_t msecs, uint32_t *ticks)
   /*convert to microSec*/
   intermediate *= 1000;
   /*The ClockP tick period is 1us on Loki and 10us on Agama*/
-#ifndef CC23X0
   /*divide with the ticks period*/
   intermediate /= ICall_getTickPeriod();
-#endif
   if (intermediate >= ((uint_fast64_t) 1 << (sizeof(uint32_t)*8 - 1)))
   {
     /* Out of range.
@@ -1182,7 +1180,7 @@ ICall_Errno ICall_wait(uint_fast32_t milliseconds)
             return (errno);
         }
     }
-    EventP_pend(taskentry->syncHandle, ICALL_POSIX_MSG_EVENT_ID, 0, milliseconds);
+    EventP_pend(taskentry->syncHandle, ICALL_POSIX_MSG_EVENT_ID, 0, timeout);
     if(retVal != (-1))
     {
         return (ICALL_ERRNO_SUCCESS);
