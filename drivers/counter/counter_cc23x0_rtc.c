@@ -246,8 +246,11 @@ static const struct counter_driver_api rtc_cc23x0_api = {
 };
 
 #define CC23X0_INIT(inst)									\
+<<<<<<< HEAD
 	PM_DEVICE_DT_INST_DEFINE(inst, rtc_cc23x0_pm_action);					\
 												\
+=======
+>>>>>>> 8b5d1aa5a42... drivers: counter: Add support for cc23x0 RTC counter
 	static const struct counter_cc23x0_config cc23x0_config_##inst = {			\
 	.counter_info = {									\
 		.max_top_value = UINT32_MAX,							\
@@ -259,8 +262,16 @@ static const struct counter_driver_api rtc_cc23x0_api = {
 												\
 	static struct counter_cc23x0_data cc23x0_data_##inst;					\
 												\
+<<<<<<< HEAD
 	DEVICE_DT_INST_DEFINE(0, &counter_cc23x0_init, PM_DEVICE_DT_INST_GET(inst),		\
 			      &cc23x0_data_##inst, &cc23x0_config_##inst, POST_KERNEL,		\
 			      CONFIG_COUNTER_INIT_PRIORITY, &rtc_cc23x0_api);
+=======
+	DEVICE_DT_INST_DEFINE(0, &counter_cc23x0_init, NULL,					\
+			      &cc23x0_data_##inst,						\
+			      &cc23x0_config_##inst, POST_KERNEL,				\
+			      CONFIG_COUNTER_INIT_PRIORITY,					\
+			      &rtc_cc23x0_api);
+>>>>>>> 8b5d1aa5a42... drivers: counter: Add support for cc23x0 RTC counter
 
 DT_INST_FOREACH_STATUS_OKAY(CC23X0_INIT)
