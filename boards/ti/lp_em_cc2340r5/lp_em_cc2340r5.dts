@@ -106,3 +106,7 @@
 		     &adc0_ch8>;
 	pinctrl-names = "default";
 };
+
+&dma {
+	status = "okay";
+};
