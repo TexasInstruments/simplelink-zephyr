@@ -11,6 +11,7 @@ LOG_MODULE_REGISTER(crypto_cc23x0, CONFIG_CRYPTO_LOG_LEVEL);
 
 #include <zephyr/crypto/crypto.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
@@ -20,10 +21,10 @@ LOG_MODULE_REGISTER(crypto_cc23x0, CONFIG_CRYPTO_LOG_LEVEL);
 #include <driverlib/aes.h>
 #include <driverlib/clkctl.h>
 
+#include <inc/hw_memmap.h>
+
 #define CRYPTO_CC23_CAP		(CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | \
 				 CAP_SYNC_OPS | CAP_NO_IV_PREFIX)
-
-#define CRYPTO_CC23_INT_MASK	AES_IMASK_AESDONE
 
 /* CCM mode: see https://datatracker.ietf.org/doc/html/rfc3610 for reference */
 #define CCM_CC23_MSG_LEN_SIZE_MIN	2
@@ -48,11 +49,35 @@ LOG_MODULE_REGISTER(crypto_cc23x0, CONFIG_CRYPTO_LOG_LEVEL);
  * processing 2 columns/cycle, completing 10 rounds in 20 cycles. With three cycles
  * of pre-processing, the execution/encryption time is 23 cycles.
  */
-#define CRYPTO_CC23_OP_TIMEOUT	K_CYC(23 << 1)
+#define CRYPTO_CC23_BLK_PROC_CYC	23
+#define CRYPTO_CC23_BLK_PROC_TIMEOUT	(CRYPTO_CC23_BLK_PROC_CYC << 1)
+#define CRYPTO_CC23_OP_TIMEOUT		K_CYC(CRYPTO_CC23_BLK_PROC_TIMEOUT)
+
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+#define CRYPTO_CC23_OP_TIMEOUT_DMA(len) \
+	K_CYC(CRYPTO_CC23_BLK_PROC_TIMEOUT * ((len) / AES_BLOCK_SIZE))
+
+#define CRYPTO_CC23_IS_INVALID_DATA_LEN_DMA(len)	((len) % AES_BLOCK_SIZE)
+
+#define CRYPTO_CC23_REG_GET(offset)	(AES_BASE + (offset))
+
+struct crypto_cc23x0_config {
+	const struct device *dma_dev;
+	uint8_t dma_channel_a;
+	uint8_t dma_trigsrc_a;
+	uint8_t dma_channel_b;
+	uint8_t dma_trigsrc_b;
+};
+#endif
 
 struct crypto_cc23x0_data {
 	bool in_use;
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	struct k_sem cha_done;
+	struct k_sem chb_done;
+#else
 	struct k_sem aes_done;
+#endif
 };
 
 static void crypto_cc23x0_isr(const struct device *dev)
@@ -62,15 +87,30 @@ static void crypto_cc23x0_isr(const struct device *dev)
 
 	status = AESGetMaskedInterruptStatus();
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	if (status & AES_IMASK_CHADONE) {
+		k_sem_give(&data->cha_done);
+	} else if (status & AES_IMASK_CHBDONE) {
+		k_sem_give(&data->chb_done);
+	}
+#else
 	if (status & AES_IMASK_AESDONE) {
 		k_sem_give(&data->aes_done);
 	}
+#endif
 
 	AESClearInterrupt(status);
 }
 
-static void crypto_cc23x0_cleanup(void)
+static void crypto_cc23x0_cleanup(const struct device *dev)
 {
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	const struct crypto_cc23x0_config *cfg = dev->config;
+
+	dma_stop(cfg->dma_dev, cfg->dma_channel_b);
+	dma_stop(cfg->dma_dev, cfg->dma_channel_a);
+	AESDisableDMA();
+#endif
 	AESClearAUTOCFGTrigger();
 	AESClearAUTOCFGBusHalt();
 	AESClearTXTAndBUF();
@@ -80,14 +120,70 @@ static int crypto_cc23x0_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *
 {
 	const struct device *dev = ctx->device;
 	struct crypto_cc23x0_data *data = dev->data;
-	int in_bytes_processed = 0;
 	int out_bytes_processed = 0;
 	int ret;
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	uint32_t int_flags = AES_IMASK_CHBDONE;
+	const struct crypto_cc23x0_config *cfg = dev->config;
+
+	struct dma_block_config block_cfg_cha = {
+		.source_address = (uint32_t)(pkt->in_buf),
+		.dest_address = CRYPTO_CC23_REG_GET(AES_O_DMACHA),
+		.source_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = pkt->in_len,
+	};
+
+	struct dma_config dma_cfg_cha = {
+		.dma_slot = cfg->dma_trigsrc_a,
+		.channel_direction = MEMORY_TO_PERIPHERAL,
+		.block_count = 1,
+		.head_block = &block_cfg_cha,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+
+	struct dma_block_config block_cfg_chb = {
+		.source_address = CRYPTO_CC23_REG_GET(AES_O_DMACHB),
+		.dest_address = (uint32_t)(pkt->out_buf),
+		.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.block_size = pkt->in_len,
+	};
+
+	struct dma_config dma_cfg_chb = {
+		.dma_slot = cfg->dma_trigsrc_b,
+		.channel_direction = PERIPHERAL_TO_MEMORY,
+		.block_count = 1,
+		.head_block = &block_cfg_chb,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+#else
+	uint32_t int_flags = AES_IMASK_AESDONE;
+	int in_bytes_processed = 0;
+#endif
+
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	if (CRYPTO_CC23_IS_INVALID_DATA_LEN_DMA(pkt->in_len)) {
+		LOG_ERR("In DMA mode, data length must be a multiple of %d", AES_BLOCK_SIZE);
+		return -EINVAL;
+	}
+#endif
 
 	if (pkt->out_buf_max < ROUND_UP(pkt->in_len, AES_BLOCK_SIZE)) {
 		LOG_ERR("Output buffer too small");
 		return -EINVAL;
 	}
+
+	/* Enable interrupts */
+	AESSetIMASK(int_flags);
 
 	/* Load key */
 	AESWriteKEY(ctx->key.bit_stream);
@@ -97,6 +193,42 @@ static int crypto_cc23x0_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *
 		      AES_AUTOCFG_TRGAES_RDTXT3 |
 		      AES_AUTOCFG_TRGAES_WRBUF3S);
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	/* Setup the DMA for the AES engine */
+	AESSetupDMA(AES_DMA_ADRCHA_BUF0 |
+		    AES_DMA_TRGCHA_AESSTART |
+		    AES_DMA_ADRCHB_TXT0 |
+		    AES_DMA_TRGCHB_AESDONE |
+		    (pkt->in_len == AES_BLOCK_SIZE ?
+		     AES_DMA_DONEACT_GATE_TRGAES_ON_CHA :
+		     AES_DMA_DONEACT_GATE_TRGAES_ON_CHA_DEL));
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+	if (ret) {
+		goto cleanup;
+	}
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_b, &dma_cfg_chb);
+	if (ret) {
+		goto cleanup;
+	}
+
+	dma_start(cfg->dma_dev, cfg->dma_channel_a);
+	dma_start(cfg->dma_dev, cfg->dma_channel_b);
+
+	/* Trigger AES operation */
+	AESSetTrigger(AES_TRG_DMACHA);
+
+	/* Wait for AES operation completion */
+	ret = k_sem_take(&data->chb_done, CRYPTO_CC23_OP_TIMEOUT_DMA(pkt->in_len));
+	if (ret) {
+		goto cleanup;
+	}
+
+	LOG_DBG("AES operation completed");
+
+	out_bytes_processed = pkt->in_len;
+#else
 	/* Write first block of input to trigger encryption */
 	AESWriteBUF(pkt->in_buf);
 	in_bytes_processed += AES_BLOCK_SIZE;
@@ -136,9 +268,10 @@ static int crypto_cc23x0_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *
 	/* Read final output */
 	AESReadTXT(&pkt->out_buf[out_bytes_processed]);
 	out_bytes_processed += AES_BLOCK_SIZE;
+#endif
 
 cleanup:
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 	pkt->out_len = out_bytes_processed;
 
 	return ret;
@@ -150,17 +283,73 @@ static int crypto_cc23x0_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uin
 	struct crypto_cc23x0_data *data = dev->data;
 	uint32_t ctr_len = ctx->mode_params.ctr_info.ctr_len >> 3;
 	uint8_t ctr[AES_BLOCK_SIZE] = { 0 };
-	uint8_t last_buf[AES_BLOCK_SIZE] = { 0 };
-	int bytes_remaining = pkt->in_len;
 	int bytes_processed = 0;
-	int block_size;
 	int iv_len;
 	int ret;
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	uint32_t int_flags = AES_IMASK_CHBDONE;
+	const struct crypto_cc23x0_config *cfg = dev->config;
+
+	struct dma_block_config block_cfg_cha = {
+		.source_address = (uint32_t)(pkt->in_buf),
+		.dest_address = CRYPTO_CC23_REG_GET(AES_O_DMACHA),
+		.source_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = pkt->in_len,
+	};
+
+	struct dma_config dma_cfg_cha = {
+		.dma_slot = cfg->dma_trigsrc_a,
+		.channel_direction = MEMORY_TO_PERIPHERAL,
+		.block_count = 1,
+		.head_block = &block_cfg_cha,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+
+	struct dma_block_config block_cfg_chb = {
+		.source_address = CRYPTO_CC23_REG_GET(AES_O_DMACHB),
+		.dest_address = (uint32_t)(pkt->out_buf),
+		.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.block_size = pkt->in_len,
+	};
+
+	struct dma_config dma_cfg_chb = {
+		.dma_slot = cfg->dma_trigsrc_b,
+		.channel_direction = PERIPHERAL_TO_MEMORY,
+		.block_count = 1,
+		.head_block = &block_cfg_chb,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+#else
+	uint32_t int_flags = AES_IMASK_AESDONE;
+	uint8_t last_buf[AES_BLOCK_SIZE] = { 0 };
+	int bytes_remaining = pkt->in_len;
+	int block_size;
+#endif
+
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	if (CRYPTO_CC23_IS_INVALID_DATA_LEN_DMA(pkt->in_len)) {
+		LOG_ERR("In DMA mode, data length must be a multiple of %d", AES_BLOCK_SIZE);
+		return -EINVAL;
+	}
+#endif
 
 	if (pkt->out_buf_max < ROUND_UP(pkt->in_len, AES_BLOCK_SIZE)) {
 		LOG_ERR("Output buffer too small");
 		return -EINVAL;
 	}
+
+	/* Enable interrupts */
+	AESSetIMASK(int_flags);
 
 	/* Load key */
 	AESWriteKEY(ctx->key.bit_stream);
@@ -172,12 +361,44 @@ static int crypto_cc23x0_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uin
 		      AES_AUTOCFG_CTRENDN_BIGENDIAN |
 		      AES_AUTOCFG_CTRSIZE_CTR128);
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	/* Setup the DMA for the AES engine */
+	AESSetupDMA(AES_DMA_ADRCHA_TXTX0 |
+		    AES_DMA_TRGCHA_AESDONE |
+		    AES_DMA_ADRCHB_TXT0 |
+		    AES_DMA_TRGCHB_WRTXT3);
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+	if (ret) {
+		goto cleanup;
+	}
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_b, &dma_cfg_chb);
+	if (ret) {
+		goto cleanup;
+	}
+
+	dma_start(cfg->dma_dev, cfg->dma_channel_a);
+	dma_start(cfg->dma_dev, cfg->dma_channel_b);
+#endif
+
 	/* Write the counter value to the AES engine to trigger first encryption */
 	iv_len = (ctx->ops.cipher_mode == CRYPTO_CIPHER_MODE_CCM) ?
 		  AES_BLOCK_SIZE : (ctx->keylen - ctr_len);
 	memcpy(ctr, iv, iv_len);
 	AESWriteBUF(ctr);
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	/* Wait for AES operation completion */
+	ret = k_sem_take(&data->chb_done, CRYPTO_CC23_OP_TIMEOUT_DMA(pkt->in_len));
+	if (ret) {
+		goto cleanup;
+	}
+
+	LOG_DBG("AES operation completed");
+
+	bytes_processed = pkt->in_len;
+#else
 	do {
 		/* Wait for AES operation completion */
 		ret = k_sem_take(&data->aes_done, CRYPTO_CC23_OP_TIMEOUT);
@@ -212,9 +433,10 @@ static int crypto_cc23x0_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uin
 		bytes_processed += block_size;
 		bytes_remaining -= block_size;
 	} while (bytes_remaining > 0);
+#endif
 
 cleanup:
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 	pkt->out_len = bytes_processed;
 
 	return ret;
@@ -226,16 +448,52 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 	const struct device *dev = ctx->device;
 	struct crypto_cc23x0_data *data = dev->data;
 	uint32_t iv[AES_BLOCK_SIZE_WORDS] = { 0 };
+	int bytes_processed = 0;
+	int ret;
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	uint32_t int_flags = AES_IMASK_CHADONE;
+	const struct crypto_cc23x0_config *cfg = dev->config;
+
+	struct dma_block_config block_cfg_cha = {
+		.source_address = (uint32_t)b0,
+		.dest_address = CRYPTO_CC23_REG_GET(AES_O_DMACHA),
+		.source_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = AES_BLOCK_SIZE,
+	};
+
+	struct dma_config dma_cfg_cha = {
+		.dma_slot = cfg->dma_trigsrc_a,
+		.channel_direction = MEMORY_TO_PERIPHERAL,
+		.block_count = 1,
+		.head_block = &block_cfg_cha,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+#else
+	uint32_t int_flags = AES_IMASK_AESDONE;
 	uint8_t last_buf[AES_BLOCK_SIZE] = { 0 };
 	int bytes_remaining = pkt->in_len;
-	int bytes_processed = 0;
 	int block_size;
-	int ret;
+#endif
+
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	if (CRYPTO_CC23_IS_INVALID_DATA_LEN_DMA(pkt->in_len)) {
+		LOG_ERR("In DMA mode, data length must be a multiple of %d", AES_BLOCK_SIZE);
+		return -EINVAL;
+	}
+#endif
 
 	if (pkt->out_buf_max < AES_BLOCK_SIZE) {
 		LOG_ERR("Output buffer too small");
 		return -EINVAL;
 	}
+
+	/* Enable interrupts */
+	AESSetIMASK(int_flags);
 
 	/* Load key */
 	AESWriteKEY(ctx->key.bit_stream);
@@ -249,6 +507,27 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 	AESWriteIV32(iv);
 
 	if (b0) {
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+		/* Setup the DMA for the AES engine */
+		AESSetupDMA(AES_DMA_ADRCHA_BUF0 |
+			    AES_DMA_TRGCHA_AESSTART);
+
+		ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+		if (ret) {
+			goto out;
+		}
+
+		dma_start(cfg->dma_dev, cfg->dma_channel_a);
+
+		/* Trigger AES operation */
+		AESSetTrigger(AES_TRG_DMACHA);
+
+		/* Wait for AES operation completion */
+		ret = k_sem_take(&data->cha_done, CRYPTO_CC23_OP_TIMEOUT_DMA(AES_BLOCK_SIZE));
+		if (ret) {
+			goto out;
+		}
+#else
 		/* Load input block */
 		AESWriteBUF(b0);
 
@@ -257,11 +536,30 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 		if (ret) {
 			goto out;
 		}
-
+#endif
 		LOG_DBG("AES operation completed (block 0)");
 	}
 
 	if (b1) {
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+		block_cfg_cha.source_address = (uint32_t)b1;
+
+		ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+		if (ret) {
+			goto out;
+		}
+
+		dma_start(cfg->dma_dev, cfg->dma_channel_a);
+
+		/* Trigger AES operation */
+		AESSetTrigger(AES_TRG_DMACHA);
+
+		/* Wait for AES operation completion */
+		ret = k_sem_take(&data->cha_done, CRYPTO_CC23_OP_TIMEOUT_DMA(AES_BLOCK_SIZE));
+		if (ret) {
+			goto out;
+		}
+#else
 		/* Load input block */
 		AESWriteBUF(b1);
 
@@ -270,10 +568,34 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 		if (ret) {
 			goto out;
 		}
-
+#endif
 		LOG_DBG("AES operation completed (block 1)");
 	}
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	block_cfg_cha.source_address = (uint32_t)(pkt->in_buf);
+	block_cfg_cha.block_size = pkt->in_len;
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+	if (ret) {
+		goto out;
+	}
+
+	dma_start(cfg->dma_dev, cfg->dma_channel_a);
+
+	/* Trigger AES operation */
+	AESSetTrigger(AES_TRG_DMACHA);
+
+	/* Wait for AES operation completion */
+	ret = k_sem_take(&data->cha_done, CRYPTO_CC23_OP_TIMEOUT_DMA(pkt->in_len));
+	if (ret) {
+		goto out;
+	}
+
+	LOG_DBG("AES operation completed (data)");
+
+	bytes_processed = pkt->in_len;
+#else
 	do {
 		/* Load input block */
 		if (bytes_remaining >= AES_BLOCK_SIZE) {
@@ -296,6 +618,7 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 		bytes_processed += block_size;
 		bytes_remaining -= block_size;
 	} while (bytes_remaining > 0);
+#endif
 
 	/* Read tag */
 	AESReadTag(pkt->out_buf);
@@ -340,6 +663,7 @@ static int crypto_cc23x0_ccm_check_param(struct cipher_ctx *ctx, struct cipher_a
 static int crypto_cc23x0_ccm_encrypt(struct cipher_ctx *ctx,
 				     struct cipher_aead_pkt *aead_op, uint8_t *nonce)
 {
+	const struct device *dev = ctx->device;
 	struct cipher_pkt tag_pkt = { 0 };
 	struct cipher_pkt data_pkt = { 0 };
 	uint8_t tag[AES_BLOCK_SIZE] = { 0 };
@@ -463,7 +787,7 @@ static int crypto_cc23x0_ccm_encrypt(struct cipher_ctx *ctx,
 	ret = crypto_cc23x0_ctr(ctx, &tag_pkt, ctri);
 
 cleanup:
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 
 	return ret;
 }
@@ -471,6 +795,7 @@ cleanup:
 static int crypto_cc23x0_ccm_decrypt(struct cipher_ctx *ctx,
 				     struct cipher_aead_pkt *aead_op, uint8_t *nonce)
 {
+	const struct device *dev = ctx->device;
 	struct cipher_pkt tag_pkt = { 0 };
 	struct cipher_pkt data_pkt = { 0 };
 	uint8_t enc_tag[AES_BLOCK_SIZE] = { 0 };
@@ -571,7 +896,7 @@ static int crypto_cc23x0_ccm_decrypt(struct cipher_ctx *ctx,
 clear_out_buf:
 	memset(aead_op->pkt->out_buf, 0, msg_len);
 cleanup:
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 
 	return ret;
 }
@@ -585,11 +910,62 @@ static int crypto_cc23x0_ctr_drbg(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 	int iv_len = ctx->keylen - ctr_len;
 	int bytes_processed = 0;
 	int ret;
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	uint32_t int_flags = AES_IMASK_CHBDONE;
+	const struct crypto_cc23x0_config *cfg = dev->config;
+	uint32_t trg_count = pkt->out_buf_max / AES_BLOCK_SIZE;
+	uint32_t trg_aesop = AES_TRG_AESOP_BUF;
+
+	struct dma_block_config block_cfg_cha = {
+		.source_address = (uint32_t)&trg_aesop,
+		.dest_address = CRYPTO_CC23_REG_GET(AES_O_TRG),
+		.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = trg_count * sizeof(uint32_t),
+	};
+
+	struct dma_config dma_cfg_cha = {
+		.dma_slot = cfg->dma_trigsrc_a,
+		.channel_direction = MEMORY_TO_PERIPHERAL,
+		.block_count = 1,
+		.head_block = &block_cfg_cha,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = sizeof(uint32_t),
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+
+	struct dma_block_config block_cfg_chb = {
+		.source_address = CRYPTO_CC23_REG_GET(AES_O_DMACHB),
+		.dest_address = (uint32_t)(pkt->out_buf),
+		.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+		.block_size = pkt->out_buf_max,
+	};
+
+	struct dma_config dma_cfg_chb = {
+		.dma_slot = cfg->dma_trigsrc_b,
+		.channel_direction = PERIPHERAL_TO_MEMORY,
+		.block_count = 1,
+		.head_block = &block_cfg_chb,
+		.source_data_size = sizeof(uint32_t),
+		.dest_data_size = sizeof(uint32_t),
+		.source_burst_length = AES_BLOCK_SIZE,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+#else
+	uint32_t int_flags = AES_IMASK_AESDONE;
+#endif
 
 	if (pkt->out_buf_max < ROUND_UP(pkt->out_buf_max, AES_BLOCK_SIZE)) {
 		LOG_ERR("Output buffer size must be a multiple of %d", AES_BLOCK_SIZE);
 		return -EINVAL;
 	}
+
+	/* Enable interrupts */
+	AESSetIMASK(int_flags);
 
 	/* Load key */
 	AESWriteKEY(ctx->key.bit_stream);
@@ -603,6 +979,38 @@ static int crypto_cc23x0_ctr_drbg(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 	memcpy(ctr, iv, iv_len);
 	AESWriteBUF(ctr);
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	/* Setup the DMA for the AES engine */
+	AESSetupDMA(AES_DMA_TRGCHA_RDTXT3 |
+		    AES_DMA_ADRCHB_TXT0 |
+		    AES_DMA_TRGCHB_AESDONE);
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_a, &dma_cfg_cha);
+	if (ret) {
+		goto cleanup;
+	}
+
+	ret = dma_config(cfg->dma_dev, cfg->dma_channel_b, &dma_cfg_chb);
+	if (ret) {
+		goto cleanup;
+	}
+
+	dma_start(cfg->dma_dev, cfg->dma_channel_a);
+	dma_start(cfg->dma_dev, cfg->dma_channel_b);
+
+	/* Trigger AES operation */
+	AESSetTrigger(AES_TRG_DMACHA);
+
+	/* Wait for AES operation completion */
+	ret = k_sem_take(&data->chb_done, CRYPTO_CC23_OP_TIMEOUT);
+	if (ret) {
+		goto cleanup;
+	}
+
+	LOG_DBG("AES operation completed");
+
+	bytes_processed = pkt->out_buf_max;
+#else
 	do {
 		/* Trigger AES operation */
 		AESSetTrigger(AES_TRG_AESOP_BUF);
@@ -620,9 +1028,10 @@ static int crypto_cc23x0_ctr_drbg(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 
 		bytes_processed += AES_BLOCK_SIZE;
 	} while (bytes_processed < pkt->out_buf_max);
+#endif
 
 cleanup:
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 	pkt->out_len = bytes_processed;
 
 	return ret;
@@ -723,7 +1132,7 @@ static int crypto_cc23x0_session_free(const struct device *dev,
 		return -EBUSY;
 	}
 
-	crypto_cc23x0_cleanup();
+	crypto_cc23x0_cleanup(dev);
 
 	ctx->ops.ccm_crypt_hndlr = NULL;
 	ctx->device = NULL;
@@ -741,6 +1150,9 @@ static int crypto_cc23x0_query_caps(const struct device *dev)
 
 static int crypto_cc23x0_init(const struct device *dev)
 {
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	const struct crypto_cc23x0_config *cfg = dev->config;
+#endif
 	struct crypto_cc23x0_data *data = dev->data;
 
 	IRQ_CONNECT(DT_INST_IRQN(0),
@@ -752,11 +1164,18 @@ static int crypto_cc23x0_init(const struct device *dev)
 
 	CLKCTLEnable(CLKCTL_BASE, CLKCTL_LAES);
 
-	AESSetIMASK(CRYPTO_CC23_INT_MASK);
-
 	data->in_use = false;
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+	k_sem_init(&data->cha_done, 0, 1);
+	k_sem_init(&data->chb_done, 0, 1);
+
+	if (!device_is_ready(cfg->dma_dev)) {
+		return -ENODEV;
+	}
+#else
 	k_sem_init(&data->aes_done, 0, 1);
+#endif
 
 	return 0;
 }
@@ -769,6 +1188,24 @@ static struct crypto_driver_api crypto_enc_funcs = {
 
 static struct crypto_cc23x0_data crypto_cc23x0_dev_data;
 
+#ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
+static const struct crypto_cc23x0_config crypto_cc23x0_dev_config = {
+	.dma_dev = DEVICE_DT_GET(TI_CC23X0_DT_INST_DMA_CTLR(0, cha)),
+	.dma_channel_a = TI_CC23X0_DT_INST_DMA_CHANNEL(0, cha),
+	.dma_trigsrc_a = TI_CC23X0_DT_INST_DMA_TRIGSRC(0, cha),
+	.dma_channel_b = TI_CC23X0_DT_INST_DMA_CHANNEL(0, chb),
+	.dma_trigsrc_b = TI_CC23X0_DT_INST_DMA_TRIGSRC(0, chb),
+};
+
+DEVICE_DT_INST_DEFINE(0,
+		      crypto_cc23x0_init,
+		      NULL,
+		      &crypto_cc23x0_dev_data,
+		      &crypto_cc23x0_dev_config,
+		      POST_KERNEL,
+		      CONFIG_CRYPTO_INIT_PRIORITY,
+		      &crypto_enc_funcs);
+#else
 DEVICE_DT_INST_DEFINE(0,
 		      crypto_cc23x0_init,
 		      NULL,
@@ -777,3 +1214,4 @@ DEVICE_DT_INST_DEFINE(0,
 		      POST_KERNEL,
 		      CONFIG_CRYPTO_INIT_PRIORITY,
 		      &crypto_enc_funcs);
+#endif
