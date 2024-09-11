@@ -285,6 +285,11 @@ out:
 	cipher_free_session(dev, &ini);
 }
 
+/*
+ * [DMA MODE] ONLY BLOCK SIZES MULTIPLE OF 16 BYTES ARE SUPPORTED
+ * (ccm_data, ccm_expected, tag_expected, tag_len)
+ */
+
 /* RFC 3610 test vector #1 */
 const static uint8_t ccm_key[16] = {
 	0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb,
