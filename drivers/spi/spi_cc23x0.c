@@ -10,6 +10,7 @@
 LOG_MODULE_REGISTER(spi_cc23x0, CONFIG_SPI_LOG_LEVEL);
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/irq.h>
@@ -17,6 +18,8 @@ LOG_MODULE_REGISTER(spi_cc23x0, CONFIG_SPI_LOG_LEVEL);
 
 #include <driverlib/clkctl.h>
 #include <driverlib/spi.h>
+
+#include <inc/hw_memmap.h>
 
 #include "spi_context.h"
 
@@ -31,26 +34,48 @@ LOG_MODULE_REGISTER(spi_cc23x0, CONFIG_SPI_LOG_LEVEL);
 #define SPI_CC23_DATA_WIDTH	8
 #define SPI_CC23_DFS		(SPI_CC23_DATA_WIDTH >> 3)
 
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+#define SPI_CC23_REG_GET(base, offset) ((base) + (offset))
+#define SPI_CC23_INT_MASK	SPI_DMA_DONE_RX
+#else
 #define SPI_CC23_INT_MASK	SPI_IDLE
+#endif
 
 struct spi_cc23x0_config {
 	uint32_t base;
 	const struct pinctrl_dev_config *pincfg;
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+	const struct device *dma_dev;
+	uint8_t dma_channel_tx;
+	uint8_t dma_trigsrc_tx;
+	uint8_t dma_channel_rx;
+	uint8_t dma_trigsrc_rx;
+#endif
 };
 
 struct spi_cc23x0_data {
 	struct spi_context ctx;
 };
 
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+static uint32_t dummy_tx;
+static uint32_t dummy_rx;
+#endif
+
 static void spi_cc23x0_isr(const struct device *dev)
 {
 	const struct spi_cc23x0_config *cfg = dev->config;
 	struct spi_cc23x0_data *data = dev->data;
 	uint32_t status;
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+	uint32_t done_flag = SPI_DMA_DONE_RX;
+#else
+	uint32_t done_flag = SPI_IDLE;
+#endif
 
 	status = SPIIntStatus(cfg->base, true);
 
-	if (status & SPI_IDLE) {
+	if (status & done_flag) {
 		spi_context_complete(&data->ctx, dev, 0);
 	}
 
@@ -155,8 +180,46 @@ static int spi_cc23x0_transceive(const struct device *dev,
 	const struct spi_cc23x0_config *cfg = dev->config;
 	struct spi_cc23x0_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	uint32_t txd, rxd;
 	int ret;
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+	struct dma_block_config block_cfg_tx = {
+		.dest_address = SPI_CC23_REG_GET(cfg->base, SPI_O_TXDATA),
+		.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = 1,
+	};
+
+	struct dma_config dma_cfg_tx = {
+		.dma_slot = cfg->dma_trigsrc_tx,
+		.channel_direction = MEMORY_TO_PERIPHERAL,
+		.block_count = 1,
+		.head_block = &block_cfg_tx,
+		.source_data_size = SPI_CC23_DFS,
+		.dest_data_size = SPI_CC23_DFS,
+		.source_burst_length = SPI_CC23_DFS,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+
+	struct dma_block_config block_cfg_rx = {
+		.source_address = SPI_CC23_REG_GET(cfg->base, SPI_O_RXDATA),
+		.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = 1,
+	};
+
+	struct dma_config dma_cfg_rx = {
+		.dma_slot = cfg->dma_trigsrc_rx,
+		.channel_direction = PERIPHERAL_TO_MEMORY,
+		.block_count = 1,
+		.head_block = &block_cfg_rx,
+		.source_data_size = SPI_CC23_DFS,
+		.dest_data_size = SPI_CC23_DFS,
+		.source_burst_length = SPI_CC23_DFS,
+		.dma_callback = NULL,
+		.user_data = NULL,
+	};
+#else
+	uint32_t txd, rxd;
+#endif
 
 	spi_context_lock(ctx, false, NULL, NULL, config);
 
@@ -170,6 +233,51 @@ static int spi_cc23x0_transceive(const struct device *dev,
 	spi_context_cs_control(ctx, true);
 
 	do {
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+		if (spi_context_tx_buf_on(ctx)) {
+			block_cfg_tx.source_address = (uint32_t)ctx->tx_buf;
+			block_cfg_tx.source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
+		} else {
+			block_cfg_tx.source_address = (uint32_t)&dummy_tx;
+			block_cfg_tx.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+		}
+
+		if (spi_context_rx_buf_on(ctx)) {
+			block_cfg_rx.dest_address = (uint32_t)ctx->rx_buf;
+			block_cfg_rx.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
+		} else {
+			block_cfg_rx.dest_address = (uint32_t)&dummy_rx;
+			block_cfg_rx.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+		}
+
+		ret = dma_config(cfg->dma_dev, cfg->dma_channel_tx, &dma_cfg_tx);
+		if (ret) {
+			LOG_ERR("Failed to configure DMA TX channel");
+			return ret;
+		}
+
+		ret = dma_config(cfg->dma_dev, cfg->dma_channel_rx, &dma_cfg_rx);
+		if (ret) {
+			LOG_ERR("Failed to configure DMA RX channel");
+			return ret;
+		}
+
+		/* Disable DMA triggers */
+		SPIDisableDMA(cfg->base, SPI_DMA_TX | SPI_DMA_RX);
+
+		/* Start DMA channels */
+		dma_start(cfg->dma_dev, cfg->dma_channel_rx);
+		dma_start(cfg->dma_dev, cfg->dma_channel_tx);
+
+		/* Enable DMA triggers to start transfer */
+		SPIEnableDMA(cfg->base, SPI_DMA_TX | SPI_DMA_RX);
+
+		ret = spi_context_wait_for_completion(&data->ctx);
+		if (ret) {
+			LOG_ERR("SPI transfer failed (%d)", ret);
+			goto ctx_cs_control;
+		}
+#else
 		if (spi_context_tx_buf_on(ctx)) {
 			txd = *ctx->tx_buf;
 		} else {
@@ -184,17 +292,16 @@ static int spi_cc23x0_transceive(const struct device *dev,
 			goto ctx_cs_control;
 		}
 
-		LOG_DBG("SPI transfer completed");
-
-		spi_context_update_tx(ctx, SPI_CC23_DFS, 1);
-
 		SPIGetData(cfg->base, &rxd);
 
 		if (spi_context_rx_buf_on(ctx)) {
 			*ctx->rx_buf = rxd;
 		}
-
+#endif
+		spi_context_update_tx(ctx, SPI_CC23_DFS, 1);
 		spi_context_update_rx(ctx, SPI_CC23_DFS, 1);
+
+		LOG_DBG("SPI transfer completed");
 	} while (spi_context_tx_on(ctx) || spi_context_rx_on(ctx));
 
 ctx_cs_control:
@@ -228,13 +335,38 @@ static const struct spi_driver_api spi_cc23x0_driver_api = {
 	.release = spi_cc23x0_release,
 };
 
+static int spi_cc23x0_init_common(const struct device *dev)
+{
+	const struct spi_cc23x0_config *cfg = dev->config;
+	struct spi_cc23x0_data *data = dev->data;
+	int ret;
+
+	ret = pinctrl_apply_state(cfg->pincfg, PINCTRL_STATE_DEFAULT);
+	if (ret) {
+		LOG_ERR("Failed to apply SPI pinctrl state");
+		return ret;
+	}
+
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+	if (!device_is_ready(cfg->dma_dev)) {
+		LOG_ERR("DMA not ready");
+		return -ENODEV;
+	}
+#endif
+
+	ret = spi_context_cs_configure_all(&data->ctx);
+	if (ret) {
+		return ret;
+	}
+
+	spi_context_unlock_unconditionally(&data->ctx);
+
+	return 0;
+}
+
 #define SPI_CC23X0_INIT_FUNC(n)							\
 	static int spi_cc23x0_init_##n(const struct device *dev)		\
 	{									\
-		const struct spi_cc23x0_config *cfg = dev->config;		\
-		struct spi_cc23x0_data *data = dev->data;			\
-		int ret;							\
-										\
 		IRQ_CONNECT(DT_INST_IRQN(n),					\
 			    DT_INST_IRQ(n, priority),				\
 			    spi_cc23x0_isr,					\
@@ -242,21 +374,19 @@ static const struct spi_driver_api spi_cc23x0_driver_api = {
 			    0);							\
 		irq_enable(DT_INST_IRQN(n));					\
 										\
-		ret = pinctrl_apply_state(cfg->pincfg, PINCTRL_STATE_DEFAULT);	\
-		if (ret) {							\
-			LOG_ERR("Failed to apply SPI pinctrl state");		\
-			return ret;						\
-		}								\
-										\
-		ret = spi_context_cs_configure_all(&data->ctx);			\
-		if (ret) {							\
-			return ret;						\
-		}								\
-										\
-		spi_context_unlock_unconditionally(&data->ctx);			\
-										\
-		return 0;							\
+		return spi_cc23x0_init_common(dev);				\
 	}
+
+#ifdef CONFIG_SPI_CC23X0_DMA_DRIVEN
+#define SPI_CC23X0_DMA_INIT(n)						\
+	.dma_dev = DEVICE_DT_GET(TI_CC23X0_DT_INST_DMA_CTLR(n, tx)),	\
+	.dma_channel_tx = TI_CC23X0_DT_INST_DMA_CHANNEL(n, tx),		\
+	.dma_trigsrc_tx = TI_CC23X0_DT_INST_DMA_TRIGSRC(n, tx),		\
+	.dma_channel_rx = TI_CC23X0_DT_INST_DMA_CHANNEL(n, rx),		\
+	.dma_trigsrc_rx = TI_CC23X0_DT_INST_DMA_TRIGSRC(n, rx),
+#else
+#define SPI_CC23X0_DMA_INIT(n)
+#endif
 
 #define SPI_CC23X0_DEVICE_INIT(n)			\
 	DEVICE_DT_INST_DEFINE(n,			\
@@ -275,6 +405,7 @@ static const struct spi_driver_api spi_cc23x0_driver_api = {
 	static const struct spi_cc23x0_config spi_cc23x0_config_##n = {	\
 		.base = DT_INST_REG_ADDR(n),				\
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),		\
+		SPI_CC23X0_DMA_INIT(n)					\
 	};								\
 									\
 	static struct spi_cc23x0_data spi_cc23x0_data_##n = {		\
