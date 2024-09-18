@@ -579,3 +579,4 @@ void bt_hci_le_df_cte_req_failed(struct net_buf *buf);
 
 void bt_hci_le_per_adv_subevent_data_request(struct net_buf *buf);
 void bt_hci_le_per_adv_response_report(struct net_buf *buf);
+int  bt_hci_le_rand(void *buffer, size_t len);

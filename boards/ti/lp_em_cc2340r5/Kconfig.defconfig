@@ -1,0 +1,22 @@
+if BOARD_LP_EM_CC2340R5
+
+config BT_CTLR
+	default BT
+
+if BT
+config ZEPHYR
+  bool "Bluetooth TI Controller on ZEPHYR"
+
+  select BT_CTLR_ADV_EXT_SUPPORT
+  select BT_CTLR_CHAN_SEL_2_SUPPORT
+  select BT_CTLR_DTM_HCI_SUPPORT
+
+  help
+    Bluetooth TI Controller on ZEPHYR OS.
+  default y
+  
+config BT_HOST_CRYPTO
+  default y if !BT_HCI_RAW
+endif # BT
+
+endif # BOARD_LP_EM_CC2340R5

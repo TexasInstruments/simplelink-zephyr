@@ -9,6 +9,18 @@ endif()
 zephyr_library()
 zephyr_library_link_libraries(subsys__bluetooth)
 
+if(CONFIG_SOC_CC2340R5)
+
+zephyr_library_include_directories(
+  ll_sw/ti/inc
+)
+
+zephyr_library_sources(
+  hci/ti/hci_driver.c
+)
+
+else()
+
 zephyr_library_sources(
   util/mem.c
   util/memq.c
@@ -165,6 +177,8 @@ zephyr_library_sources_ifdef(
   CONFIG_SOC_FLASH_NRF_RADIO_SYNC_TICKER
   flash/soc_flash_nrf_ticker.c
   )
+
+endif()
 
 zephyr_library_include_directories(
   .
