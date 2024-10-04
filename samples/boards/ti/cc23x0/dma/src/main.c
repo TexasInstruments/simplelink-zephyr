@@ -18,6 +18,8 @@ const struct device *dev = DEVICE_DT_GET(DMA_NODE);
 #define NB_DATA  1024
 #define NB_PRINT 8
 
+#define SLEEP_TIME_MS 20
+
 static void dma_cb(const struct device *dev, void *user_data, uint32_t channel, int status);
 
 uint32_t src_data[NB_DATA];
@@ -97,6 +99,8 @@ int main(void)
 		LOG_INF("TEST OK");
 	else
 		LOG_ERR("TEST NOK ! (%d)", ret);
+
+	k_msleep(SLEEP_TIME_MS);
 
 	LOG_INF("-------------------- DMA TEST 2 --------------------");
 
