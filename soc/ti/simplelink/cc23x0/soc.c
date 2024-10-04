@@ -8,6 +8,9 @@
 #include <zephyr/init.h>
 #include <driverlib/setup.h>
 
+const uint_least8_t GPIO_pinLowerBound;
+const uint_least8_t GPIO_pinUpperBound = 25;
+
 static int ti_cc23x0_init(void)
 {
 	/* Perform necessary trim of the device. */
