@@ -7,6 +7,8 @@ zephyr_sources(soc.c)
 zephyr_sources(ccfg.c)
 zephyr_include_directories(.)
 
+zephyr_sources_ifdef(CONFIG_PM power.c)
+
 zephyr_linker_sources_ifdef(CONFIG_HAS_TI_CCFG SECTIONS ccfg.ld)
 
 set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
