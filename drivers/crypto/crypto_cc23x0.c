@@ -14,6 +14,8 @@ LOG_MODULE_REGISTER(crypto_cc23x0, CONFIG_CRYPTO_LOG_LEVEL);
 #include <zephyr/drivers/dma.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 #include <zephyr/sys/util.h>
 
 #include <string.h>
@@ -79,6 +81,21 @@ struct crypto_cc23x0_data {
 	struct k_sem aes_done;
 #endif
 };
+
+static inline void crypto_cc23x0_pm_policy_state_lock_get(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+#endif
+}
+
+static inline void crypto_cc23x0_pm_policy_state_lock_put(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+#endif
+}
+
 
 static void crypto_cc23x0_isr(const struct device *dev)
 {
@@ -182,6 +199,8 @@ static int crypto_cc23x0_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *
 		return -EINVAL;
 	}
 
+	crypto_cc23x0_pm_policy_state_lock_get();
+
 	/* Enable interrupts */
 	AESSetIMASK(int_flags);
 
@@ -272,6 +291,7 @@ static int crypto_cc23x0_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *
 
 cleanup:
 	crypto_cc23x0_cleanup(dev);
+	crypto_cc23x0_pm_policy_state_lock_put();
 	pkt->out_len = out_bytes_processed;
 
 	return ret;
@@ -347,6 +367,8 @@ static int crypto_cc23x0_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uin
 		LOG_ERR("Output buffer too small");
 		return -EINVAL;
 	}
+
+	crypto_cc23x0_pm_policy_state_lock_get();
 
 	/* Enable interrupts */
 	AESSetIMASK(int_flags);
@@ -437,6 +459,7 @@ static int crypto_cc23x0_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uin
 
 cleanup:
 	crypto_cc23x0_cleanup(dev);
+	crypto_cc23x0_pm_policy_state_lock_put();
 	pkt->out_len = bytes_processed;
 
 	return ret;
@@ -491,6 +514,8 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 		LOG_ERR("Output buffer too small");
 		return -EINVAL;
 	}
+
+	crypto_cc23x0_pm_policy_state_lock_get();
 
 	/* Enable interrupts */
 	AESSetIMASK(int_flags);
@@ -624,6 +649,7 @@ static int crypto_cc23x0_cmac(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
 	AESReadTag(pkt->out_buf);
 
 out:
+	crypto_cc23x0_pm_policy_state_lock_put();
 	pkt->out_len = bytes_processed;
 
 	return ret;
@@ -964,6 +990,8 @@ static int crypto_cc23x0_ctr_drbg(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 		return -EINVAL;
 	}
 
+	crypto_cc23x0_pm_policy_state_lock_get();
+
 	/* Enable interrupts */
 	AESSetIMASK(int_flags);
 
@@ -1032,6 +1060,7 @@ static int crypto_cc23x0_ctr_drbg(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 
 cleanup:
 	crypto_cc23x0_cleanup(dev);
+	crypto_cc23x0_pm_policy_state_lock_put();
 	pkt->out_len = bytes_processed;
 
 	return ret;
@@ -1188,6 +1217,26 @@ static struct crypto_driver_api crypto_enc_funcs = {
 
 static struct crypto_cc23x0_data crypto_cc23x0_dev_data;
 
+#ifdef CONFIG_PM_DEVICE
+
+static int crypto_cc23x0_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		CLKCTLDisable(CLKCTL_BASE, CLKCTL_LAES);
+		return 0;
+	case PM_DEVICE_ACTION_RESUME:
+		CLKCTLEnable(CLKCTL_BASE, CLKCTL_LAES);
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+#endif /* CONFIG_PM_DEVICE */
+
+PM_DEVICE_DT_INST_DEFINE(0, crypto_cc23x0_pm_action);
+
 #ifdef CONFIG_CRYPTO_CC23X0_DMA_DRIVEN
 static const struct crypto_cc23x0_config crypto_cc23x0_dev_config = {
 	.dma_dev = DEVICE_DT_GET(TI_CC23X0_DT_INST_DMA_CTLR(0, cha)),
@@ -1199,7 +1248,7 @@ static const struct crypto_cc23x0_config crypto_cc23x0_dev_config = {
 
 DEVICE_DT_INST_DEFINE(0,
 		      crypto_cc23x0_init,
-		      NULL,
+		      PM_DEVICE_DT_INST_GET(0),
 		      &crypto_cc23x0_dev_data,
 		      &crypto_cc23x0_dev_config,
 		      POST_KERNEL,
@@ -1208,7 +1257,7 @@ DEVICE_DT_INST_DEFINE(0,
 #else
 DEVICE_DT_INST_DEFINE(0,
 		      crypto_cc23x0_init,
-		      NULL,
+		      PM_DEVICE_DT_INST_GET(0),
 		      &crypto_cc23x0_dev_data,
 		      NULL,
 		      POST_KERNEL,
