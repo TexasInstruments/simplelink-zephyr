@@ -2202,7 +2202,7 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
     }
   }
 #endif
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 
   // check if only the DDI needs to be updated
   // Note: Vol 2, Part E, Section 7.8.54 says to update DDI when the operation
@@ -2224,7 +2224,7 @@ llStatus_t LE_AE_SetData( aeSetDataCmd_t *pCmdParams,
     pAdvSet->adi &= ~EXTHDR_DID_MASK;
     pAdvSet->adi |= (rand & EXTHDR_DID_MASK);
   }
-#endif
+//#endif
   // save the pointers
   // Note: No check is made here to see if there previously was a valid poniter.
   //       It is up to the Host to completely maintain and manage data.

@@ -188,4 +188,8 @@ zephyr_compile_definitions(
 -DBLE_VS_FEATURES
 -DBLE_V50_FEATURES
 -DEXT_HAL_ASSERT
+
+#Testing Flags
+#-DLL_TEST_MODE
+#-DLL_TEST_CASE=64
 )

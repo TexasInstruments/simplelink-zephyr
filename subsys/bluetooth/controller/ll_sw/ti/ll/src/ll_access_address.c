@@ -22,9 +22,9 @@
 
 #include "bcomdef.h"
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#endif
+//#endif
 #include "ll_common.h"
 #ifndef CC23X0
 #include "trng_api.h"
@@ -115,13 +115,13 @@ uint8 llValidAccessAddr( uint32 accessAddr )
  */
 uint32 llGenerateValidAccessAddr( void )
 {
-  uint32    accessAddr = 0x5065549D;
-//  do
-//  {
-//    // generate a true random 32 bit number
-//    MAP_LL_ENC_GenerateTrueRandNum((uint8 *)(&accessAddr), 4);
-//    // verify if it is valid
-//  } while(  !MAP_llValidAccessAddr( accessAddr ) );
+  uint32    accessAddr;
+  do
+  {
+    // generate a true random 32 bit number
+    MAP_LL_ENC_GenerateTrueRandNum((uint8 *)(&accessAddr), 4);
+    // verify if it is valid
+  } while(  !MAP_llValidAccessAddr( accessAddr ) );
 
   return( accessAddr );
 }

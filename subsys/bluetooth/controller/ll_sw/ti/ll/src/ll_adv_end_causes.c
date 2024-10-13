@@ -756,9 +756,9 @@ void llExtAdv_PostProcess( void )
 #ifdef CONTROLLER_ONLY
     // Do not access the zeroDelay as it is not part of the BLE SIG HCI command
     // generate random advertising delay from 0..10ms, in units of 250ns ticks
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
     delay = (uint16)(MAP_LL_ENC_GeneratePseudoRandNum() % 11) * RAT_TICKS_IN_1MS;
-#endif
+//#endif
 #else
     // by default, calculate delay between advertise sets
     if(pAdvSet->pAdvParam->zeroDelay == 0)

@@ -153,7 +153,7 @@ static int llStart( void *arg )
     /* abort */
     ICall_abort();
   }
-
+//#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 #ifndef USE_HSM
   if (LL_initRNGNoise() != LL_STATUS_SUCCESS)
@@ -163,6 +163,7 @@ static int llStart( void *arg )
   }
 #endif
 #endif
+//#endif // CONFIG_SOC_CC2340R5
 
   // Disable interrupts
   halIntState_t state;

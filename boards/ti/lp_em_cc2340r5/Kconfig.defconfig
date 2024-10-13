@@ -6,8 +6,6 @@ if BT
 config ZEPHYR
   bool "Bluetooth TI Controller on ZEPHYR"
 
-select BT_CTLR_ADV_EXT_SUPPORT
-
   help
     Bluetooth TI Controller on ZEPHYR OS.
   default y

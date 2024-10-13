@@ -24,7 +24,7 @@
 #include "icall.h"
 
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/AESCCM.h>
 #include <ti/drivers/AESECB.h>
 
@@ -40,7 +40,7 @@
 #endif
 
 #include <ti/drivers/ECDH.h>
-#endif
+//#endif
 #include <ti/drivers/utils/Random.h>
 
 

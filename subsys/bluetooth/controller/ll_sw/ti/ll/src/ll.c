@@ -58,14 +58,14 @@
 #include <ble_setup_fpga.h>
 #endif // USE_FPGA
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #if defined(CC23X0) || defined(CC33xx)
 #include <ti/drivers/ECDH.h>
 #else
 #include "trng_api.h"
 #include "ecc_api.h"
 #endif // CC23X0 || CC33xx
-#endif
+//#endif
 
 // SW Tracer
 #ifdef DEBUG_SW_TRACE
@@ -76,13 +76,13 @@
 
 #ifdef CC23X0
 #include DeviceFamily_constructPath(inc/hw_fcfg.h)
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #ifndef USE_HSM
 #include <ti/drivers/rng/RNGLPF3RF.h>
 #else
 #include <ti/drivers/rng/RNGLPF3HSM.h>
 #endif
-#endif // CONFIG_SOC_CC2340R5
+//#endif // CONFIG_SOC_CC2340R5
 #endif
 
 // Extended Scanner
@@ -92,6 +92,47 @@ aeEnableScanCmd_t   aeScanEnable;
 // Extended Initiator
 aeCreateConnCmd_t   aeCreateConn;
 
+#define CONFIG_RNG_COUNT 1
+#define CONFIG_RNG_0 0
+#define RNG_POOL_BYTE_SIZE 32
+
+const bool RNGLPF3RF_rctEnabled = false;
+const int RNGLPF3RF_rctThreshold = 0;
+
+const bool RNGLPF3RF_aptEnabled = false;
+const int RNGLPF3RF_aptThreshold = 0;
+const int RNGLPF3RF_aptBimodalThreshold = 0;
+
+const size_t RNG_poolByteSize = RNG_POOL_BYTE_SIZE;
+#if defined(__IAR_SYSTEMS_ICC__)
+#pragma data_alignment=4
+#else
+__attribute__((aligned(4)))
+#endif
+uint8_t  RNG_instancePool[RNG_POOL_BYTE_SIZE];
+
+const uint32_t RNGLPF3RF_noiseInputWordLen = 152;
+
+const RNG_ReturnBehavior RNGLPF3RF_returnBehavior = RNG_RETURN_BEHAVIOR_POLLING;
+
+const RNGLPF3RF_HWAttrs RNGLPF3RF_hwAttrs = {
+    .intPriority = (~0)
+};
+
+RNGLPF3RF_Object RNGLPF3RF_objects[CONFIG_RNG_COUNT];
+
+const RNG_Config RNG_config[CONFIG_RNG_COUNT] = {
+    {   /* CONFIG_RNG_0 */
+        .object         = &RNGLPF3RF_objects[CONFIG_RNG_0],
+        .hwAttrs        = &RNGLPF3RF_hwAttrs
+    },
+};
+
+
+uint32_t RNGLPF3RF_noiseConditioningKeyWord0 = 0x111de874;
+uint32_t RNGLPF3RF_noiseConditioningKeyWord1 = 0x6cecb00e;
+uint32_t RNGLPF3RF_noiseConditioningKeyWord2 = 0x7fb76dc5;
+uint32_t RNGLPF3RF_noiseConditioningKeyWord3 = 0x8e020ca2;
 
 /*******************************************************************************
  * MACROS
@@ -354,13 +395,13 @@ cteAntennaProp_t cteAntennaProp;
 
 uint8 *activeConns;
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 RNG_Handle trngHandle;
 #else
 TRNG_Handle trngHandle;
 #endif
-#endif
+//#endif
 
 #ifdef LL_TEST_MODE
 llTestMode_t llTestMode;
@@ -772,7 +813,7 @@ void LL_Init( uint8 taskId )
   // TEMP: JUST INDICATE THE GPIO THAT CORRESPONDS TO THE RFCORE BEING UP
   HAL_GPIO_CLR( HAL_GPIO_4 );
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
   // init and open the PRNG driver
   Random_seedAutomatic();
@@ -799,7 +840,7 @@ void LL_Init( uint8 taskId )
 
   // Init the DRBG driver and generate it's seed number once by calling the TRNG
   LL_ENC_GenerateDRBGSeedNum();
-#endif
+//#endif
 
 #ifndef CC23X0
   // set the default RF Config init value for ADI (used after a device reset)
@@ -816,13 +857,13 @@ void LL_Init( uint8 taskId )
   (void)MAP_LL_ENC_GenerateTrueRandNum( cachedTRNGdata, LL_ENC_TRUE_RAND_BUF_SIZE );
 #endif // ADV_CONN_CFG | INIT_CFG
 
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
   // create a default random static address
   MAP_LL_PRIV_GenerateRSA( ownRandomAddr );
 
   // init Crypto engine
   MAP_LL_ENC_Init();
-#endif
+//#endif
   // Initialize connection event reporting to not report
   llConnEvtNotice.cb = NULL;
   llConnEvtNotice.handle = LL_CONNHANDLE_INVALID;
@@ -1386,7 +1427,7 @@ llStatus_t LL_Reset( void )
  */
 llStatus_t LL_initRNGNoise( void )
 {
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 
   int_fast16_t rclStatus, result;
 
@@ -1426,8 +1467,8 @@ llStatus_t LL_initRNGNoise( void )
   }
 
   return ( LL_STATUS_SUCCESS );
-#endif
-  return ( LL_STATUS_ERROR_RNG_FAILURE );
+//#endif
+//  return ( LL_STATUS_ERROR_RNG_FAILURE );
 
 }
 #endif
@@ -4940,9 +4981,9 @@ llStatus_t LE_SetExtScanEnable( aeEnableScanCmd_t *pCmdParams )
 
         // Accept peer RPA
         extScanParam.rpaModePeer = TRUE;
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
         extScanParam.acceptAllRpaConnectRsp = TRUE;
-#endif
+//#endif
 
         if ( extScanInfo->pScanParam->scanFilterPolicy == LL_SCAN_AL_POLICY_USE_ACCEPT_LIST_EXT )
         {
@@ -7972,7 +8013,7 @@ llStatus_t LL_SetPrivacyMode( uint8  peerIdAddrType,
  */
 llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
 {
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 
   int8 status;
 
@@ -8006,8 +8047,8 @@ llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
   ICall_terminateWorkerThread();
 #endif
   return( LL_STATUS_SUCCESS );
-#endif
-  return LL_STATUS_ERROR_BAD_PARAMETER;
+//#endif
+//  return LL_STATUS_ERROR_BAD_PARAMETER;
 }
 
 
@@ -8025,7 +8066,7 @@ llStatus_t LL_ReadLocalP256PublicKeyCmd( void )
  */
 llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey )
 {
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
   int8 status;
   uint8 dhKey[ (2*LL_SC_DHKEY_LEN) + 1 ];
   // Create a new public key array with an octet string format size
@@ -8067,8 +8108,8 @@ llStatus_t LL_GenerateDHKeyCmd( uint8 *publicKey )
 #endif
 
   return( LL_STATUS_SUCCESS );
-#endif
-  return LL_STATUS_ERROR_BAD_PARAMETER;
+//#endif
+//  return LL_STATUS_ERROR_BAD_PARAMETER;
 }
 
 // V5.0 - 2M and Coded PHY

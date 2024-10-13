@@ -26,9 +26,9 @@
 #endif
 
 #include "ble_dispatch.h"
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#endif //CONFIG_SOC_CC2340R5
+//#endif //CONFIG_SOC_CC2340R5
 #ifndef CC23X0
 #include "trng_api.h"
 #endif

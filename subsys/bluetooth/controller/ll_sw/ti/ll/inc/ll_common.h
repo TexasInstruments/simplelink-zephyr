@@ -42,9 +42,9 @@ extern "C"
 
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/RNG.h>
-#endif
+//#endif
 #include "ti/drivers/utils/List.h"
 
 #include "osal.h"
@@ -1879,14 +1879,14 @@ extern volatile uint8 numFailedTx;
 
 // Host Connection Event Notice Callback
 extern llConnEvtNotice_t llConnEvtNotice;
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 // TRNG handle
 #ifdef CC23X0
 extern RNG_Handle trngHandle;
 #else
 extern TRNG_Handle trngHandle;
 #endif
-#endif
+//#endif
 #ifdef RTLS_CTE
 //CTE struct
 extern llCte_t *llCte;

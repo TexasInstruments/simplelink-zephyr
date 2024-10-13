@@ -20,9 +20,9 @@
 
 #include "bcomdef.h"
 #include "hal_mcu.h"
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 #include <ti/drivers/ECDH.h>
-#endif
+//#endif
 #include "ll_config.h"
 #include "ll.h"
 #include "ll_common.h"
@@ -121,11 +121,11 @@ const rfOp_t rfOpLoc                = RF_OP_PTR_LOCATION;
 const uint8 cryptoMode              = CRYPTO_DRV_MODE_POLLING;
 
 // ECDH key gen Mode
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
 const uint8 ecdhMode                = ECDH_RETURN_BEHAVIOR_BLOCKING;
-#else
-const uint8 ecdhMode                = 2;
-#endif
+//#else
+//const uint8 ecdhMode                = 2;
+//#endif
 // Advertising Extension parameter:
 // Offset to be added to the start time of the count command used
 // in the primary channel.
@@ -158,9 +158,9 @@ llUserCfg_t llUserConfig            =
 #endif
   .maxAlElems         = MAX_NUM_AL_ENTRIES,      // Max number of elements in the accept list
   .maxRlElems         = MAX_NUM_RL_ENTRIES,      // Max number of elements in the resolving list
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
   .eccCurveParams     = NULL,                    // ECC curve parameters
-#endif
+//#endif
   .fastStateUpdateCb  = NULL,                    // Fast state update callback
   .bleStackType       = 0 ,                      // BLE Stack Type
   .extStackSettings   = EXTENDED_STACK_SETTINGS, // Stack misc settings

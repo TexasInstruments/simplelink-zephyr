@@ -954,7 +954,7 @@ static uint8 processICallUTIL(uint8 cmdID, ICall_CmdMsg *msg_ptr,
 
     case HCI_EXT_UTIL_GET_TRNG:
       {
-#ifndef CONFIG_SOC_CC2340R5
+//#ifndef CONFIG_SOC_CC2340R5
         uint32    trngVal;
         CryptoKey entropy;
 
@@ -971,8 +971,7 @@ static uint8 processICallUTIL(uint8 cmdID, ICall_CmdMsg *msg_ptr,
         *pRspDataLen = sizeof( uint32 );
 
         stat = SUCCESS;
-#endif
-        stat = FAILURE;
+//#endif
       }
       break;
 
