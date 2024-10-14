@@ -14,6 +14,8 @@ LOG_MODULE_REGISTER(spi_cc23x0, CONFIG_SPI_LOG_LEVEL);
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/irq.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 #include <zephyr/sys/util.h>
 
 #include <driverlib/clkctl.h>
@@ -61,6 +63,22 @@ struct spi_cc23x0_data {
 static uint32_t dummy_tx;
 static uint32_t dummy_rx;
 #endif
+
+static inline void spi_cc23x0_pm_policy_state_lock_get(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+#endif
+}
+
+static inline void spi_cc23x0_pm_policy_state_lock_put(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+#endif
+}
 
 static void spi_cc23x0_isr(const struct device *dev)
 {
@@ -221,6 +239,8 @@ static int spi_cc23x0_transceive(const struct device *dev,
 	uint32_t txd, rxd;
 #endif
 
+	spi_cc23x0_pm_policy_state_lock_get();
+
 	spi_context_lock(ctx, false, NULL, NULL, config);
 
 	ret = spi_cc23x0_configure(dev, config);
@@ -308,6 +328,7 @@ ctx_cs_control:
 	spi_context_cs_control(ctx, false);
 ctx_release:
 	spi_context_release(ctx, ret);
+	spi_cc23x0_pm_policy_state_lock_put();
 	return ret;
 }
 
@@ -364,6 +385,29 @@ static int spi_cc23x0_init_common(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
+
+static int spi_cc23x0_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	const struct spi_cc23x0_config *cfg = dev->config;
+	struct spi_cc23x0_data *data = dev->data;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		SPIDisable(cfg->base);
+		CLKCTLDisable(CLKCTL_BASE, CLKCTL_SPI0);
+		return 0;
+	case PM_DEVICE_ACTION_RESUME:
+		/* Force SPI to be reconfigured at next transfer */
+		data->ctx.config = NULL;
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+#endif /* CONFIG_PM_DEVICE */
+
 #define SPI_CC23X0_INIT_FUNC(n)							\
 	static int spi_cc23x0_init_##n(const struct device *dev)		\
 	{									\
@@ -391,7 +435,7 @@ static int spi_cc23x0_init_common(const struct device *dev)
 #define SPI_CC23X0_DEVICE_INIT(n)			\
 	DEVICE_DT_INST_DEFINE(n,			\
 			      spi_cc23x0_init_##n,	\
-			      NULL,			\
+			      PM_DEVICE_DT_INST_GET(n),	\
 			      &spi_cc23x0_data_##n,	\
 			      &spi_cc23x0_config_##n,	\
 			      POST_KERNEL,		\
@@ -400,6 +444,7 @@ static int spi_cc23x0_init_common(const struct device *dev)
 
 #define SPI_CC23X0_INIT(n)						\
 	PINCTRL_DT_INST_DEFINE(n);					\
+	PM_DEVICE_DT_INST_DEFINE(n, spi_cc23x0_pm_action);		\
 	SPI_CC23X0_INIT_FUNC(n)						\
 									\
 	static const struct spi_cc23x0_config spi_cc23x0_config_##n = {	\
