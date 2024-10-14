@@ -12,7 +12,7 @@ config ZEPHYR
   
 config BT_LL_HEAP_SIZE
     hex "LL Heap memory pool size (in bytes)"
-    default 0x2000
+    default 0x1800
 
 endif # BT
 
