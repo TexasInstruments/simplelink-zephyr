@@ -14,6 +14,8 @@ LOG_MODULE_REGISTER(adc_cc23x0, CONFIG_ADC_LOG_LEVEL);
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/irq.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 #include <zephyr/sys/util.h>
 
 #include <driverlib/adc.h>
@@ -60,6 +62,16 @@ struct adc_cc23x0_config {
 #endif
 };
 
+#ifdef CONFIG_PM_DEVICE
+struct adc_cc23x0_mem_cfg {
+	bool configured;
+	uint8_t ch;
+	uint32_t ref;
+	uint32_t clkdiv_field;
+	uint16_t clk_cycles;
+};
+#endif
+
 struct adc_cc23x0_data {
 	struct adc_context ctx;
 	const struct device *dev;
@@ -72,7 +84,26 @@ struct adc_cc23x0_data {
 	uint8_t ch_count;
 	uint16_t *buffer;
 	uint16_t *repeat_buffer;
+#ifdef CONFIG_PM_DEVICE
+	struct adc_cc23x0_mem_cfg mem_cfg[ADC_CC23_MEM_COUNT];
+#endif
 };
+
+static inline void adc_cc23x0_pm_policy_state_lock_get(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+#endif
+}
+
+static inline void adc_cc23x0_pm_policy_state_lock_put(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+#endif
+}
 
 static void adc_context_start_sampling(struct adc_context *ctx)
 {
@@ -117,6 +148,8 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 
 	data->repeat_buffer = data->buffer;
 
+	adc_cc23x0_pm_policy_state_lock_get();
+
 	ADCManualTrigger();
 }
 
@@ -153,6 +186,7 @@ static void adc_cc23x0_isr(const struct device *dev)
 
 	if (int_flags & ADC_INT_DMADONE) {
 		LOG_DBG("DMA done");
+		adc_cc23x0_pm_policy_state_lock_put();
 		adc_context_on_sampling_done(&data->ctx, dev);
 	}
 #else
@@ -171,6 +205,7 @@ static void adc_cc23x0_isr(const struct device *dev)
 	}
 
 	if (!data->channels) {
+		adc_cc23x0_pm_policy_state_lock_put();
 		adc_context_on_sampling_done(&data->ctx, dev);
 	}
 #endif
@@ -407,8 +442,6 @@ static int adc_cc23x0_channel_setup(const struct device *dev,
 	ADCSetAdjustmentOffset(ref);
 	data->adj_gain[data->curr_mem_index] = ADCGetAdjustmentGain(ref);
 
-	data->curr_mem_index++;
-
 	/* Set acquisition time */
 	switch (ADC_ACQ_TIME_UNIT(channel_cfg->acquisition_time)) {
 	case ADC_ACQ_TIME_TICKS:
@@ -437,6 +470,16 @@ static int adc_cc23x0_channel_setup(const struct device *dev,
 	}
 
 	ADCSetSampleDuration(adc_cc23x0_clkdiv_to_field(clk_div), clk_cycles);
+
+#ifdef CONFIG_PM_DEVICE
+	data->mem_cfg[data->curr_mem_index].configured = true;
+	data->mem_cfg[data->curr_mem_index].ch = ch;
+	data->mem_cfg[data->curr_mem_index].ref = ref;
+	data->mem_cfg[data->curr_mem_index].clkdiv_field = adc_cc23x0_clkdiv_to_field(clk_div);
+	data->mem_cfg[data->curr_mem_index].clk_cycles = clk_cycles;
+#endif
+
+	data->curr_mem_index++;
 
 	return 0;
 }
@@ -473,6 +516,39 @@ static int adc_cc23x0_init(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
+
+static int adc_cc23x0_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	struct adc_cc23x0_data *data = dev->data;
+	int i = 0;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		CLKCTLDisable(CLKCTL_BASE, CLKCTL_ADC0);
+		return 0;
+	case PM_DEVICE_ACTION_RESUME:
+		CLKCTLEnable(CLKCTL_BASE, CLKCTL_ADC0);
+		ADCEnableInterrupt(ADC_CC23_INT_MASK);
+
+		/* Restore context for the channels that were configured before */
+		ARRAY_FOR_EACH_PTR(data->mem_cfg, mem_data) {
+			if (mem_data->configured) {
+				ADCSetInput(mem_data->ref, mem_data->ch, i);
+				ADCSetAdjustmentOffset(mem_data->ref);
+				ADCSetSampleDuration(mem_data->clkdiv_field, mem_data->clk_cycles);
+			}
+			i++;
+		}
+
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+#endif /* CONFIG_PM_DEVICE */
+
 static const struct adc_driver_api adc_cc23x0_driver_api = {
 	.channel_setup = adc_cc23x0_channel_setup,
 	.read = adc_cc23x0_read,
@@ -493,6 +569,7 @@ static const struct adc_driver_api adc_cc23x0_driver_api = {
 
 #define CC23X0_ADC_INIT(n)							\
 	PINCTRL_DT_INST_DEFINE(n);						\
+	PM_DEVICE_DT_INST_DEFINE(n, adc_cc23x0_pm_action);			\
 	static void adc_cc23x0_cfg_func_##n(void);				\
 										\
 	static const struct adc_cc23x0_config adc_cc23x0_config_##n = {		\
@@ -509,7 +586,7 @@ static const struct adc_driver_api adc_cc23x0_driver_api = {
 										\
 	DEVICE_DT_INST_DEFINE(n,						\
 			      &adc_cc23x0_init,					\
-			      NULL,						\
+			      PM_DEVICE_DT_INST_GET(n),				\
 			      &adc_cc23x0_data_##n,				\
 			      &adc_cc23x0_config_##n,				\
 			      POST_KERNEL,					\
