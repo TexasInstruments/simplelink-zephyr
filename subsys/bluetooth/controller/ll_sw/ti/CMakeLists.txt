@@ -98,6 +98,7 @@ if (CONFIG_BT_HCI_RAW)
   zephyr_compile_definitions(
     -DADV_NCONN_CFG
     -DADV_CONN_CFG
+    -DUSE_PERIODIC_ADV
     -DSCAN_CFG
     -DINIT_CFG
     -DLEGACY_CMD

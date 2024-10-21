@@ -595,12 +595,16 @@ void ICall_init(void)
  *          This task waits forever on queue message
  *          and executes a requested function call.
  */
+K_HEAP_DEFINE(worker_resource_pool, 128);
+
 void ICall_workerThreadEntry(void *arg)
 {
   ICall_WorkerThreadMsg_t msg;
 
   typedef void (*ICall_workerThreadFuncArg)(void *arg);
   typedef void (*ICall_workerThreadFunc)(void);
+
+  TaskP_setTaskResourcePool(&worker_resource_pool);
 
   workerThreadEntity.queueHandle = MessageQueueP_create(sizeof(ICall_WorkerThreadMsg_t),
                                                         ICALL_WORKER_THREAD_QUEUE_SIZE);
