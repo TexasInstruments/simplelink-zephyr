@@ -8,6 +8,8 @@
 
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/pwm.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
 
 #include <driverlib/gpio.h>
 #include <driverlib/clkctl.h>
@@ -35,12 +37,32 @@ struct pwm_cc23x0_config {
 	uint8_t lgpt_id;
 };
 
+static inline void pwm_cc23x0_pm_policy_state_lock_get(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+#endif
+}
+
+static inline void pwm_cc23x0_pm_policy_state_lock_put(void)
+{
+#ifdef CONFIG_PM_DEVICE
+	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+#endif
+}
+
 static int pwm_cc23x0_set_cycles(const struct device *dev, uint32_t channel, uint32_t period,
 				 uint32_t pulse, pwm_flags_t flags)
 {
 	const struct pwm_cc23x0_config *config = dev->config;
 
 	LOG_DBG("set cycles period[%x] pulse[%x]", period, pulse);
+
+	if (pulse == 0) {
+		pwm_cc23x0_pm_policy_state_lock_get();
+	}
 
 	if ((config->base != LGPT3_BASE) && (pulse > 0xffff || period > 0xffff || pulse > period)) {
 		/* LGPT0, LGPT1, LGPT2 - 16bit counters */
@@ -73,6 +95,10 @@ static int pwm_cc23x0_set_cycles(const struct device *dev, uint32_t channel, uin
 	/* Activate LGPT */
 	HWREG(config->base + LGPT_O_STARTCFG) = 0x1;
 
+	if (pulse > 0) {
+		pwm_cc23x0_pm_policy_state_lock_put();
+	}
+
 	return 0;
 }
 
@@ -91,7 +117,7 @@ static const struct pwm_driver_api pwm_cc23x0_driver_api = {
 	.get_cycles_per_sec = pwm_cc23x0_get_cycles_per_sec,
 };
 
-static int pwm_cc23x0_activate_clock(const struct device *dev)
+static int pwm_cc23x0_clock_action(const struct device *dev, bool activate)
 {
 	const struct pwm_cc23x0_config *config = dev->config;
 	struct pwm_cc23x0_data *data = dev->data;
@@ -114,12 +140,34 @@ static int pwm_cc23x0_activate_clock(const struct device *dev)
 		return -EINVAL;
 	}
 
-	CLKCTLEnable(CLKCTL_BASE, lgpt_clk_id);
-	HWREG(config->base + LGPT_O_PRECFG) = LGPT_CLK_PRESCALE(data->prescale);
-	HWREG(EVTSVT_BASE + EVTSVT_O_LGPTSYNCSEL) = EVTSVT_LGPTSYNCSEL_PUBID_SYSTIM0;
+	if (activate) {
+		CLKCTLEnable(CLKCTL_BASE, lgpt_clk_id);
+		HWREG(config->base + LGPT_O_PRECFG) = LGPT_CLK_PRESCALE(data->prescale);
+		HWREG(EVTSVT_BASE + EVTSVT_O_LGPTSYNCSEL) = EVTSVT_LGPTSYNCSEL_PUBID_SYSTIM0;
+	} else {
+		CLKCTLDisable(CLKCTL_BASE, lgpt_clk_id);
+	}
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+
+static int pwm_cc23x0_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		pwm_cc23x0_clock_action(dev, false);
+		return 0;
+	case PM_DEVICE_ACTION_RESUME:
+		pwm_cc23x0_clock_action(dev, true);
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+#endif /* CONFIG_PM_DEVICE */
 
 #define DT_TIMER(idx) DT_INST_PARENT(idx)
 #define DT_TIMER_BASE_ADDR(idx) (DT_REG_ADDR(DT_TIMER(idx)))
@@ -139,12 +187,13 @@ static int pwm_cc23x0_activate_clock(const struct device *dev)
 			return ret;								\
 		}										\
 												\
-		pwm_cc23x0_activate_clock(dev);							\
+		pwm_cc23x0_clock_action(dev, true);						\
 												\
 		return 0;									\
 	}
 
 #define PWM_DEVICE_INIT(idx)									\
+	PM_DEVICE_DT_INST_DEFINE(idx, pwm_cc23x0_pm_action);					\
 	PWM_CC23X0_INIT_FUNC(idx);								\
 	PINCTRL_DT_INST_DEFINE(idx);								\
 	LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, idx, CONFIG_PWM_LOG_LEVEL);			\
@@ -160,8 +209,8 @@ static int pwm_cc23x0_activate_clock(const struct device *dev)
 		.base_clk = DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency),			\
 	};											\
 												\
-	DEVICE_DT_INST_DEFINE(idx, pwm_cc23x0_init##idx, NULL, &pwm_cc23x0_##idx##_data,	\
-			      &pwm_cc23x0_##idx##_config, POST_KERNEL, CONFIG_PWM_INIT_PRIORITY,\
-			      &pwm_cc23x0_driver_api)
+	DEVICE_DT_INST_DEFINE(idx, pwm_cc23x0_init##idx, PM_DEVICE_DT_INST_GET(idx),		\
+			      &pwm_cc23x0_##idx##_data, &pwm_cc23x0_##idx##_config, POST_KERNEL,\
+			      CONFIG_PWM_INIT_PRIORITY, &pwm_cc23x0_driver_api)
 
 DT_INST_FOREACH_STATUS_OKAY(PWM_DEVICE_INIT);
