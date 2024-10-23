@@ -1573,6 +1573,7 @@ hciStatus_t HCI_HostNumCompletedPktCmd( uint8   numHandles,
 
     // Note: The specification indicates that no event is normally returned.
   }
+#ifndef CONTROLLER_ONLY
   else // bad parameters
   {
     hciStatus_t status = HCI_ERROR_CODE_INVALID_HCI_CMD_PARAMS;
@@ -1583,6 +1584,7 @@ hciStatus_t HCI_HostNumCompletedPktCmd( uint8   numHandles,
                                   sizeof(status),
                                   &status);
   }
+#endif //CONTROLLER_ONLY
 
   return( HCI_SUCCESS );
 }

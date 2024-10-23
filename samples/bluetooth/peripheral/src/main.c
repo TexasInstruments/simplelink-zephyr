@@ -291,7 +291,7 @@ static void bt_ready(void)
 		settings_load();
 	}
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
 		return;
@@ -363,10 +363,10 @@ int main(void)
 	}
 
 	bt_ready();
+
 	bt_gatt_cb_register(&gatt_callbacks);
-#ifdef CONFIG_BT_SMP
 	bt_conn_auth_cb_register(&auth_cb_display);
-#endif
+
 	vnd_ind_attr = bt_gatt_find_by_uuid(vnd_svc.attrs, vnd_svc.attr_count,
 					    &vnd_enc_uuid.uuid);
 	bt_uuid_to_str(&vnd_enc_uuid.uuid, str, sizeof(str));
