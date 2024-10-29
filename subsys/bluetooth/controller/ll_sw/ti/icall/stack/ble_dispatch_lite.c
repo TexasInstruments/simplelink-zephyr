@@ -268,7 +268,7 @@ void icall_liteMsgParser(void * msg)
  *
  * @return  None
  */
-uint16 ble_dispatch_liteProcess(uint8_t  taskId, uint16_t events)
+uint32 ble_dispatch_liteProcess(uint8_t  taskId, uint32 events)
 {
   uint8 *pMsg;
 #ifdef CC33xx // Changed due to VOID redefinition

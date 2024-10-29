@@ -1,14 +1,17 @@
-/*
- * Copyright (c) 2024 Texas Instruments Incorporated
- *
- * SPDX-License-Identifier: Apache-2.0
- */
 /******************************************************************************
 
  @file  _hal_types.h
 
  @brief Describe the purpose and contents of the file.
 
+ Group: WCS, LPC, BTS
+ $Target Device: DEVICES $
+
+ ******************************************************************************
+ $License: BSD3 2006 $
+ ******************************************************************************
+ $Release Name: PACKAGE NAME $
+ $Release Date: PACKAGE RELEASE DATE $
  *****************************************************************************/
 
 #ifndef _HAL_TYPES_H
@@ -122,11 +125,7 @@ typedef uint32          halDataAlign_t;
 #define PACKED_ALIGNED_TYPEDEF_STRUCT       typedef struct PACKED_ALIGNED
 
 #elif defined (__GNUC__)
-#if defined (__clang__)
 #define ALIGNED                             __attribute__((aligned(4)))
-#else
-#define ALIGNED
-#endif
 #ifdef CC33xx
 #define PACKED                              __attribute__((aligned(1)))  __attribute__((packed))
 #else

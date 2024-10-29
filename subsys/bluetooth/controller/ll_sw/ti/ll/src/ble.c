@@ -104,8 +104,8 @@ connReqData_t connReqData[LL_PHY_NUMBER_OF_PHYS];
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 // Connection Command and Parameters
-RCL_CmdBle5Connection *linkCmd;
-RCL_CtxConnection     *linkParam;
+RCL_CmdBle5Connection *linkCmd   = NULL;
+RCL_CtxConnection     *linkParam = NULL;
 #endif // ADV_CONN_CFG | INIT_CFG
 
 //
@@ -114,7 +114,7 @@ RCL_CtxConnection     *linkParam;
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 // Connection Receive Queue
 rxDataQ_t rxDataQ = {0};
-txDataQ_t *txDataQ;
+txDataQ_t *txDataQ = NULL;
 // Connection Output
 RCL_StatsConnection connOutput;
 

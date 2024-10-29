@@ -1239,9 +1239,10 @@ extern uint8 MAP_llRxIgnoreEventHandleStateInit( void );
 extern uint8 MAP_llRxEntryDoneEventHandleStateInit( void );
 extern uint8 MAP_llAbortEventHandleStatePeripheral( uint8 );
 extern uint8 MAP_llLastCmdDoneEventHandleStatePeripheral( void );
+extern uint8 MAP_llRfProcessConnRxEntryAvail( void );
 extern uint8 MAP_llAbortEventHandleStateCentral( uint8 );
 extern uint8 MAP_llLastCmdDoneEventHandleStateCentral( void );
-extern uint8 MAP_llRxEntryDoneEventHandleStateConnection( uint8 );
+extern uint8 MAP_llRxEntryDoneEventHandleStateConnection( void );
 extern uint8 MAP_llLastCmdDoneEventHandleStateTest( void );
 extern uint8 MAP_llRxEntryDoneEventHandleStateTest( void );
 extern void MAP_llProcessCentralControlPacket(void *, uint8 *);
@@ -1623,7 +1624,8 @@ extern void MAP_llCsSubevent_PostProcess(void);
 extern void MAP_llCsSteps_PostProcess(void);
 extern void *MAP_llScheduler_getHandle(uint16);
 extern uint32 MAP_llScheduler_getSwitchTime(uint16);
-extern void MAP_bleStack_initCompleteNotify(int status);
+/*******************************************************************************/
+void MAP_llInitCompleteNotify(int status);
 
 /*******************************************************************************/
 #endif // MAP_DIRECT_H

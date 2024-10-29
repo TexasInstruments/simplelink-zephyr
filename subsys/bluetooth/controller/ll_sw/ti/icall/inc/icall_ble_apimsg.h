@@ -86,7 +86,7 @@ typedef struct _ICall_Hdr_
 typedef struct _ICall_Stack_Event_
 {
   uint16_t signature;  //!< signature (0xffff)
-  uint16_t event_flag; //!< event bit(s)
+  uint32 event_flag; //!< event bit(s)
 } ICall_Stack_Event;
 
 /**

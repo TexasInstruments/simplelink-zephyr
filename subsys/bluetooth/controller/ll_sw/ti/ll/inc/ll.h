@@ -719,8 +719,8 @@ extern void LL_Init( uint8 taskId );
  *
  * @return      Unprocessed event flags.
  */
-extern uint16 LL_ProcessEvent( uint8  task_id,
-                               uint16 events );
+extern uint32 LL_ProcessEvent( uint8  task_id,
+                               uint32 events );
 
 /*******************************************************************************
  * @fn          LL_IsRLActiveTasksRunning

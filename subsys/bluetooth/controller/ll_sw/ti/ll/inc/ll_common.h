@@ -203,6 +203,7 @@ extern "C"
 #define LL_EVT_ADDRESS_RESOLUTION_TIMEOUT              0x1000
 #define LL_EVT_INIT_DONE                               0x2000
 #define LL_EVT_OUT_OF_MEMORY                           0x4000
+#define LL_EVT_CONN_RX_AVAIL                           0x8000
 #define SYS_RESERVED                                   SYS_EVENT_MSG
 
 // Hardware Failure Status

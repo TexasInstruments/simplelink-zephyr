@@ -22,6 +22,9 @@
 
 #ifdef FREERTOS
 #include <FreeRTOS.h>
+
+#else // Zephyr
+#include <zephyr/kernel.h>
 #endif
 
 #include <ti/drivers/dpl/HwiP.h>
@@ -1156,7 +1159,7 @@ ICall_Errno ICall_wait(uint_fast32_t milliseconds)
     ICall_TaskEntry *taskentry = ICall_searchTask(taskhandle);
     uint32_t timeout;
 
-    int16_t retVal = 0;
+    uint32_t retVal = 0;
 
     if (!taskentry)
     {
@@ -1180,8 +1183,8 @@ ICall_Errno ICall_wait(uint_fast32_t milliseconds)
             return (errno);
         }
     }
-    EventP_pend(taskentry->syncHandle, ICALL_POSIX_MSG_EVENT_ID, 0, timeout);
-    if(retVal != (-1))
+    retVal = EventP_pend(taskentry->syncHandle, ICALL_POSIX_MSG_EVENT_ID, 0, timeout);
+    if(retVal != (0))
     {
         return (ICALL_ERRNO_SUCCESS);
     }
@@ -1307,7 +1310,6 @@ void ICall_heapFree(void *msg)
  */
 void ICall_heapGetStats(ICall_heapStats_t *pStats)
 {
-#ifdef FREERTOS
   struct xHeapStats pHeapStats;
 
   ICall_CSState key;
@@ -1318,12 +1320,53 @@ void ICall_heapGetStats(ICall_heapStats_t *pStats)
   pStats->totalFreeSize = pHeapStats.xAvailableHeapSpaceInBytes;
   pStats->totalSize = configTOTAL_HEAP_SIZE;
   pStats->largestFreeSize = pHeapStats.xSizeOfLargestFreeBlockInBytes;
-#else // ZEPHYR
-#define configTOTAL_HEAP_SIZE ((size_t)(0x2000))
-  pStats->totalFreeSize = configTOTAL_HEAP_SIZE;
-  pStats->totalSize = configTOTAL_HEAP_SIZE;
-  pStats->largestFreeSize = configTOTAL_HEAP_SIZE;
-#endif //FREERTOS
+}
+#else // FREERTOS
+// ZEPHYR
+
+K_HEAP_DEFINE(ll_heap, CONFIG_BT_LL_HEAP_SIZE);
+/**
+ * Allocates a memory block.
+ * @param size   size of the block in bytes.
+ * @return address of the allocated memory block or NULL
+ *         if allocation fails.
+ */
+void *ICall_heapMalloc(uint32_t size)
+{
+  void* ret = NULL;
+
+  ret = k_heap_alloc(&ll_heap, size, K_NO_WAIT);
+
+  return ret;
+}
+
+/**
+ * Frees an allocated memory block.
+ * @param msg  pointer to a memory block to free.
+ */
+void ICall_heapFree(void *msg)
+{
+  if(msg != NULL)
+  {
+    k_heap_free(&ll_heap, msg);
+  }
+}
+
+/**
+ * Get Statistic on Heap.
+ * @param stats  pointer to a heapStats_t structure.
+ */
+void ICall_heapGetStats(ICall_heapStats_t *pStats)
+{
+//  sys_memory_stats stats;
+//
+//
+//  int sys_heap_runtime_stats_get(struct sys_heap *heap,
+//                  struct sys_memory_stats *stats);
+
+  pStats->totalFreeSize   = CONFIG_BT_LL_HEAP_SIZE;
+  pStats->totalSize       = CONFIG_BT_LL_HEAP_SIZE;
+  pStats->largestFreeSize = CONFIG_BT_LL_HEAP_SIZE;
 }
 
 #endif // FREERTOS

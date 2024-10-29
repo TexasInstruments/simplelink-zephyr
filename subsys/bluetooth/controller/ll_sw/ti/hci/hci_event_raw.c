@@ -20,6 +20,7 @@
  */
 #include <string.h>
 #include "bcomdef.h"
+#include "hci_api.h"
 #include "hci_event.h"
 #include "hci_ext.h"
 #include "hci_event_internal.h"
@@ -97,14 +98,34 @@ uint8 *hciEvtMask[HCI_EVENT_MASK_NUM_OF_TABLES] =
  hciEvtMaskPage2,
 };
 
-hci_c2h_cbs_t const *hci2HostCBs = NULL;
+static const hciController2HostCallbacks_t *pHciC2HCbs = NULL;
+
+/*********************************************************************
+ * @fn      HCI_ControllerToHostSendCallbackEvent
+ *
+ * @brief   Send event to the host via proprietary callback.
+ *          The callback will be executed in the caller context
+ *          (No context switch will be done here)
+ *
+ * @param   pData          - a pointer to the data to parse.
+ *          callbackFctPtr - function pointer that will parse the message.
+ *
+ * @return  status:
+ *            true: always return true
+ */
+static uint8_t HCI_ControllerToHostSendCallbackEvent(void *pData, void* callbackFctPtr)
+{
+  ((void (*)(void*))(callbackFctPtr))(pData);
+
+  return true;
+}
 
 /*******************************************************************************
  * @fn          HCI_CommandStatusCb
  *
  * @brief       This function is a wrapper to a callback provided by the Host.
  *              It was created to align the typecasts of the HCI_TL_CommandStatusCB_t
- *              and the hci2HostCBs->send (the return type is different).
+ *              and the pHciC2HCbs->send (the return type is different).
  *
  * input parameters
  *
@@ -119,10 +140,44 @@ hci_c2h_cbs_t const *hci2HostCBs = NULL;
  */
 void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
 {
-  if (( NULL != hci2HostCBs ) && ( NULL != hci2HostCBs->send ))
+  if (( NULL != pHciC2HCbs ) && ( NULL != pHciC2HCbs->send ))
   {
-    hci2HostCBs->send(pBuf, len);
+    (void) pHciC2HCbs->send(pBuf, len);
   }
+}
+
+/********************************************************************************
+ * @fn            BLE_ServicesParamsInit
+ *
+ * @brief         The `BLE_ServicesParamsInit` function provides a default
+ *                configuration for the bleServicesParams_t structure
+ *
+ * input parameters
+ *
+ * @param         pController2HostCallbacks - pointer to Controller-to-Host
+ * 											  callbacks interface
+ *
+ * output parameters
+ *
+ * @return        SUCCESS - in case pServiceParams initialization succeed
+ *                FAILURE in case of
+ *                   - Compatibility/versions mismatch (the check is done based
+ *                     on size of the hciController2HostCallbacks_t).
+ *                   - Parameters validation
+ *
+ * */
+uint32 HCI_Controller2HostCallbacksInit(hciController2HostCallbacks_t *pController2HostCallbacks)
+{
+  uint32 status = FAILURE;
+
+  if ( NULL != pController2HostCallbacks )
+  {
+    memset(pController2HostCallbacks, 0, sizeof(hciController2HostCallbacks_t));
+
+    status = SUCCESS;
+  }
+
+  return status;
 }
 
 /*******************************************************************************
@@ -132,7 +187,7 @@ void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
  *
  * input parameters
  *
- * @param       hci_c2h_cbs_t cbs - pointer to the callbacks structure.
+ * @param       hciController2HostCallbacks_t cbs - pointer to the callbacks structure.
  *
  * output parameters
  *
@@ -140,15 +195,15 @@ void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
  *
  * @return      SUCCESS / FAILURE.
  */
-uint8 HCI_ControllerToHostRegisterCb( const hci_c2h_cbs_t *cbs )
+uint32 HCI_ControllerToHostRegisterCb( const hciController2HostCallbacks_t *pCbs )
 {
-  uint8 status = FAILURE;
+  uint32 status = FAILURE;
 
-  if ( NULL != cbs )
+  if ( NULL != pCbs )
   {
-    hci2HostCBs      = cbs;
+    pHciC2HCbs      = pCbs;
 
-    HCI_TL_Init(NULL, HCI_CommandStatusCb, NULL, 0);
+    HCI_TL_Init(NULL, HCI_CommandStatusCb, HCI_ControllerToHostSendCallbackEvent, 0);
 
     status           = SUCCESS;
   }
@@ -178,13 +233,19 @@ void HCI_SendEventToHost( uint8 *pEvt )
 {
   if ( pEvt != NULL )
   {
-    if (( NULL != hci2HostCBs ) && ( NULL != hci2HostCBs->send ))
+    if (( NULL != pHciC2HCbs ) && ( NULL != pHciC2HCbs->send ))
     {
-      uint16 pktLen = hciGetPacketLen( (hciPacket_t *)pEvt );
+        hciPacket_t *pMsg = (hciPacket_t *)(pEvt);
+        uint16 pktLen = hciGetPacketLen( pMsg );
 
-      hci2HostCBs->send( ((hciPacket_t *)(pEvt))->pData, pktLen );
+        (void) pHciC2HCbs->send( pMsg->pData, pktLen );
 
-      osal_msg_deallocate( pEvt );
+        if(pMsg->pData[0] == HCI_ACL_DATA_PACKET)
+        {
+          MAP_osal_bm_free( pMsg->pData );
+          pMsg->pData = NULL;
+        }
+        MAP_osal_msg_deallocate( pEvt );
     }
     else
     {
@@ -3743,9 +3804,8 @@ uint8* hciAllocAndPrepExtHciEvtPkt( uint8 **pData, uint16 hciPktLen )
     /*******************/
     /*** OUT OF HEAP ***/
     /*******************/
-    // For indication to the host use
-    // "MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );"
-    // or ASSERT
+    // Send indication to the host
+    MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );
   }
 
   // else pEvt == NUll
@@ -3805,9 +3865,11 @@ uint8* hciAllocAndPrepHciEvtPkt( uint8 **pData, uint8 hciEvtType,
     /*******************/
     /*** OUT OF HEAP ***/
     /*******************/
-    // For indication to the host use
-    // "MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );"
-    // or ASSERT
+    // Send indication to the host
+    if (hciEvtType != HCI_BLE_HARDWARE_ERROR_EVENT_CODE)
+    {
+      MAP_HCI_HardwareErrorEvent( HCI_ERROR_CODE_MEM_CAP_EXCEEDED );
+    }
   }
 
   // else pEvt == NUll
@@ -3888,6 +3950,11 @@ uint16 hciGetPacketLen( hciPacket_t *pEvt )
       case HCI_ACL_DATA_PACKET:
       {
         pktLen = HCI_DATA_MIN_LENGTH + BUILD_UINT16( pEvt->pData[3], pEvt->pData[4] );
+        break;
+      }
+      default:
+      {
+        pktLen = 0;
         break;
       }
     }

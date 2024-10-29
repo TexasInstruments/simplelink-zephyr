@@ -60,7 +60,7 @@ extern void Hal_Init ( uint8 task_id );
 /*
  * Process Serial Buffer
  */
-extern uint16 Hal_ProcessEvent ( uint8 task_id, uint16 events );
+extern uint32 Hal_ProcessEvent ( uint8 task_id, uint32 events );
 
 /*
  * Process Polls

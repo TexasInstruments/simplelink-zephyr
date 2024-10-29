@@ -43,6 +43,8 @@
 #include "hal_gpio_wrapper.h"
 #include "ll_ae.h"
 #include "cs/ll_cs_rcl.h"
+#include "map_direct.h"
+
 //
 #include "rom_jt.h"
 
@@ -1062,29 +1064,13 @@ void LL_rclPeripheralCallback(RCL_Command *cmd,
   //////////////////////////////////////////////////////////////////////////////
   if ( events.rxEntryAvail )
   {
-    if (lrfEvents.rxOk)
-    {
-      MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
-    }
-    else if (lrfEvents.rxNok)
-    {
-      MAP_llRxEntryDoneEventHandleStateConnection( TRUE );
-    }
-    else
-    {
-        /* this else clause is required, even if the
-           programmer expects this will never be reached
-           Fix Misra-C Required: MISRA.IF.NO_ELSE */
-    }
+    MAP_llRfProcessConnRxEntryAvail();
   }
   //////////////////////////////////////////////////////////////////////////////
   // Last Command Done
   //////////////////////////////////////////////////////////////////////////////
   if ( events.lastCmdDone )
   {
-    // Check if there are anymore pakcets in the RX queue that needed to be processed
-    (void)MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
-
     // Call last command done handling
     MAP_llLastCmdDoneEventHandleStatePeripheral();
   }
@@ -1124,29 +1110,13 @@ void LL_rclCentralCallback(RCL_Command *cmd,
   //////////////////////////////////////////////////////////////////////////////
   if ( events.rxEntryAvail )
   {
-    if (lrfEvents.rxOk)
-    {
-      MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
-    }
-    else if (lrfEvents.rxNok)
-    {
-      MAP_llRxEntryDoneEventHandleStateConnection( TRUE );
-    }
-    else
-    {
-        /* this else clause is required, even if the
-           programmer expects this will never be reached
-           Fix Misra-C Required: MISRA.IF.NO_ELSE */
-    }
+    MAP_llRfProcessConnRxEntryAvail();
   }
   //////////////////////////////////////////////////////////////////////////////
   // Last Command Done
   //////////////////////////////////////////////////////////////////////////////
   if ( events.lastCmdDone )
   {
-    // Check if there are anymore pakcets in the RX queue that needed to be processed
-    (void)MAP_llRxEntryDoneEventHandleStateConnection( FALSE );
-
     // Call last command done handling
     MAP_llLastCmdDoneEventHandleStateCentral();
   }
@@ -1372,13 +1342,6 @@ uint8 llLastCmdDoneEventHandleConnectRequest( advSet_t *pAdvSet )
     // check if the InitA is an RPA
     if ( MAP_LL_PRIV_IsRPA( peerAddrType, peerAddr ) )
     {
-      if (privInfo.addrResolution == FALSE)
-      {
-        // The peer is an RPA but address resolution is disabled
-        // Don't connect
-        return FALSE;
-      }
-
       // Check if peer address is resolvable
       rlIndexA = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
 
@@ -2494,7 +2457,7 @@ uint8 llLastCmdDoneEventHandleStatePeripheral( void )
   }
    taskEndAction = MAP_llPeripheral_TaskEnd;
   // process RF End Cause
-  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_CONN_RX_AVAIL | LL_EVT_POST_PROCESS_RF );
 
   // ALT: Check if the active connection has any missing buffers in the
   //      Rx ring buffer (in case the heap ran out when processing Rx
@@ -2522,7 +2485,7 @@ uint8 llLastCmdDoneEventHandleStateCentral( void )
   taskEndAction = MAP_llCentral_TaskEnd;
 
   // process RF End Cause
-  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_POST_PROCESS_RF );
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_CONN_RX_AVAIL | LL_EVT_POST_PROCESS_RF );
 
   // ALT: Check if the active connection has any missing buffers in the
   //      Rx ring buffer (in case the heap ran out when processing Rx
@@ -2532,6 +2495,23 @@ uint8 llLastCmdDoneEventHandleStateCentral( void )
 }
 #endif //(CTRL_CONFIG & INIT_CFG)
 
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
+uint8 llRfProcessConnRxEntryAvail( void )
+{
+  // check if the connection is still valid
+  if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
+  {
+    // connection may have already been ended by a reset
+    return FALSE;
+  }
+
+  // process RF packet
+  (void)MAP_osal_set_event( LL_TaskID, LL_EVT_CONN_RX_AVAIL );
+
+  return TRUE;
+}
+#endif //(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
+
 /*
 ** Local Functions for Central and Peripheral state
 */
@@ -2539,7 +2519,7 @@ uint8 llLastCmdDoneEventHandleStateCentral( void )
 ////////////////////////////////////////////////////////////////////////////////
 // Rx Entry Done Event Handle for Central and Peripheral state
 ////////////////////////////////////////////////////////////////////////////////
-uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
+uint8 llRxEntryDoneEventHandleStateConnection()
 {
   halIntState_t  cs;
   llConnState_t *connPtr;
@@ -2553,6 +2533,7 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   uint8          cteInfo;
 #endif
   uint8          recvCte = FALSE;
+  RCL_Ble5_RxPktStatus rxPktStatus;
 
   // check if the connection is still valid
   if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
@@ -2584,190 +2565,177 @@ uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError )
   {
     // get pointer to BLE PDU packet
     pPkt = pDataEntry->data + (pDataEntry->numPad - 1);
-  // get the packet header
-  pktHdrInfo = *pPkt++;
-  pktHdr = pktHdrInfo & LL_DATA_PDU_HDR_LLID_MASK;
+    // get the packet header
+    pktHdrInfo = *pPkt++;
+    pktHdr = pktHdrInfo & LL_DATA_PDU_HDR_LLID_MASK;
 
-  // Check that header includes CTE header
-  if ( (((pktHdrInfo) & BV(LL_DATA_PDU_HDR_CP_BIT)) != 0) )
-  {
-    recvCte = TRUE;
-  }
+    // Check that header includes CTE header
+    if ( (((pktHdrInfo) & BV(LL_DATA_PDU_HDR_CP_BIT)) != 0) )
+    {
+      recvCte = TRUE;
+    }
+    rxPktStatus = RCL_BLE5_getRxStatus(pDataEntry);
 
-  // when receive CRC Error - no need to mark the buffer as available
-  if (( crcError ) && ( !recvCte ))
-  {
-    return TRUE;
-  }
+    // when receive CRC Error - no need to mark the buffer as available
+    if (( rxPktStatus.crcError ) && ( !recvCte ))
+    {
+      return TRUE;
+    }
 
-  // check if the LLID is invalid
-  if ( LL_INVALID_LLID(pktHdr) )
-  {
-    // it is, so mark buffer as available, and advance to next entry
-    /*
-    * RX Buffers (rxDataQ) are a in fact a unique shared queue for all connections (peripheral and/or central).
-    *
-    * When one of the connections receive data, it sets the rcl command with a pointer to the first available entry in the queue (head).
-    * When the rf callback will occur, the connection should read the data from the queue - from the head pointer.
-    *
-    * The connection then will process the data, and when it's done, it should do 2 things:
-    * 1. Clear the used buffers and enqueue those back to the queue
-    *    (done with RCL_MultiBuffer_get, RCL_MultiBuffer_clear and RCL_MultiBuffer_put sequence)
-    * 2. All active connections should be updated with the new head and tail pointers, so all will be ready for their next command.
-    *
-    * We do the whole processing (receiving RCL_MultiBuffer_RxEntry_get(), clearing and updating) on the rxDataQ instead of the
-    * command pointer (linkParam[].rxBuffers) so the rxDataQ is always the most updated structure,
-    * while the connections receive the parameters update from the rxDataQ queue.
-    * */
-    llClearRxDataEntry(&rxDataQ.multiBuffers, &rxDataQ.finishedBuffers);
-    // Align the global Rx buffer list
-    llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
-    return TRUE;
-  }
+    // Check if the LLID is invalid
+    if ( LL_INVALID_LLID(pktHdr) )
+    {
+      // it is, so mark buffer as available, and advance to next entry
+      /*
+      * RX Buffers (rxDataQ) are a in fact a unique shared queue for all connections (peripheral and/or central).
+      *
+      * When one of the connections receive data, it sets the rcl command with a pointer to the first available entry in the queue (head).
+      * When the rf callback will occur, the connection should read the data from the queue - from the head pointer.
+      *
+      * The connection then will process the data, and when it's done, it should do 2 things:
+      * 1. Clear the used buffers and enqueue those back to the queue
+      *    (done with RCL_MultiBuffer_get, RCL_MultiBuffer_clear and RCL_MultiBuffer_put sequence)
+      * 2. All active connections should be updated with the new head and tail pointers, so all will be ready for their next command.
+      *
+      * We do the whole processing (receiving RCL_MultiBuffer_RxEntry_get(), clearing and updating) on the rxDataQ instead of the
+      * command pointer (linkParam[].rxBuffers) so the rxDataQ is always the most updated structure,
+      * while the connections receive the parameters update from the rxDataQ queue.
+      * */
+      llClearRxDataEntry(&rxDataQ.multiBuffers, &rxDataQ.finishedBuffers);
+      // Align the global Rx buffer list
+      llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
+      return TRUE;
+    }
 
-  // get the packet length
-  pktLen = *pPkt++;
+    // get the packet length
+    pktLen = *pPkt++;
 
-  // Case header includes CTE header
-  if ( recvCte )
-  {
+    // Case header includes CTE header
+    if ( recvCte )
+    {
 #ifdef RTLS_CTE
-    // get the CTE info
-    cteInfo = *pPkt++;
-    //save the CTE info received from peer
-    llCte[connPtr->connId].initiator.recvCte = TRUE;
-    llCte[connPtr->connId].initiator.recvInfo.length = cteInfo & LL_CTE_INFO_TIME_MASK;
-    llCte[connPtr->connId].initiator.recvInfo.type = (cteInfo & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
+      // get the CTE info
+      cteInfo = *pPkt++;
+      //save the CTE info received from peer
+      llCte[connPtr->connId].initiator.recvCte = TRUE;
+      llCte[connPtr->connId].initiator.recvInfo.length = cteInfo & LL_CTE_INFO_TIME_MASK;
+      llCte[connPtr->connId].initiator.recvInfo.type = (cteInfo & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
 #endif
-    // CTE Received with CRC Error
-    if (crcError)
-    {
-      return TRUE;
-    }
-  }
-
-  // check if we have received a data packet during an encryption procedure
-  // Note: This requirement based on ESR05 V1.0, Erratum 3565.
-  // Note: Technically, an empty packet will never be received since they
-  //       are flushed.
-  // Note: Vol 6, Part B, Section 5.1.3 says any Data Channel PDU received
-  //       during Pause shall terminate the connection with MIC error. A
-  //       Data Channel PDU is a non-empty data packet or a control packet.
-  //       Control packets are allowed here, otherwise we won't be able
-  //       to complete the encryption control procedure.
-  // Note: For the Central, Rx data is not allowed after the ENC_RSP is received or after a
-  // PAUSE_ENC_RSP is received. For the Peripheral, Rx data is not allowed after the ENC_REQ is received or
-  // after the PAUSE_ENC_REQ is received
-  if ( (LL_DATA_PDU(pktHdr) && (pktLen != 0)) &&
-       ((connPtr->rxDataEnabled == FALSE) ||
-       ((connPtr->encInfo.encRestart == TRUE) &&
-       ((llState == LL_STATE_CONN_PERIPHERAL) ||
-       ((llState == LL_STATE_CONN_CENTRAL) && (connPtr->encInfo.pauseEncRspRcved == TRUE))))) )
-  {
-    // non-empty data packet or an invalid packet received during an
-    // encryption procedure, so terminate with MIC error
-    // Note: When using PM, it is possible this routine could terminate
-    //       the connection and try to shutdown the RF Core while the
-    //       radio is still running (as we are in the context of an
-    //       ISR). To prevent this, we wait until the connection ends
-    //       before terminating by letting the connection event
-    //       complete.
-
-    // set termination reason code
-    connPtr->termInfo.reason = LL_MIC_FAILURE_TERM;
-
-    // set flag to indicate a termination indication was received
-    connPtr->termInfo.termIndRcvd = TRUE;
-
-    // ALT: Halt the radio first, then terminate the connection.
-    // MAP_llHaltRadio( CMD_ABORT );
-    // MAP_llConnTerminate( connPtr, LL_MIC_FAILURE_TERM );
-
-    return TRUE;
-  }
-
-  // check if a data packet and the receive flow control is enabled
-  // Note: This is in support of Controller to Host flow control.
-  if ( LL_DATA_PDU(pktHdr) && (rxFifoFlowCtrl == LL_RX_FLOW_CONTROL_ENABLED) )
-  {
-    // yep, so nothing to do here
-    return TRUE;
-  }
-
-  // check if decryption is necessary
-  if ( connPtr->encEnabled )
-  {
-    // exclude the MIC size
-    pktLen -= LL_PKT_MIC_LEN;
-
-    // This connection is already marked for termination from the previous packet process,
-    // we should not continue with the process this packet.
-    if (connPtr->termInfo.termIndRcvd == TRUE)
-    {
-      return TRUE;
+      // CTE Received with CRC Error
+      if (rxPktStatus.crcError)
+      {
+        return TRUE;
+      }
     }
 
-    // decrypt/authenticate PDU
-    if ( MAP_LL_ENC_Decrypt( connPtr,
-                             pktHdrInfo,
-                             pktLen,
-                             pPkt ) != SUCCESS )
+    // check if we have received a data packet during an encryption procedure
+    // Note: This requirement based on ESR05 V1.0, Erratum 3565.
+    // Note: Technically, an empty packet will never be received since they
+    //       are flushed.
+    // Note: Vol 6, Part B, Section 5.1.3 says any Data Channel PDU received
+    //       during Pause shall terminate the connection with MIC error. A
+    //       Data Channel PDU is a non-empty data packet or a control packet.
+    //       Control packets are allowed here, otherwise we won't be able
+    //       to complete the encryption control procedure.
+    // Note: For the Central, Rx data is not allowed after the ENC_RSP is received or after a
+    // PAUSE_ENC_RSP is received. For the Peripheral, Rx data is not allowed after the ENC_REQ is received or
+    // after the PAUSE_ENC_REQ is received
+    if ( (LL_DATA_PDU(pktHdr) && (pktLen != 0)) &&
+         ((connPtr->rxDataEnabled == FALSE) ||
+         ((connPtr->encInfo.encRestart == TRUE) &&
+         ((llState == LL_STATE_CONN_PERIPHERAL) ||
+         ((llState == LL_STATE_CONN_CENTRAL) && (connPtr->encInfo.pauseEncRspRcved == TRUE))))) )
     {
-      // decrypt failed due to MIC error, so terminate connection
+      // non-empty data packet or an invalid packet received during an
+      // encryption procedure, so terminate with MIC error
       // Note: When using PM, it is possible this routine could terminate
       //       the connection and try to shutdown the RF Core while the
       //       radio is still running (as we are in the context of an
       //       ISR). To prevent this, we wait until the connection ends
       //       before terminating by letting the connection event
       //       complete.
-      // set termination reason
+
+      // set termination reason code
       connPtr->termInfo.reason = LL_MIC_FAILURE_TERM;
 
       // set flag to indicate a termination indication was received
       connPtr->termInfo.termIndRcvd = TRUE;
 
-      // After decryption failure, we should stop the RPA timer and post an LL event to change the RPA properly.
-      if ( privInfo.addrResolution == LL_ENABLE_ADDR_RESOLUTION )
-      {
-        // stop timer
-        (void) MAP_osal_stop_timerEx( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
+      // ALT: Halt the radio first, then terminate the connection.
+      // MAP_llHaltRadio( CMD_ABORT );
+      // MAP_llConnTerminate( connPtr, LL_MIC_FAILURE_TERM );
 
-        // set the event
-        (void) MAP_osal_set_event( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
-      }
       return TRUE;
     }
 
-    HAL_ENTER_CRITICAL_SECTION(cs);
-
-    // reset the expiration toggle flag
-    llConns.llConnection[connPtr->connId].numAptoExp = 0;
-
-    // restart the APTO timer
-    MAP_osal_CbTimerUpdate( connPtr->aptoTimerId,
-                            (connPtr->aptoValue / 2) );
-
-    HAL_EXIT_CRITICAL_SECTION(cs);
-  }
-  // check packet type
-  // ALT: This macro could also check first/continue packet.
-  if ( LL_DATA_PDU(pktHdr) )
-  {
-#ifdef CC23X0
-    connPtr->lastRssi = RCL_readRssi();
-#else
-    // obtain the RSSI, if present
-    if ( RSSI_SUFFIX_PRESENT() )
+    // check if a data packet and the receive flow control is enabled
+    // Note: This is in support of Controller to Host flow control.
+    if ( LL_DATA_PDU(pktHdr) && (rxFifoFlowCtrl == LL_RX_FLOW_CONTROL_ENABLED) )
     {
-      // RSSI available, so figure out its offset
-      // Note: Order is always: CRC, RSSI, Status, Timestamp.
-      connPtr->lastRssi = pPkt[pktLen + ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0) + ((CRC_SUFFIX_PRESENT())?SUFFIX_CRC_SIZE:0)];
+      // yep, so nothing to do here
+      return TRUE;
     }
-    else // RSSI is not present
+
+    // check if decryption is necessary
+    if ( connPtr->encEnabled )
     {
-      connPtr->lastRssi = LL_RF_RSSI_INVALID;
+      // exclude the MIC size
+      pktLen -= LL_PKT_MIC_LEN;
+
+      // This connection is already marked for termination from the previous packet process,
+      // we should not continue with the process this packet.
+      if (connPtr->termInfo.termIndRcvd == TRUE)
+      {
+        return TRUE;
+      }
+
+      // decrypt/authenticate PDU
+      if ( MAP_LL_ENC_Decrypt( connPtr,
+                               pktHdrInfo,
+                               pktLen,
+                               pPkt ) != SUCCESS )
+      {
+        // decrypt failed due to MIC error, so terminate connection
+        // Note: When using PM, it is possible this routine could terminate
+        //       the connection and try to shutdown the RF Core while the
+        //       radio is still running (as we are in the context of an
+        //       ISR). To prevent this, we wait until the connection ends
+        //       before terminating by letting the connection event
+        //       complete.
+        // set termination reason
+        connPtr->termInfo.reason = LL_MIC_FAILURE_TERM;
+
+        // set flag to indicate a termination indication was received
+        connPtr->termInfo.termIndRcvd = TRUE;
+
+        // After decryption failure, we should stop the RPA timer and post an LL event to change the RPA properly.
+        if ( privInfo.addrResolution == LL_ENABLE_ADDR_RESOLUTION )
+        {
+          // stop timer
+          (void) MAP_osal_stop_timerEx( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
+
+          // set the event
+          (void) MAP_osal_set_event( LL_TaskID, LL_EVT_ADDRESS_RESOLUTION_TIMEOUT );
+        }
+        return TRUE;
+      }
+
+      HAL_ENTER_CRITICAL_SECTION(cs);
+
+      // reset the expiration toggle flag
+      llConns.llConnection[connPtr->connId].numAptoExp = 0;
+
+      // restart the APTO timer
+      MAP_osal_CbTimerUpdate( connPtr->aptoTimerId,
+                              (connPtr->aptoValue / 2) );
+
+      HAL_EXIT_CRITICAL_SECTION(cs);
     }
-#endif
+    // check packet type
+    // ALT: This macro could also check first/continue packet.
+    if ( LL_DATA_PDU(pktHdr) )
+    {
+      connPtr->lastRssi = RCL_readRssi();
 
 #ifdef CONTROLLER_ONLY
     uint8 *pBuf = MAP_LL_RX_bm_alloc( pktLen );

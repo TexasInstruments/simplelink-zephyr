@@ -108,7 +108,7 @@ typedef uint32  uint24;
  * Global System Events
  */
 
-#define SYS_EVENT_MSG               0x8000  //!< A message is waiting event
+#define SYS_EVENT_MSG               0x10000  //!< A message is waiting event
 
 /*********************************************************************
  * Global Generic System Messages

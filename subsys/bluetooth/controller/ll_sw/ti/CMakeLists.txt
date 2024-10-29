@@ -12,7 +12,7 @@ zephyr_include_directories(
   osal/src/inc
   rom
   hal
-  hal/ti
+  hal/inc
   hci
   common
 )
@@ -22,7 +22,7 @@ zephyr_library_sources(
   #common
   common/onboard.c
   #hal
-  hal/ti/src/hal_assert.c
+  hal/src/hal_assert.c
   # LL
   ll/src/ble.c
   ll/src/ll_init.c

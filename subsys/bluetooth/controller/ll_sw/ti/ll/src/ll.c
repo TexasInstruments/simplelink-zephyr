@@ -880,8 +880,8 @@ uint8 LL_IsResolvingListInUsed( void )
  *
  * Public function defined in ll.h.
  */
-uint16 LL_ProcessEvent( uint8  taskId,
-                        uint16 events )
+uint32 LL_ProcessEvent( uint8  taskId,
+                        uint32 events )
 {
   //uint8 *pMsg;
 
@@ -956,8 +956,34 @@ uint16 LL_ProcessEvent( uint8  taskId,
   }
 #endif // SCAN_CFG
 
+
+  /*****************************************************************************
+  ** Process the Connection RX AVAIL
+  ******************************************************************************
+  ** IMPORTANT: LL_EVT_CONN_RX_AVAIL MUST BE PROCESSED BEFORE THE LL_EVT_POST_PROCESS_RF
+  ** DO NOT CHANGE THE PROCCESSING ORDER OF THOSE EVENTS!!!
+  *****************************************************************************/
+  if ( events & LL_EVT_CONN_RX_AVAIL )
+  {
+    taskInfo_t *llTask = MAP_llGetCurrentTask();
+
+    if ( llTask != NULL )
+    {
+      // clear the initial task start time
+      llTask->startTime = 0;
+
+      // check if any post processing is even required
+      MAP_llRxEntryDoneEventHandleStateConnection();
+    }
+
+    return (events ^ LL_EVT_CONN_RX_AVAIL );
+  }
+
   /*****************************************************************************
   ** Post-Process the RF Task Completion
+  ******************************************************************************
+  ** IMPORTANT: LL_EVT_CONN_RX_AVAIL MUST BE PROCESSED BEFORE THE LL_EVT_POST_PROCESS_RF
+  ** DO NOT CHANGE THE PROCCESSING ORDER OF THOSE EVENTS!!!
   *****************************************************************************/
   if ( events & LL_EVT_POST_PROCESS_RF )
   {

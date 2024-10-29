@@ -127,7 +127,7 @@ void osal_CbTimerInit( uint8 taskId )
  *
  * @return      events not processed
  */
-uint16 osal_CbTimerProcessEvent( uint8 taskId, uint16 events )
+uint32 osal_CbTimerProcessEvent( uint8 taskId, uint32 events )
 {
   if ( events & SYS_EVENT_MSG )
   {

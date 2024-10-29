@@ -122,7 +122,7 @@ extern void bleDispatch_Init(uint8_t task_id);
 /*
  * Task Event Processor for the task
  */
-extern uint16_t bleDispatch_ProcessEvent(uint8_t task_id, uint16_t events);
+extern uint32_t bleDispatch_ProcessEvent(uint8_t task_id, uint32_t events);
 
 /*
  * Implementation of the BM allocator functionality.

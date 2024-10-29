@@ -19,6 +19,7 @@
  * INCLUDES
  */
 
+#include <string.h>
 #include "bcomdef.h"
 #include "ll_common.h"
 #include "ll_config.h"
@@ -101,10 +102,7 @@ llStatus_t llDynamicAlloc( void )
   // check that there was enough heap
   if ( extScanInfo )
   {
-    extScanInfo->llTask     = NULL;
-    extScanInfo->scanMode   = LL_SCAN_STOP;
-    extScanInfo->pScanParam = NULL;
-    extScanInfo->pEnable    = NULL;
+    memset (extScanInfo, 0, sizeof(extScanInfo_t));
   }
   else // !extScanInfo
   {
@@ -135,19 +133,15 @@ llStatus_t llDynamicAlloc( void )
   dtmInfo = MAP_osal_mem_alloc( sizeof(dtmInfo_t) );
 
   // check that there was enough heap
-  if ( !dtmInfo )
+  if ( NULL == dtmInfo )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
   else // dtmInfo
   {
-    dtmInfo->rfChan      = 0;
-    dtmInfo->packetLen   = 0;
+    memset (dtmInfo, 0, sizeof(dtmInfo_t));
     dtmInfo->packetType  = LL_DIRECT_TEST_PAYLOAD_UNDEFINED;
-    dtmInfo->numPackets  = 0;
-    dtmInfo->numRxCrcNOK = 0;
     dtmInfo->lastRssi    = LL_RF_RSSI_UNDEFINED;
-    dtmInfo->txPktCnt    = LL_EXT_DTM_TX_CONTINUOUS;
   }
 
   // allocate Scheduler task space
@@ -155,19 +149,21 @@ llStatus_t llDynamicAlloc( void )
                                            (maxNumConns + LL_NUM_TASK_BLOCKS) );
 
   // check that there was enough heap
-  if ( llTaskList.llTasks == NULL )
+  if ( NULL == llTaskList.llTasks )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
+  memset (llTaskList.llTasks, 0, sizeof( taskInfo_t ) *
+                                          (maxNumConns + LL_NUM_TASK_BLOCKS));
 
   // allocate and initialize RX window task when the SDAA module is enable.
-    status = MAP_llSDAASetupRXWindowCmd();
-    if ( status != LL_STATUS_SUCCESS )
-    {
-        // return LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED if
-        // MAP_llSDAASetupRXWindowCmd() fail to allocate memory
-        return ( status );
-    }
+  status = MAP_llSDAASetupRXWindowCmd();
+  if ( status != LL_STATUS_SUCCESS )
+  {
+    // return LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED if
+    // MAP_llSDAASetupRXWindowCmd() fail to allocate memory
+    return ( status );
+  }
 #ifdef LL_CONN_SIZE
   totalConnSize = sizeInfo.sizeTaskInfo;
 #endif // LL_CONN_SIZE
@@ -180,10 +176,11 @@ llStatus_t llDynamicAlloc( void )
     llConns.llConnection = (llConnState_t *)MAP_osal_mem_alloc( sizeof( llConnState_t ) * maxNumConns );
 
     // check that there was enough heap
-    if ( llConns.llConnection == NULL )
+    if ( NULL == llConns.llConnection )
     {
       return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
     }
+    memset (llConns.llConnection, 0, sizeof( llConnState_t ) * maxNumConns);
 
 #ifdef LL_CONN_SIZE
     totalConnSize += sizeInfo.sizeOfLlConnState;
@@ -193,10 +190,11 @@ llStatus_t llDynamicAlloc( void )
     activeConns = (uint8 *)MAP_osal_mem_alloc( sizeof(uint8) * maxNumConns );
 
     // check that there was enough heap
-    if ( activeConns == NULL )
+    if ( NULL == activeConns )
     {
       return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
     }
+    memset (activeConns, 0, sizeof(uint8) * maxNumConns);
 
 #ifdef LL_CONN_SIZE
     totalConnSize += (totalConnSize * maxNumConns);
@@ -205,20 +203,28 @@ llStatus_t llDynamicAlloc( void )
     linkCmd = (RCL_CmdBle5Connection *)MAP_osal_mem_alloc( sizeof(RCL_CmdBle5Connection) * maxNumConns );
 
     // check linkCmd there was enough heap
-    if ( !linkCmd )
+    if ( NULL == linkCmd )
     {
       return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
     }
+    memset (linkCmd, 0, sizeof(RCL_CmdBle5Connection) * maxNumConns);
+
     // Central Parameters - one per connection
     linkParam = (RCL_CtxConnection *)MAP_osal_mem_alloc( sizeof(RCL_CtxConnection) * maxNumConns );
 
-    if ( !linkParam )
+    if ( NULL == linkParam )
     {
       return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
     }
+    memset (linkParam, 0, sizeof(RCL_CtxConnection) * maxNumConns);
+
     // Connection Transmit Queue - one per connection
     txDataQ = (txDataQ_t *)MAP_osal_mem_alloc( sizeof(txDataQ_t) * maxNumConns );
-
+    if (NULL == txDataQ)
+    {
+        return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
+    }
+    memset (txDataQ, 0, sizeof(txDataQ_t) * maxNumConns);
     // Init the CS DB
     MAP_llCsInit();
   }

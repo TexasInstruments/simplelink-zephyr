@@ -559,9 +559,10 @@ extern uint8 llRxIgnoreEventHandleStateInit( void );
 extern uint8 llRxEntryDoneEventHandleStateInit( void );
 extern uint8 llAbortEventHandleStatePeripheral( uint8 preempted );
 extern uint8 llLastCmdDoneEventHandleStatePeripheral( void );
+extern uint8 llRfProcessConnRxEntryAvail( void );
 extern uint8 llAbortEventHandleStateCentral( uint8 preempted );
 extern uint8 llLastCmdDoneEventHandleStateCentral( void );
-extern uint8 llRxEntryDoneEventHandleStateConnection( uint8 crcError );
+extern uint8 llRxEntryDoneEventHandleStateConnection( void );
 extern uint8 llLastCmdDoneEventHandleStateTest( void );
 extern uint8 llRxEntryDoneEventHandleStateTest( void );
 extern void LL_rclAdvRxEntryDone( void );
@@ -585,7 +586,7 @@ extern uint8 llTxDoneEventHandleStateExtAdv( advSet_t *pAdvSet );
 extern void llSetupExtendedAdvData( advSet_t *pAdvSet );
 extern uint8 llSetExtendedAdvReport(aeExtAdvRptEvt_t *extAdvRpt, uint8 *pPkt, uint16 evtType,uint8 extHdrFlgs, uint8 pHdr, uint8 dataLen, uint8 **pSyncInfo,uint8 *secPhy, uint8 *pChannelIndex);
 
-extern void bleStack_initCompleteNotify(int status);
+extern void llInitCompleteNotify(int status);
 
 /*******************************************************************************
  * INIT_CFG and SCAN_CFG hooks
@@ -768,6 +769,15 @@ uint8 MAP_llLastCmdDoneEventHandleStatePeripheral( void )
 #endif
 }
 
+uint8 MAP_llRfProcessConnRxEntryAvail( void )
+{
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
+  return llRfProcessConnRxEntryAvail();
+#else
+  return 0;
+#endif
+}
+
 uint8 MAP_llAbortEventHandleStateCentral( uint8 preempted )
 {
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
@@ -786,10 +796,10 @@ uint8 MAP_llLastCmdDoneEventHandleStateCentral( void )
 #endif
 }
 
-uint8 MAP_llRxEntryDoneEventHandleStateConnection( uint8 crcError )
+uint8 MAP_llRxEntryDoneEventHandleStateConnection( void )
 {
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  return llRxEntryDoneEventHandleStateConnection(crcError);
+  return llRxEntryDoneEventHandleStateConnection();
 #else
   return 0;
 #endif
@@ -2752,11 +2762,15 @@ uint32 MAP_llScheduler_getSwitchTime(uint16 taskID)
 #endif
 }
 
-void MAP_bleStack_initCompleteNotify(int status)
-{
-#ifdef BLE_LL_INIT_SYNC
-  return bleStack_initCompleteNotify(status);
-#endif // BLE_LL_INIT_SYNC
-}
 /*******************************************************************************
  */
+
+/*******************************************************************************
+* Synchronous LL Init
+*/
+void MAP_llInitCompleteNotify(int status)
+{
+#ifdef BLE_LL_INIT_SYNC
+  return llInitCompleteNotify(status);
+#endif // BLE_LL_INIT_SYNC
+}

@@ -61,7 +61,7 @@ extern void ble_dispatch_liteInit(uint8_t taskId);
 /*
  * Task Event Processor for the task
  */
-extern uint16 ble_dispatch_liteProcess(uint8_t taskId, uint16_t events);
+extern uint32 ble_dispatch_liteProcess(uint8_t taskId, uint32 events);
 
 /*
  * BLE direct API message parser

@@ -575,7 +575,7 @@ void HCI_TL_getCmdResponderID( uint8 taskID )
  *
  * Public function defined in hci.h.
  */
-uint16 HCI_ProcessEvent( uint8 task_id, uint16 events )
+uint32 HCI_ProcessEvent( uint8 task_id, uint32 events )
 {
   osal_event_hdr_t *pMsg;
 

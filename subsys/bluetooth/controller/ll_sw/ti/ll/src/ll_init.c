@@ -1,14 +1,14 @@
 /******************************************************************************
 
- @file  ble_init.c
+ @file  ll_init.c
 
- @brief BLE Init code
+ @brief BLE Controller Init code
 
  Group: WCS, BTS
  $Target Device: DEVICES $
 
  ******************************************************************************
- $License: BSD3 2014 $
+ $License: BSD3 2024 $
  ******************************************************************************
  $Release Name: PACKAGE NAME $
  $Release Date: PACKAGE RELEASE DATE $
@@ -16,6 +16,7 @@
 /*******************************************************************************
  * INCLUDES
  */
+#include <string.h>
 
 #include "bcomdef.h"
 #include "icall.h"
@@ -23,6 +24,8 @@
 #include "osal_cbtimer.h"
 #include "hal_types.h"
 #include "ble_dispatch_lite.h"
+#include "hci_api.h"
+#include "ble_init.h"
 #ifndef USE_DEFAULT_USER_CFG
 #include "ble_user_config.h"
 #endif //USE_DEFAULT_USER_CFG
@@ -36,12 +39,16 @@ extern int ICall_createWorkerThread(void);
 /*******************************************************************************
  * PROTOTYPES
  */
-typedef void (*bleStack_RemoteTaskEntry)(const ICall_RemoteTaskArg *arg0,
+typedef void (*llRemoteTaskEntry)(const ICall_RemoteTaskArg *arg0,
                                       void *arg1);
-/*******************************************************************************
- * MACROS
- */
 
+static void llStartupEntry( const ICall_RemoteTaskArg *arg0, void *arg1 );
+
+static int llStart( void *arg );
+
+/*******************************************************************************
+ * CONSTANTS
+ */
 /**
  * Initializer for custom initialization parameters.
  * Each element of the array corresponds to initialization parameter
@@ -51,69 +58,41 @@ typedef void (*bleStack_RemoteTaskEntry)(const ICall_RemoteTaskArg *arg0,
 #ifndef USE_DEFAULT_USER_CFG
 // BLE user defined configuration
 
-#define BLESTACK_USER_CFG           { &bleStackConfig,         \
+#define LL_USER_CFG                 { &bleStackConfig,         \
                                       &boardConfig,            \
                                       &bleAppServiceInfoTable };
 
-icall_userCfg_t bleStack_user0Cfg     = BLESTACK_USER_CFG;
+icall_userCfg_t llUser0Cfg            = LL_USER_CFG;
 
-#define BLE_STACK_USER0_CFG             &bleStack_user0Cfg    //!< user config
+#define BLE_STACK_USER0_CFG             &llUser0Cfg    //!< user config
 
 #else //USE_DEFAULT_USER_CFG
 
 #define BLE_STACK_USER0_CFG             NULL       //!< user config
 #endif // USE_DEFAULT_USER_CFG
 
-#define BLESTACK_TASK_PRIORITIES    { 5 }
-#define BLESTACK_TASK_STACK_SIZES   { 1500 }
-#define BLESTACK_CUSTOM_INIT_PARAMS { BLE_STACK_USER0_CFG }
-
-/** @internal initialization parameter (pointer) for each remote thread */
-#define bleStack_getInitParams(_i) (bleStack_initParams[i])
-
-/** @internal external image count */
-#define BLESTACK_REMOTE_THREAD_COUNT \
-  (sizeof(bleStack_threadEntries)/sizeof(bleStack_threadEntries[0]))
-
-//extern ICall_RemoteTaskEntry bleStack_startup_entry;
-#define BLESTACK_ADDR_MAPS \
-{ \
-  (bleStack_RemoteTaskEntry) (bleStack_startup_entry) \
-}
-
-#define LL_INIT_TIMEOUT_MSEC              10000
-
+#define LL_TASK_PRIORITIES              { 5 }
+#define LL_TASK_STACK_SIZES             { 1500 }
+#define LL_CUSTOM_INIT_PARAMS           { BLE_STACK_USER0_CFG }
 
 /*******************************************************************************
- * LOCAL FUNCTION DEFINITIONS
+ * MACROS
  */
-/**
- * Initializer for an array of @ref ICall_RemoteTaskEntry.
- * Each element of the array corresponds to an entry function
- * of an external image.
- * The function address must be an odd address for CC2650
- * so that call will be made in Thumb mode
- */
-void bleStack_startup_entry( const ICall_RemoteTaskArg *arg0, void *arg1 );
 
 /*******************************************************************************
- * CONSTANTS
+ * LOCAL VARIABLES
  */
-
-/**
- * @internal
- * Array of entry function of external images.
- */
-static const bleStack_RemoteTaskEntry bleStack_threadEntries[] = BLESTACK_ADDR_MAPS;
-
 
 /** @internal thread priorities to be assigned to each remote thread */
-static const int bleStack_threadPriorities[] = BLESTACK_TASK_PRIORITIES;
+static const int llThreadPriorities[]    = LL_TASK_PRIORITIES;
 
 /** @internal thread stack max depth for each remote thread */
-static const size_t bleStack_threadStackSizes[] = BLESTACK_TASK_STACK_SIZES;
+static const size_t llThreadStackSizes[] = LL_TASK_STACK_SIZES;
 
-static const void *bleStack_initParams[] = BLESTACK_CUSTOM_INIT_PARAMS;
+static const void *llInitParams[]        = LL_CUSTOM_INIT_PARAMS;
+
+/** @internal initialization parameter (pointer) for each remote thread */
+#define llGetInitParams(_i)              (llInitParams[i])
 
 __attribute__((weak)) const pTaskEventHandlerFn tasksArr[] =
 {
@@ -131,28 +110,36 @@ __attribute__((weak)) const pTaskEventHandlerFn tasksArr[] =
 #endif /* ICAL_LITE */
 };
 
-__attribute__((weak)) const uint8 tasksCnt = sizeof( tasksArr ) / sizeof( tasksArr[0] );
+#define LL_ADDR_MAPS \
+{ \
+  (llRemoteTaskEntry) (llStartupEntry) \
+}
 
-__attribute__((weak))  uint16 *tasksEvents;
+static const llRemoteTaskEntry llThreadEntries[] = LL_ADDR_MAPS;
+
+/** @internal external image count */
+#define LL_REMOTE_THREAD_COUNT \
+  (sizeof(llThreadEntries)/sizeof(llThreadEntries[0]))
+
+static SemaphoreP_Handle initDoneSemHandle = NULL;
+
+static const bleServicesParams_t *pBleServicesParams = NULL;
 
 /*******************************************************************************
  * TYPEDEFS
  */
 
 /*******************************************************************************
- * LOCAL VARIABLES
- */
-static SemaphoreP_Handle bleStack_initDone_sem;
-
-/*******************************************************************************
  * GLOBAL VARIABLES
  */
+__attribute__((weak)) const uint8 tasksCnt = sizeof( tasksArr ) / sizeof( tasksArr[0] );
 
 /**
  * Main entry function for the stack image
  */
-int bleStack_main( void *arg )
+static int llStart( void *arg )
 {
+  int ret = 0;
   /* User reconfiguration of BLE Controller and Host variables */
   setBleUserConfig( (icall_userCfg_t *)arg );
 
@@ -167,7 +154,6 @@ int bleStack_main( void *arg )
     ICall_abort();
   }
 
-#ifndef CONFIG_SOC_CC2340R5
 #ifdef CC23X0
 #ifndef USE_HSM
   if (LL_initRNGNoise() != LL_STATUS_SUCCESS)
@@ -177,7 +163,6 @@ int bleStack_main( void *arg )
   }
 #endif
 #endif
-#endif // CONFIG_SOC_CC2340R5
 
   // Disable interrupts
   halIntState_t state;
@@ -191,17 +176,20 @@ int bleStack_main( void *arg )
 #endif // !NO_OSAL_SNV && !USE_FPGA
 
   // Initialize the operating system
-  osal_init_system();
+  ret = osal_init_system();
 
   HAL_EXIT_CRITICAL_SECTION(state);
 
-  osal_start_system(); // No Return from here
+  if ( ret == USUCCESS )
+  {
+    osal_start_system(); // No Return from here
+  }
 
-  return(0); // Shouldn't get here.
+  return ret; // Shouldn't get here.
 }
 
 /*******************************************************************************
- * @fn          bleStack_startup_entry
+ * @fn          llStartupEntry
  *
  * @brief       This is the BLE stack entry point.
  *
@@ -216,13 +204,13 @@ int bleStack_main( void *arg )
  *
  * @return      None.
  */
-void bleStack_startup_entry( const ICall_RemoteTaskArg *arg0, void *arg1 )
+static void llStartupEntry( const ICall_RemoteTaskArg *arg0, void *arg1 )
 {
   ICall_dispatcher = arg0->dispatch;
   ICall_enterCriticalSection = arg0->entercs;
   ICall_leaveCriticalSection = arg0->leavecs;
 
-  bleStack_main( arg1 );
+  llStart( arg1 );
 }
 
 /*
@@ -234,14 +222,6 @@ void __attribute__((weak)) osalInitTasks( void )
   ICall_SyncHandle syncHandle;
   uint8 taskID = 0;
   uint8 i;
-
-  tasksEvents = (uint16 *)osal_mem_alloc( sizeof( uint16 ) * tasksCnt);
-  if ( tasksEvents == NULL )
-  {
-    // The initialization of the device failed, there is no reason to continue
-    while(1);
-  }
-  osal_memset( tasksEvents, 0, (sizeof( uint16 ) * tasksCnt));
 
   /* LL Task */
   LL_Init( taskID++ );
@@ -294,70 +274,125 @@ void __attribute__((weak)) osalInitTasks( void )
  * module: ICall_imgEntries, ICall_imgTaskPriorities,
  * ICall_imgTaskStackSizes and ICall_numImages.
  */
-void bleStack_createRemoteTasks(void)
+static void llCreateRemoteTasks(void)
 {
   size_t i;
-  ICall_RemoteTask_t remoteTaskTable[BLESTACK_REMOTE_THREAD_COUNT];
+  ICall_RemoteTask_t remoteTaskTable[LL_REMOTE_THREAD_COUNT];
 
-  for (i = 0; i < BLESTACK_REMOTE_THREAD_COUNT; i++)
+  for (i = 0; i < LL_REMOTE_THREAD_COUNT; i++)
   {
-    remoteTaskTable[i].imgTaskPriority      = bleStack_threadPriorities[i];
-    remoteTaskTable[i].imgTaskStackSize     = bleStack_threadStackSizes[i];
-    remoteTaskTable[i].startupEntry         = bleStack_threadEntries[i];
-    remoteTaskTable[i].ICall_imgInitParam   = (void *) bleStack_getInitParams(i);
+    remoteTaskTable[i].imgTaskPriority      = llThreadPriorities[i];
+    remoteTaskTable[i].imgTaskStackSize     = llThreadStackSizes[i];
+    remoteTaskTable[i].startupEntry         = llThreadEntries[i];
+    remoteTaskTable[i].ICall_imgInitParam   = (void *) llGetInitParams(i);
   }
-  ICall_createRemoteTasksAtRuntime(remoteTaskTable, BLESTACK_REMOTE_THREAD_COUNT);
+  ICall_createRemoteTasksAtRuntime(remoteTaskTable, LL_REMOTE_THREAD_COUNT);
   // create the worker thread
-  ICall_createWorkerThread();
+  (void) ICall_createWorkerThread();
 }
-/*******************************************************************************
- * @fn             bleStack_init
+
+/********************************************************************************
+ * @fn            BLE_ServicesInit
  *
- * @brief          bleStack_init is an initialization function implemented
- *                 within the stack, as oppose to applicational code in
- *                 icall_startup.c and osal_icall_ble.c.
- *                 The new initialization sequence is SYNCHRONOUS, meaning the calling task
- *                 will be blocked until the osal_start_system() will mark the
- *                 initialization completion by calling to
- *                 MAP_bleStack_initCompleteNotify().
- *                 In case the init failed, ble_init() will fault into inifinite loop.
+ * @brief         The `BLE_ServicesInit` function is responsible for initializing
+ *                the BLE services based on the input parameters specified
+ *                in `pServiceParams`. This function offers an option for a synchronous
+ *                initialization sequence, meaning that the calling task will
+ *                be blocked until the stack indicates that the initialization
+ *                is complete.
+ *                If the initialization fails, `BLE_ServicesInit()`
+ *                will return a failure status.
  *
  * input parameters
  *
- * @param       None
+ * @param         pServiceParams - pointer to BLE Params initialization options
  *
  * output parameters
  *
- * @return      None.
+ * @return        SUCCESS / FAILURE.
  *
  * */
-int bleStack_Init()
+uint32 BLE_ServicesInit(const bleServicesParams_t *pServiceParams)
 {
-  int err;
-  bleStack_initDone_sem = SemaphoreP_createBinary(0 /* Semaphore Count */);
+  uint32 status = SemaphoreP_TIMEOUT;
 
-  /* Update User Configuration of the stack */
-  bleStack_user0Cfg.appServiceInfo->timerTickPeriod = ICall_getTickPeriod();
-  bleStack_user0Cfg.appServiceInfo->timerMaxMillisecond  = ICall_getMaxMSecs();
-
-  /* Initialize ICall module */
-  ICall_init();
-
-  /* Start tasks of external images */
-  bleStack_createRemoteTasks();
-
-  /* Wait for init complete. Will be released in init_done callback */
-  err = SemaphoreP_pend(bleStack_initDone_sem, LL_INIT_TIMEOUT_MSEC / ClockP_getSystemTickPeriod());
-  if ( err != 0 )
+  if (NULL != pServiceParams)
   {
-    // The initialization of the BLE Stack failed, update the host.
-    return FAILURE;
+    pBleServicesParams = pServiceParams;
+
+    /* Register Application callback to trap asserts raised in the Stack */
+    RegisterAssertCback(pBleServicesParams->assertCallback);
+
+    /* Register HCI Driver callbacks to provide hci_driver interface to the LL */
+    status = HCI_ControllerToHostRegisterCb( &pBleServicesParams->hciCbs );
+    if (status == SUCCESS)
+    {
+      if (pBleServicesParams->syncInitTimeoutTics != 0 /*NO_WAIT*/)
+      {
+        initDoneSemHandle = SemaphoreP_createBinary(0 /* Semaphore Count */);
+      }
+      /* Update User Configuration of the stack */
+      llUser0Cfg.appServiceInfo->timerTickPeriod = ICall_getTickPeriod();
+      llUser0Cfg.appServiceInfo->timerMaxMillisecond  = ICall_getMaxMSecs();
+
+      /* Initialize ICall module */
+      ICall_init();
+
+      /* Start tasks of external images */
+      llCreateRemoteTasks();
+
+      if (pBleServicesParams->syncInitTimeoutTics != 0 /*NO_WAIT*/)
+      {
+        if (NULL != initDoneSemHandle)
+        {
+          /* Wait for init complete. Will be released in init_done callback */
+          status = SemaphoreP_pend(initDoneSemHandle, pBleServicesParams->syncInitTimeoutTics);
+
+          /* Free the resources */
+          SemaphoreP_delete(initDoneSemHandle);
+          initDoneSemHandle = NULL;
+        }
+      }
+    }
   }
-  return SUCCESS;
+  return ( status == SemaphoreP_OK ) ? SUCCESS : FAILURE;
+}
+
+/********************************************************************************
+ * @fn            BLE_ServicesParamsInit
+ *
+ * @brief         The `BLE_ServicesParamsInit` function provides a default
+ *                configuration for the bleServicesParams_t structure
+ *
+ * input parameters
+ *
+ * @param         pServiceParams - pointer to BLE Params initialization options
+ * @param         size           - size of the initialization structure
+ *
+ *
+ * output parameters
+ *
+ * @return        SUCCESS - in case pServiceParams initialization succeed
+ *                FAILURE in case of
+ *                   - Compatibility/versions mismatch (the check is done based
+ *                     on size of the bleServicesParams_t).
+ *                   - Parameters validation
+ *
+ * */
+uint32 BLE_ServicesParamsInit(bleServicesParams_t *pServiceParams, size_t size)
+{
+  int status = FAILURE;
+  if ( ( NULL != pServiceParams ) && ( size == sizeof(bleServicesParams_t) ) )
+  {
+    memset(pServiceParams, 0, sizeof(bleServicesParams_t));
+
+    status = HCI_Controller2HostCallbacksInit(&pServiceParams->hciCbs);
+  }
+  return status;
 }
 
 /*******************************************************************************
- * @fn          bleStack_initCompleteNotify
+ * @fn          llInitCompleteNotify
  *
  * @brief       This function is  called to notify that the Controller
  *              initialization completed with (status)
@@ -372,10 +407,15 @@ int bleStack_Init()
  *
  * @return      None.
  */
-void bleStack_initCompleteNotify(int status)
+void llInitCompleteNotify(int status)
 {
   if (status == SUCCESS)
   {
-    SemaphoreP_post(bleStack_initDone_sem);
+    if ((NULL != pBleServicesParams) &&
+        (pBleServicesParams->syncInitTimeoutTics != 0 /*NO_WAIT*/) &&
+        (NULL != initDoneSemHandle))
+    {
+      SemaphoreP_post(initDoneSemHandle);
+    }
   }
 }

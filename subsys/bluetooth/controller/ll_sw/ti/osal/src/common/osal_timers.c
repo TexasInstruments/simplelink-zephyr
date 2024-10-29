@@ -51,7 +51,7 @@ typedef struct
 {
   void   *next;
   osalTime_t timeout;
-  uint16 event_flag;
+  uint32 event_flag;
   uint8  task_id;
   uint32 reloadTimeout;
 } osalTimerRec_t;
@@ -82,8 +82,8 @@ static uint32 osal_systemClock;
 /*********************************************************************
  * LOCAL FUNCTION PROTOTYPES
  */
-osalTimerRec_t  *osalAddTimer( uint8 task_id, uint16 event_flag, uint32 timeout );
-osalTimerRec_t *osalFindTimer( uint8 task_id, uint16 event_flag );
+osalTimerRec_t  *osalAddTimer( uint8 task_id, uint32 event_flag, uint32 timeout );
+osalTimerRec_t *osalFindTimer( uint8 task_id, uint32 event_flag );
 void osalDeleteTimer( osalTimerRec_t *rmTimer );
 
 /*********************************************************************
@@ -121,7 +121,7 @@ void osalTimerInit( void )
  *
  * @return  osalTimerRec_t * - pointer to newly created timer
  */
-osalTimerRec_t * osalAddTimer( uint8 task_id, uint16 event_flag, uint32 timeout )
+osalTimerRec_t * osalAddTimer( uint8 task_id, uint32 event_flag, uint32 timeout )
 {
   osalTimerRec_t *newTimer;
   osalTimerRec_t *srchTimer;
@@ -188,7 +188,7 @@ osalTimerRec_t * osalAddTimer( uint8 task_id, uint16 event_flag, uint32 timeout 
  *
  * @return  osalTimerRec_t *
  */
-osalTimerRec_t *osalFindTimer( uint8 task_id, uint16 event_flag )
+osalTimerRec_t *osalFindTimer( uint8 task_id, uint32 event_flag )
 {
   osalTimerRec_t *srchTimer;
 

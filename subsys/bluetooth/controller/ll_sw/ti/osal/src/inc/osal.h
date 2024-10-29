@@ -357,7 +357,7 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  * @return @ref FAILURE
  * @return @ref INVALID_TASK
  */
-  extern uint8 osal_set_event( uint8 task_id, uint16 event_flag );
+  extern uint8 osal_set_event( uint8 task_id, uint32 event_flag );
 
 
 /**
@@ -371,7 +371,7 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  * @return @ref SUCCESS
  * @return @ref INVALID_TASK
  */
-  extern uint8 osal_clear_event( uint8 task_id, uint16 event_flag );
+  extern uint8 osal_clear_event( uint8 task_id, uint32 event_flag );
 
 
 /*** Interrupt Management  ***/

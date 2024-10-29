@@ -402,11 +402,6 @@ extern "C"
  * TYPEDEFS
  */
 
-typedef struct hci_c2h_cbs_t
-{
-  int (*send)(uint8 *pHciPkt, uint16 pktLen);
-}hci_c2h_cbs_t;
-
 /*******************************************************************************
  * LOCAL VARIABLES
  */
@@ -416,28 +411,11 @@ typedef struct hci_c2h_cbs_t
  */
 
 /*******************************************************************************
- * @fn          HCI_ControllerToHostRegisterCb
- *
- * @brief       This function registers Host callbacks for HCI module
- *
- * input parameters
- *
- * @param       hci_c2h_cbs_t cbs - pointer to the callbacks structure.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      SUCCESS / FAILURE.
- */
-uint8 HCI_ControllerToHostRegisterCb( const hci_c2h_cbs_t *cbs );
-
-/*******************************************************************************
  * @fn          HCI_CommandStatusCb
  *
  * @brief       This function is a wrapper for a callback provided by the Host.
  *              It was created to align the typecasts of the HCI_TL_CommandStatusCB_t
- *              and the hci2HostCBs.send (the return type is different).
+ *              and the pHciC2HCbs.send (the return type is different).
  *
  * input parameters
  *

@@ -636,8 +636,8 @@ extern void HCI_TL_getCmdResponderID( uint8 taskID );
  *
  * @return      Unprocessed events.
  */
-extern uint16 HCI_ProcessEvent( uint8  task_id,
-                                uint16 events );
+extern uint32 HCI_ProcessEvent( uint8  task_id,
+                                uint32 events );
 
 
 /// @endcond //NODOC

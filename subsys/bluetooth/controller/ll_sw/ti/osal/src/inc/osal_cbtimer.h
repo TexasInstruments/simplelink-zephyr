@@ -80,8 +80,8 @@ extern void osal_CbTimerInit( uint8 taskId );
 /*
  * Callback Timer task event processing function.
  */
-extern uint16 osal_CbTimerProcessEvent( uint8  taskId,
-                                        uint16 events );
+extern uint32 osal_CbTimerProcessEvent( uint8  taskId,
+                                        uint32 events );
 
 /*
  * Function to start a timer to expire in n mSecs.

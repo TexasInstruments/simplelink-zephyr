@@ -1,8 +1,14 @@
-/*
- * Copyright (c) 2024 Texas Instruments Incorporated
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+/******************************************************************************
+
+ Group: WCS, LPC, BTS
+ $Target Device: DEVICES $
+
+ ******************************************************************************
+ $License: BSD3 2024 $
+ ******************************************************************************
+ $Release Name: PACKAGE NAME $
+ $Release Date: PACKAGE RELEASE DATE $
+ *****************************************************************************/
 /******************************************************************************
 
  @file  _hci_api.h
@@ -19,23 +25,38 @@ extern "C"
 {
 #endif
 
-#include "hal_types.h"
-
+#include "comdef.h"
+#include <stddef.h>
 
 /*******************************************************************************
  * TYPEDEFS
  */
 
-typedef struct hci_c2h_cbs_t
+typedef struct hciController2HostCallbacks
 {
   int (*send)(uint8 *pHciPkt, uint16 pktLen);
-}hci_c2h_cbs_t;
-
-
+} hciController2HostCallbacks_t;
 
 /*******************************************************************************
  * API FUNCTIONS
  */
+
+/*******************************************************************************
+ * @fn          HCI_Controller2HostCallbacksInit
+ *
+ * @brief       This function initializes callback structure
+ *
+ * input parameters
+ *
+ * @param       hciController2HostCallbacks_t - A pointer to callback functions structure.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      SUCCESS / FAILURE.
+ */
+uint32 HCI_Controller2HostCallbacksInit( hciController2HostCallbacks_t *pController2HostCallbacks);
 
 /*******************************************************************************
  * @fn          HCI_ControllerToHostRegisterCb
@@ -44,7 +65,7 @@ typedef struct hci_c2h_cbs_t
  *
  * input parameters
  *
- * @param       hci_c2h_cbs_t cb - callback function.
+ * @param       hciController2HostCallbacks_t pCbs - A pointer to callback functions structure.
  *
  * output parameters
  *
@@ -52,8 +73,19 @@ typedef struct hci_c2h_cbs_t
  *
  * @return      SUCCESS / FAILURE.
  */
-uint8 HCI_ControllerToHostRegisterCb( const hci_c2h_cbs_t *cbs );
+uint32 HCI_ControllerToHostRegisterCb( const hciController2HostCallbacks_t *pCbs );
 
+/********************************************************************************
+ * @fn      HCI_HostToController
+ *
+ * @brief   Send raw HCI packet to the controller.
+ *
+ * @param   pHciPkt - A pointer to a raw buffer of HCI command or data packet.
+ * @param   pktLen  - The hci packet length
+ *
+ * @return  0 for success, negative number for error.
+ */
+int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen);
 
 #ifdef __cplusplus
 }

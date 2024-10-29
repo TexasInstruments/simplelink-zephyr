@@ -299,7 +299,7 @@ void bleDispatch_Init(uint8_t task_id)
  *
  * @return  none
  */
-uint16_t bleDispatch_ProcessEvent(uint8_t task_id, uint16_t events)
+uint32_t bleDispatch_ProcessEvent(uint8_t task_id, uint32_t events)
 {
   if (events & SYS_EVENT_MSG)
   {
