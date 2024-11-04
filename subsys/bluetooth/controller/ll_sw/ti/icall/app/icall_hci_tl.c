@@ -1665,7 +1665,13 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
             // HCI_CommandCompleteEvent call performed by HCI_ResetCmd().
             legacyCmdStatusAdv = HCI_LEGACY_CMD_STATUS_UNDEFINED;
             legacyCmdStatusScan = HCI_LEGACY_CMD_STATUS_UNDEFINED;
+#ifndef HOST_CONFIG
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+
             hci_tl_ClearAdvSet();
+#endif //defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+#endif //HOST_CONFIG
+
             HCI_ResetCmd();
             return;
         }

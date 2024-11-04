@@ -1628,4 +1628,7 @@ extern uint32 MAP_llScheduler_getSwitchTime(uint16);
 void MAP_llInitCompleteNotify(int status);
 
 /*******************************************************************************/
+// OSAL
+extern void osal_bm_free( void *payload_ptr );
+
 #endif // MAP_DIRECT_H
