@@ -16,9 +16,9 @@ if(CONFIG_BT_CTLR AND CONFIG_BT_LL_SW_SPLIT)
   add_subdirectory(controller)
 endif()
 
-if(CONFIG_BT_HCI_TI)
-  add_subdirectory(controller/ll_sw/ti)
-endif()
+zephyr_library_include_directories(
+  ll_sw/ti/inc
+)
 
 zephyr_include_directories(${ZEPHYR_BASE}/subsys/bluetooth)
 
