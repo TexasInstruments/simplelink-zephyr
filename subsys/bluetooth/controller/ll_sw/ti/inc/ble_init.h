@@ -62,7 +62,7 @@ typedef struct bleParam
  * @return        SUCCESS / FAILURE.
  *
  * */
-uint32 BLE_ServicesInit(const bleServicesParams_t *pServiceParams);
+extern uint32 BLE_ServicesInit(const bleServicesParams_t *pServiceParams);
 
 /********************************************************************************
  * @fn            BLE_ServicesParamsInit
@@ -84,7 +84,7 @@ uint32 BLE_ServicesInit(const bleServicesParams_t *pServiceParams);
  *                   - Parameters validation
  *
  * */
-uint32 BLE_ServicesParamsInit(bleServicesParams_t *pServiceParams, size_t size);
+extern uint32 BLE_ServicesParamsInit(bleServicesParams_t *pServiceParams, size_t size);
 
 /*******************************************************************************
  * @fn          RegisterAssertCback
@@ -102,7 +102,7 @@ uint32 BLE_ServicesParamsInit(bleServicesParams_t *pServiceParams, size_t size);
  *
  * @return      None.
  */
-void RegisterAssertCback(assertCback_t appAssertHandler);
+extern void RegisterAssertCback(assertCback_t appAssertHandler);
 
 #ifdef __cplusplus
 }
