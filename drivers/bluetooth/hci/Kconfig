@@ -289,3 +289,10 @@ config BT_H4_NXP_CTLR_WAIT_TIME_AFTER_UPLOAD
 	  Waiting time after firmware is uploaded. Unit is millisecond.
 
 endif #BT_H4_NXP_CTLR
+
+config BT_HCI_TI
+  bool "TI Bluetooth HCI driver"
+  default y
+  depends on DT_HAS_TI_BT_HCI_ENABLED
+  help
+    TI HCI bluetooth interface

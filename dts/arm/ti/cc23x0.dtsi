@@ -10,6 +10,7 @@
 / {
 	chosen {
 		zephyr,flash-controller = &flash_controller;
+		zephyr,bt-hci = &ti_bt_hci;
 	};
 
 	cpus {
@@ -54,6 +55,11 @@
 		compatible = "fixed-clock";
 		clock-frequency = <48000000>;
 		#clock-cells = <0>;
+	};
+
+	ti_bt_hci: ti_bt_hci {
+		compatible = "ti,bt-hci";
+		status = "enabled";
 	};
 
 	soc {
