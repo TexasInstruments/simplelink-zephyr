@@ -245,8 +245,9 @@ manifest:
       path: modules/hal/telink
       groups:
         - hal
-    - name: hal_ti
-      revision: f74250f
+    - name: simplelink-hal_ti
+      remote: downstream
+      revision: 8a4b6bbefcea9dfafebbbe8e7d19b4719286fd84
       path: modules/hal/ti
       groups:
         - hal
