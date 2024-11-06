@@ -15,22 +15,27 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/atomic.h>
-#include "util/memq.h"
-#include "util/dbuf.h"
 
-#include <zephyr/drivers/bluetooth/hci_driver.h>
+#include <zephyr/drivers/bluetooth.h>
 
 #include "comdef.h"
 #include "hci_api.h"
+#include "ble_init.h"
 
-//#include "common/assert.h"
 #include "hal_assert.h"
 #include "hal_types.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
+
 LOG_MODULE_REGISTER(bt_ctlr_hci_driver);
 
+
+#define DT_DRV_COMPAT ti_bt_hci
+
+struct hci_driver_data {
+	bt_hci_recv_t recv;
+};
 /*******************************************************************************
  * TYPEDEFS
  */
@@ -45,26 +50,23 @@ LOG_MODULE_REGISTER(bt_ctlr_hci_driver);
  * LOCAL FUNCTIONS PROTOTYPES
  */
 static int hci_driver_ll_send_to_host_cb(uint8 *pHciPkt, uint16 pktLen);
-static void vs_set_bd_addr();
+//static void vs_set_bd_addr();
 
 /*******************************************************************************
  * EXTERNS
  */
-extern void bleStack_Init();
-extern int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen);
 
 typedef int_fast16_t ICall_Errno;
 typedef uint_least8_t ICall_EntityID;
 typedef void *ICall_SyncHandle;
 ICall_Errno ICall_registerApp(ICall_EntityID *entity,
                                             ICall_SyncHandle *msgSyncHdl);
-extern void RegisterAssertCback(assertCback_t appAssertHandler);
 
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
 
-hci_c2h_cbs_t cbs;
+static bleServicesParams_t bleServicesParams;
 
 /*******************************************************************************
  * API FUNCTIONS
@@ -179,7 +181,7 @@ static uint8_t hci_driver_add_pkt_type(struct net_buf *buf)
 	return SUCCESS;
 }
 
-static int hci_driver_send(struct net_buf *buf)
+static int hci_driver_send(const struct device *dev, struct net_buf *buf)
 {
     static int first_entry = TRUE;
 	int err = SUCCESS;
@@ -191,8 +193,8 @@ static int hci_driver_send(struct net_buf *buf)
         ICall_registerApp(&icall_entity_dummy, &syncEvent_dummy);
         first_entry = FALSE;
 
-        /* In case bt_ctlr_set_public_addr was called, we need to set the BD_ADDR before executing any other commands */
-        vs_set_bd_addr();
+//        /* In case bt_ctlr_set_public_addr was called, we need to set the BD_ADDR before executing any other commands */
+//        vs_set_bd_addr();
     }
 
 	LOG_DBG("enter");
@@ -251,56 +253,50 @@ static int hci_driver_ll_send_to_host_cb(uint8 *pHciPkt, uint16 pktLen)
     buf = hci_evt_create(pHciPkt, pktLen);
 
     if (buf) {
-    	bt_recv(buf);
+    	const struct device *dev = DEVICE_DT_GET(DT_DRV_INST(0));
+    	struct hci_driver_data *data = dev->data;
+
+    	data->recv(dev, buf);
     	return SUCCESS;
     }
 
 	return FAILURE;
 }
 
-static int hci_driver_open(void)
+static int hci_driver_open(const struct device *dev, bt_hci_recv_t recv)
 {
-	int status = SUCCESS;
+	uint32 status = FAILURE;
+	struct hci_driver_data *data = dev->data;
 
-	/* Register Application callback to trap asserts raised in the Stack */
-	RegisterAssertCback(AssertHandler);
+	data->recv = recv;
 
-	/* Init HCI Driver callbacks interface structure */
-	cbs.send      = hci_driver_ll_send_to_host_cb;
-
-	/* Register HCI Driver callbacks to provide hci_driver interface to the LL */
-	status = HCI_ControllerToHostRegisterCb(&cbs);
+	/* Init BLE Services params structure */
+	status = BLE_ServicesParamsInit(&bleServicesParams, sizeof (bleServicesParams_t));
 	if (SUCCESS == status) {
-		bleStack_Init();
-        LOG_DBG("Success.");
+		/* Set HCI Driver callbacks to provide hci_driver interface to the LL */
+		bleServicesParams.hciCbs.send      = hci_driver_ll_send_to_host_cb;
+		/* Set User Defined Assert handling callback */
+		bleServicesParams.assertCallback   = AssertHandler;
+		/* Set User Defined Assert handling callback */
+		bleServicesParams.syncInitTimeoutTics = 10000;
+
+		/* Init the BLE services */
+		LOG_DBG("BLE Init Start");
+		status = BLE_ServicesInit(&bleServicesParams);
+		LOG_DBG("BLE Init End");
 	}
-
-	return status;
+	return (status == SUCCESS ) ? SUCCESS : FAILURE;
 }
 
-static int hci_driver_close(void)
+static int hci_driver_close(const struct device *dev)
 {
+	struct hci_driver_data *data = dev->data;
+
+	/* Clear the (host) receive callback */
+	data->recv = NULL;
 	return 0;
 }
 
-static const struct bt_hci_driver drv = {
-	.name	= "TI HCI Controller",
-	.bus	= BT_HCI_DRIVER_BUS_VIRTUAL,
-	.quirks = BT_QUIRK_NO_AUTO_DLE,
-	.open	= hci_driver_open,
-	.close	= hci_driver_close,
-	.send	= hci_driver_send,
-};
-
-static int hci_driver_init(void)
-{
-
-	bt_hci_driver_register(&drv);
-
-	return 0;
-}
-
-SYS_INIT(hci_driver_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 static bt_addr_t public_addr = {0};
 uint8_t set_bd_addr = FALSE;
@@ -311,27 +307,45 @@ void bt_ctlr_set_public_addr(const uint8_t *addr)
     set_bd_addr = TRUE;
 }
 
-static void vs_set_bd_addr()
-{
-#ifdef CONFIG_HCI_HOST
-    if (set_bd_addr) {
-        struct net_buf *buf;
-        bt_addr_t *bd_addr;
+//static void vs_set_bd_addr()
+//{
+//#ifdef CONFIG_HCI_HOST
+//    if (set_bd_addr) {
+//        struct net_buf *buf;
+//        bt_addr_t *bd_addr;
+//
+//        buf = bt_hci_cmd_create(BT_HCI_SET_BD_ADDR, sizeof(*bd_addr));
+//        if (!buf) {
+//            return;
+//        }
+//
+//        bd_addr = net_buf_add(buf, sizeof(*bd_addr));
+//        bt_addr_copy(bd_addr, &public_addr);
+//
+//        bt_buf_set_type(buf, BT_BUF_CMD);
+//
+//        hci_driver_add_pkt_type(buf);
+//
+//        err = HCI_HostToController(buf->data, buf->len);
+//        if (SUCCESS != err) {
+//            net_buf_unref(buf);
+//            return;
+//        }
+//        net_buf_unref(buf);
+//    }
+//#endif
+//}
 
-        buf = bt_hci_cmd_create(BT_HCI_SET_BD_ADDR, sizeof(*bd_addr));
-        if (!buf) {
-            return;
-        }
+static const struct bt_hci_driver_api hci_driver_api = {
+	.open	= hci_driver_open,
+	.close	= hci_driver_close,
+	.send	= hci_driver_send,
+};
 
-        bd_addr = net_buf_add(buf, sizeof(*bd_addr));
-        bt_addr_copy(bd_addr, &public_addr);
-
-        bt_buf_set_type(buf, BT_BUF_CMD);
-
-        hci_driver_add_pkt_type(buf);
-
-        hci_driver_send(buf);
-
-    }
-#endif
-}
+#define BT_HCI_CONTROLLER_INIT(inst) \
+	static struct hci_driver_data data_##inst = { \
+  	  }; \
+	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &data_##inst, NULL, POST_KERNEL, \
+			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &hci_driver_api)
+/* Only a single instance is supported */
+BT_HCI_CONTROLLER_INIT(0)

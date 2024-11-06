@@ -2499,9 +2499,8 @@ static void hci_cmd_complete(struct net_buf *buf)
 
 	/* Allow next command to be sent */
 	if (ncmd) {
-		if (cmd(buf)->opcode != BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
-			k_sem_give(&bt_dev.ncmd_sem);
-		}
+		k_sem_give(&bt_dev.ncmd_sem);
+		bt_tx_irq_raise();
 	}
 }
 
@@ -2517,13 +2516,20 @@ static void hci_cmd_status(struct net_buf *buf)
 
 	LOG_DBG("opcode 0x%04x", opcode);
 
+	/* HOST_NUM_COMPLETED_PACKETS should not generate a response under normal operation.
+	 * The generation of this command ignores `ncmd_sem`, so should not be given here.
+	 */
+	if (opcode == BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
+		LOG_WRN("Unexpected HOST_NUM_COMPLETED_PACKETS");
+		return;
+	}
+
 	hci_cmd_done(opcode, evt->status, buf);
 
 	/* Allow next command to be sent */
 	if (ncmd) {
-		if (cmd(buf)->opcode != BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
-			k_sem_give(&bt_dev.ncmd_sem);
-		}
+		k_sem_give(&bt_dev.ncmd_sem);
+		bt_tx_irq_raise();
 	}
 }
 
@@ -2958,30 +2964,29 @@ static void hci_core_send_cmd(void)
 	buf = net_buf_get(&bt_dev.cmd_tx_queue, K_NO_WAIT);
 	BT_ASSERT(buf);
 
-	/* Wait until ncmd > 0 */
-	if (cmd(buf)->opcode != BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
-		LOG_DBG("calling sem_take_wait");
-		k_sem_take(&bt_dev.ncmd_sem, K_FOREVER);
+	if (cmd(buf)->opcode == BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
+		err = bt_send(buf);
 	}
-	/* Clear out any existing sent command */
-	if (bt_dev.sent_cmd) {
-		LOG_ERR("Uncleared pending sent_cmd");
-		net_buf_unref(bt_dev.sent_cmd);
-		bt_dev.sent_cmd = NULL;
-	}
-    bt_dev.sent_cmd = net_buf_ref(buf);
+	else
+	{
+		/* Clear out any existing sent command */
+		if (bt_dev.sent_cmd) {
+			LOG_ERR("Uncleared pending sent_cmd");
+			net_buf_unref(bt_dev.sent_cmd);
+			bt_dev.sent_cmd = NULL;
+		}
+		bt_dev.sent_cmd = net_buf_ref(buf);
 
-	LOG_DBG("Sending command 0x%04x (buf %p) to driver", cmd(buf)->opcode, buf);
+		LOG_DBG("Sending command 0x%04x (buf %p) to driver", cmd(buf)->opcode, buf);
 
-	err = bt_send(buf);
-	if (err) {
-		if (cmd(buf)->opcode != BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
+		err = bt_send(buf);
+		if (err) {
 			LOG_ERR("send_cmd: Unable to send 0x%04x to driver (err %d)",cmd(buf)->opcode, err);
 			k_sem_give(&bt_dev.ncmd_sem);
+			hci_cmd_done(cmd(buf)->opcode, BT_HCI_ERR_UNSPECIFIED, buf);
+			net_buf_unref(buf);
+			bt_tx_irq_raise();
 		}
-		hci_cmd_done(cmd(buf)->opcode, BT_HCI_ERR_UNSPECIFIED, buf);
-		net_buf_unref(buf);
-		bt_tx_irq_raise();
 	}
 }
 
@@ -3144,7 +3149,7 @@ static void read_local_features_complete(struct net_buf *buf)
 
 	LOG_DBG("status 0x%02x", rp->status);
 
-	memcpy(bt_dev.features[0], rp->features, sizeof(bt_dev.features[0]));
+	memcpy(bt_dev.features, rp->features, sizeof(bt_dev.features));
 }
 
 static void le_read_supp_states_complete(struct net_buf *buf)
@@ -4641,7 +4646,12 @@ int bt_configure_data_path(uint8_t dir, uint8_t id, uint8_t vs_config_len,
 /* Return `true` if a command was processed/sent */
 static bool process_pending_cmd(k_timeout_t timeout)
 {
-	if (!k_fifo_is_empty(&bt_dev.cmd_tx_queue)) {
+	struct net_buf *buf = NULL;
+	if(( buf = k_fifo_peek_head(&bt_dev.cmd_tx_queue) ) != NULL ) {
+		if (cmd(buf)->opcode == BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
+			hci_core_send_cmd();
+			return true;
+		}
 		if (k_sem_take(&bt_dev.ncmd_sem, timeout) == 0) {
 			hci_core_send_cmd();
 			return true;

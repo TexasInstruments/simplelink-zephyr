@@ -25,7 +25,7 @@
 		zephyr,flash = &flash0;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
-		zephyr,bt-uart = &uart0;
+		zephyr,bt_hci = &ti_bt_hci;
 		zephyr,bt-c2h-uart = &uart0;
 	};
 
@@ -81,6 +81,11 @@
 
 	lfxosc: lf_xosc {
 		compatible = "ti,cc23x0-lf-xosc";
+	};
+
+	ti_bt_hci: ti_bt_hci {
+		compatible = "ti,bt-hci";
+		status = "okay";
 	};
 };
 

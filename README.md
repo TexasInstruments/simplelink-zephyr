@@ -19,13 +19,15 @@ The Zephyr OS is based on a small-footprint kernel designed for use on
 resource-constrained systems: from simple embedded environmental sensors and
 LED wearables to sophisticated smart watches and IoT wireless gateways.
 
-This release of TI Zephyr is based on v3.6.0 and includes support for the following
-Texas Instruments boards and devices. This release specifically adds support for
-CC2340R5 and the LP_EM_CC2340R5 Launchpad.
+This release in the downstream repository of TI Zephyr is based on v3.7.0 and
+only contains support for the `CC2340R5` device family. The `CC32xx` and `CC13xx_CC26xx`
+devices are not supported in this release. However, the Zephyr community continues
+to support them in the upstream repositories.
 
 #### Devices
 
-- CC1352P
+- [CC2340R5](https://www.ti.com/product/CC2340R5)
+
 - CC1352R
 - CC2652P
 - CC2652R
@@ -39,13 +41,14 @@ CC2340R5 and the LP_EM_CC2340R5 Launchpad.
 
 #### Boards
 
+- [lp_em_cc2340r5](https://www.ti.com/tool/LP-EM-CC2340R5)
+
 - cc1352p1_launchxl
 - cc1352p7_launchpad
 - cc1352r1_launchxl
 - cc26x2r1_launchxl
 - cc3220sf_launchxl
 - cc3235sf_launchxl
-- lp_em_cc2340r5
 
 ## Getting Started
 
@@ -54,7 +57,7 @@ for the Zephyr project and follow the same getting-started guide for setting up
 the environment and building your first application.
 
 > **_NOTE:_** When running `west init` in the getting-started guide it's
-> important to instead run `west init -m https://github.com/TexasInstruments/simplelink-zephyr -mr v3.6.0-d0ae1a8b105-ti-8.20.00_ea zephyrproject`
+> important to instead run `west init -m https://github.com/TexasInstruments/simplelink-zephyr --mr {branch-or-tag-name} directory`
 > in order to use the TI Zephyr repository.
 
 ## Tools support
