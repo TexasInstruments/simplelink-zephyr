@@ -19,14 +19,39 @@ The Zephyr OS is based on a small-footprint kernel designed for use on
 resource-constrained systems: from simple embedded environmental sensors and
 LED wearables to sophisticated smart watches and IoT wireless gateways.
 
-This release in the downstream repository of TI Zephyr is based on v3.7.0 and
-only contains support for the `CC2340R5` device family. The `CC32xx` and `CC13xx_CC26xx`
-devices are not supported in this release. However, the Zephyr community continues
-to support them in the upstream repositories.
+This release in the downstream repository of TI Zephyr is based on a tagged
+release from the Zephyr upstream. TI has built on top of that Zephyr version
+to add support for specific SimpleLink Wireless MCUs. Please see the
+[Release Notes](#releases) for information about which upstream Zephyr release
+this TI release is based on. Other dependency info is included there as well.
 
-#### Devices
+This release only contains
+support for the `CC2340R5` device. The `CC32xx` and `CC13xx_CC26xx` devices are
+not supported in this release. However, the Zephyr community continues to
+support them in the upstream repositories.
 
-- [CC2340R5](https://www.ti.com/product/CC2340R5)
+### Devices
+
+Supported by this release:
+
+- [CC2340R52](https://www.ti.com/product/CC2340R5)
+
+Beta support:
+
+Limited testing was also performed on the `CC2340R53`, a variant of the CC2340R5
+with 64kB of SRAM. Please note that some examples that require more RAM should
+be run on the CC2340R53. Please see the release notes for more details.
+
+To use this device, change [`cc2340r5.dtsi`](dts/arm/ti/cc2340r5.dtsi)
+as follows:
+
+```dts
+sram0: memory@20000000 {
+  reg = <0x20000000 DT_SIZE_K(64)>;
+};
+```
+
+Supported by the Zephyr community:
 
 - CC1352R
 - CC2652P
@@ -37,11 +62,14 @@ to support them in the upstream repositories.
 - CC2652R7
 - CC3220SF
 - CC3235SF
-- CC2340R5
 
-#### Boards
+### Boards
+
+Supported by this release:
 
 - [lp_em_cc2340r5](https://www.ti.com/tool/LP-EM-CC2340R5)
+
+Supported by the Zephyr community:
 
 - cc1352p1_launchxl
 - cc1352p7_launchpad
@@ -52,22 +80,28 @@ to support them in the upstream repositories.
 
 ## Getting Started
 
-For getting started, please refer to the [Upstream Zephyr Readme](https://github.com/zephyrproject-rtos/zephyr/blob/main/README.rst)
+For getting started, please refer to the
+[Upstream Zephyr Readme](https://github.com/zephyrproject-rtos/zephyr/blob/main/README.rst)
 for the Zephyr project and follow the same getting-started guide for setting up
 the environment and building your first application.
 
 > **_NOTE:_** When running `west init` in the getting-started guide it's
-> important to instead run `west init -m https://github.com/TexasInstruments/simplelink-zephyr --mr {branch-or-tag-name} directory`
+> important to instead run `west init -m https://github.com/TexasInstruments/simplelink-zephyr --mr {tag-name} zephyrproject`
 > in order to use the TI Zephyr repository.
+> The `{tag-name}` changes with each release from TI.
+>
+> You can look up the latest tag from the following link:
+> https://github.com/TexasInstruments/simplelink-zephyr/tags
+
 
 ## Tools support
 
 Currently the XDS110 debugger supplied with TI Launchpads is not natively
 supported in the `west` Zephyr tool for all devices. In order to flash/debug the
-CC2340R5 device with `west`, only [JLink](https://www.segger.com/downloads/jlink/)
+`CC2340R5` device with `west`, only [JLink](https://www.segger.com/downloads/jlink/)
 is available. The recommended version to use is V7.94f which has been used for
 validation. Note that it is also possible to build an application in Zephyr
-targeting CC2340R5, and to use [Code Composer Studio](https://www.ti.com/tool/CCSTUDIO)
+targeting `CC2340R5`, and to use [Code Composer Studio](https://www.ti.com/tool/CCSTUDIO)
 to both flash and debug the application using the XDS110 debugger.
 
 ## Versioning
@@ -107,10 +141,11 @@ your selected version here:
 
 https://github.com/TexasInstruments/simplelink-zephyr/releases/
 
-#### Disclaimer
+### Disclaimer
 
 This release is provided as-is and should be considered Beta quality. This
-product is meant for demonstration purposes only.
+product is meant for demonstration purposes only. Please refer to the Release Notes for
+details on specific limitations and known issues.
 
 ## Need help?
 
