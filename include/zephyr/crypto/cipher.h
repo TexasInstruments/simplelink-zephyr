@@ -47,6 +47,7 @@ enum cipher_mode {
 	CRYPTO_CIPHER_MODE_CTR = 3,
 	CRYPTO_CIPHER_MODE_CCM = 4,
 	CRYPTO_CIPHER_MODE_GCM = 5,
+	CRYPTO_CIPHER_MODE_CTR_DRBG = 6,
 };
 
 /* Forward declarations */
@@ -71,6 +72,9 @@ typedef int (*ccm_op_t)(struct cipher_ctx *ctx, struct cipher_aead_pkt *pkt,
 typedef int (*gcm_op_t)(struct cipher_ctx *ctx, struct cipher_aead_pkt *pkt,
 			 uint8_t *nonce);
 
+typedef int (*ctr_drbg_op_t)(struct cipher_ctx *ctx, struct cipher_pkt *pkt,
+			     uint8_t *ctr);
+
 struct cipher_ops {
 
 	enum cipher_mode cipher_mode;
@@ -81,6 +85,7 @@ struct cipher_ops {
 		ctr_op_t	ctr_crypt_hndlr;
 		ccm_op_t	ccm_crypt_hndlr;
 		gcm_op_t	gcm_crypt_hndlr;
+		ctr_drbg_op_t	ctr_drbg_crypt_hndlr;
 	};
 };
 
@@ -99,6 +104,13 @@ struct ctr_params {
 struct gcm_params {
 	uint16_t tag_len;
 	uint16_t nonce_len;
+};
+
+struct ctr_drbg_params {
+	/* CTR-DRBG mode counter is a split counter composed of iv and counter
+	 * such that ivlen + ctr_len = keylen
+	 */
+	uint32_t ctr_len;
 };
 
 /**
@@ -153,6 +165,7 @@ struct cipher_ctx {
 		struct ccm_params ccm_info;
 		struct ctr_params ctr_info;
 		struct gcm_params gcm_info;
+		struct ctr_drbg_params ctr_drbg_info;
 	} mode_params;
 
 	/** Cryptographic keylength in bytes. To be populated by the app
