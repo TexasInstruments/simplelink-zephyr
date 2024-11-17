@@ -81,7 +81,7 @@ Supported by the Zephyr community:
 ## Getting Started
 
 For getting started, please refer to the
-[Upstream Zephyr Readme](https://github.com/zephyrproject-rtos/zephyr/blob/main/README.rst)
+[Zephyr Getting Started Guide](https://docs.zephyrproject.org/3.7.0/develop/getting_started/index.html)
 for the Zephyr project and follow the same getting-started guide for setting up
 the environment and building your first application.
 
