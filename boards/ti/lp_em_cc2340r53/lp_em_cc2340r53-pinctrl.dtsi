@@ -38,6 +38,11 @@
 		bias-disable;
 	};
 
+	spi0_flash_cs: spi0_flash_cs {
+		pinmux = <6 DIO6_SPI0_CSN>;
+		bias-disable;
+	};
+
 	/* ADC0 */
 	adc0_ch0: adc0_ch0 {
 		pinmux = <7 DIO7_ADC0_AREFM>;

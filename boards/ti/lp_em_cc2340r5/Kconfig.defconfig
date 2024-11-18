@@ -1,3 +1,9 @@
+# Copyright (c) 2024 Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "../lpf3_common/Kconfig.defconfig"
+
 if BOARD_LP_EM_CC2340R5
 
 
@@ -10,6 +16,9 @@ config ZEPHYR
 config BT_LL_HEAP_SIZE
     hex
     default 0x1800
+
+config BT_HCI_ACL_FLOW_CONTROL
+  default n
 
 endif # BT
 
