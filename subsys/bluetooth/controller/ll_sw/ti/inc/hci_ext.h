@@ -183,13 +183,14 @@ extern "C"
 #define HCI_EXT_GATT_UPDATE_MTU                 ( GATT_BASE_METHOD | 0x3F ) // 0x7F
 
 
-// L2CAP HCI Extension Commands (0x70-0x7F)
+// L2CAP HCI Extension Commands (0x70-0x75)
 #define HCI_EXT_L2CAP_DATA                      0x70
 #define HCI_EXT_L2CAP_REGISTER_PSM              0x71
 #define HCI_EXT_L2CAP_DEREGISTER_PSM            0x72
 #define HCI_EXT_L2CAP_PSM_INFO                  0x73
 #define HCI_EXT_L2CAP_PSM_CHANNELS              0x74
 #define HCI_EXT_L2CAP_CHANNEL_INFO              0x75
+
 
 /*** HCI Extension Events ***/
 

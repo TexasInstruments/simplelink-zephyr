@@ -24,12 +24,7 @@
 #include "ll_common.h"
 #include "hci_tl.h"
 #include "hci_data.h"
-
-#if defined( CC26XX ) || defined( CC13XX )
-#include "rom_jt.h"
-#endif // CC26XX/CC13XX
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -118,12 +113,6 @@ void LL_RxDataCompleteCback( uint16 connHandle,
   // check if Controller to Host flow control is enabled
   if ( ctrlToHostEnable == TRUE )
   {
-#ifdef DEBUG
-    // Sanity Check:
-    // The number of available Host buffers should be one or more!
-    HCI_ASSERT( numHostBufs != 0 );
-#endif // DEBUG
-
     // decrement the number of available Host buffers, and check if exhausted
     if ( --numHostBufs == 0 )
     {

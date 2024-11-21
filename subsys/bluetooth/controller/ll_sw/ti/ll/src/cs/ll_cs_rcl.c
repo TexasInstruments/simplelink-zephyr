@@ -30,7 +30,7 @@
 #include "ll_common.h"
 #include "ble.h"
 #include "ll_rat.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include <ti/log/Log.h>
 
 /*******************************************************************************
@@ -80,12 +80,9 @@ llCsRCL_t csRcl;
  */
 csStatus_e llCsSetupRcl(uint16 connId, csRclCmdData_t csRclDataInt)
 {
-    llConnState_t* connPtr = MAP_llDataGetConnPtr(connId);
     uint8 configId = llCsDbGetCurrentConfigId(connId);
     csConfigurationSet_t csConfig;
-    csDefaultSettings_t defaultSettings;
-    uint16 subeventCount =
-        llCsDbGetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
+    uint16 subeventCount = llCsDbGetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
 
     if (llCsDbGetConfiguration(connId, configId, &csConfig) ==
         CS_STATUS_DISABLED_CONFIG_ID)
@@ -96,97 +93,19 @@ csStatus_e llCsSetupRcl(uint16 connId, csRclCmdData_t csRclDataInt)
     if ((llCsDbGetProcCounter(connId, CS_PROC_C) == 0) &&
         (llCsDbGetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C) == 0))
     {
-        /* Yes it is. Setup the command */
-        csRcl.rclCmd = RCL_CmdBleCs_DefaultRuntime();
-
-        csRcl.rclCmd.common.scheduling = RCL_Schedule_AbsTime;
-        csRcl.rclCmd.common.allowDelay = FALSE;
-
-        /* Set initiale status to idle */
-        csRcl.rclCmd.common.status = RCL_CommandStatus_Idle;
-        csRcl.rclCmd.common.runtime.callback = ll_rclCsCallback;
-        csRcl.rclCmd.common.runtime.lrfCallbackMask.value = LRF_EventRxOk.value;
-        csRcl.rclCmd.common.runtime.rclCallbackMask.value =
-            RCL_EventLastCmdDone.value | RCL_EventRxBufferFinished.value |
-            RCL_EventTxBufferFinished
-                .value; // Need to add |RCL_EventSoftwareTriggered when S2R will
-                        // be supported
-        csRcl.rclCmd.common.scheduling = RCL_Schedule_AbsTime;
-        csRcl.rclCmd.common.phyFeatures = csConfig.csSyncPhy;
-
-        if (csConfig.role == CS_ROLE_INITIATOR)
-        {
-            /* Define the role of the device */
-            csRcl.rclCmd.mode.role = RCL_CmdBleCs_Role_Initiator;
-        }
-        else
-        {
-            csRcl.rclCmd.mode.role = RCL_CmdBleCs_Role_Reflector;
-        }
-
-        /* Update the command descriptor with the input arguments given from the
-         * user */
-#ifdef CS_TEST
-        csRcl.rclCmd.mode.nSteps = BLE_CS_NUM_STEPS;
-#else
-        csRcl.rclCmd.mode.nSteps = csRclDataInt.numSteps;
-#endif
-        if (csConfig.csSyncPhy == 1)
-        {
-            csRcl.rclCmd.mode.phy = 0;
-        }
-        else
-        {
-            csRcl.rclCmd.mode.phy = 1;
-        }
-        csRcl.rclCmd.mode.repeatSteps = 0;
-        csRcl.rclCmd.mode.chFilterEnable = 0;
-        csRcl.rclCmd.antennaConfig.select = 0; // #BLE_LOKI-1366
-        csRcl.rclCmd.antennaConfig.gpoMask = 0x0F;
-        csRcl.rclCmd.antennaConfig.gpoVal[0] = 0x01;
-        csRcl.rclCmd.antennaConfig.gpoVal[1] = 0x02;
-        csRcl.rclCmd.antennaConfig.gpoVal[2] = 0x03;
-        csRcl.rclCmd.antennaConfig.gpoVal[3] = 0x04;
-
-#ifndef CS_TEST
-        csRcl.rclCmd.timing.tFcs =
-            RCL_BLE_CS_US_TO_MCE_TIMER(GET_TFCS(csConfig.tFCs));
-        csRcl.rclCmd.timing.tFm = RCL_BLE_CS_US_TO_MCE_TIMER(CS_DEFAULT_TFM);
-        csRcl.rclCmd.timing.tPm =
-            RCL_BLE_CS_US_TO_MCE_TIMER(GET_TPM(csConfig.tPM));
-        csRcl.rclCmd.timing.tIp1 =
-            RCL_BLE_CS_US_TO_MCE_TIMER(GET_TIP(csConfig.tIP1));
-        csRcl.rclCmd.timing.tIp2 =
-            RCL_BLE_CS_US_TO_MCE_TIMER(GET_TIP(csConfig.tIP2));
-#else
-        csRcl.rclCmd.timing.tFcs = RCL_BLE_CS_US_TO_MCE_TIMER(80);
-        csRcl.rclCmd.timing.tFm = RCL_BLE_CS_US_TO_MCE_TIMER(80);
-        csRcl.rclCmd.timing.tPm = RCL_BLE_CS_US_TO_MCE_TIMER(40);
-        csRcl.rclCmd.timing.tIp1 = RCL_BLE_CS_US_TO_MCE_TIMER(40);
-        csRcl.rclCmd.timing.tIp2 = RCL_BLE_CS_US_TO_MCE_TIMER(40);
-#endif
-
-        llCsDbGetDefaultSettings(connId, &defaultSettings);
-
-        // Setting the RX window. This value will be ignored if the CS role is
-        // initiator
-        csRcl.rclCmd.timing.tRxWideningR0 = RCL_BLE_CS_US_TO_MCE_TIMER(250);
-        csRcl.rclCmd.timing.tSw = 0;
-        csRcl.rclCmd.timing.tSwAdjustA = 0;
-        csRcl.rclCmd.timing.tSwAdjustB = 0;
-        csRcl.rclCmd.frontend.txPower.rawValue = defaultSettings.maxTxPower;
-        csRcl.rclCmd.frontend.rxGain = 0;
-        csRcl.rclCmd.frontend.foffOverride = 0;
-        csRcl.rclCmd.frontend.foffOverrideEnable = 0;
-
-        csRcl.rclCmd.stats = csRclDataInt.csOutput;
+        /* This the first subevent and first procedure */
+        /* Init the RCL command */
+        llCsInitRclCmd(connId, csRclDataInt, &csConfig);
     }
 
     /* Setup the command start time */
-    llCsSetupCmdStartTime(csRcl.rclCmd, connPtr, csConfig.role, subeventCount);
+    csRcl.rclCmd.common.timing.absStartTime = llCsSetupCmdStartTime( connId,
+                                                                     csConfig.role,
+                                                                     subeventCount,
+                                                                     csRcl.rclCmd);
 
     /* Setup the buffers */
-    llCsRClBufferSetup(csRclDataInt, TRUE);
+    llCsRClBufferSetup(csRclDataInt);
 
     if (csRcl.rclCmd.stats != NULL)
     {
@@ -197,8 +116,6 @@ csStatus_e llCsSetupRcl(uint16 connId, csRclCmdData_t csRclDataInt)
     // Note: to use the legacy results buffer this should be used
     // csRcl.rclCmd.results = ble_cs_step_results_internal;
 
-    // Increase connection priority
-    connPtr->connPriority = LL_QOS_CS_PRIORITY;
     if (csRcl.csTask->taskID != LL_TASK_ID_CS)
     {
         // Create a CS task
@@ -214,51 +131,241 @@ csStatus_e llCsSetupRcl(uint16 connId, csRclCmdData_t csRclDataInt)
 }
 
 /*******************************************************************************
- * Internal function defined in ll_cs_rcl_internal.h
+ * Public function defined in ll_cs_rcl.h.
  */
-void llCsSetupCmdStartTime(RCL_CmdBleCs rclCmd, llConnState_t* connPtr,
-                           uint8 role, uint8 subEventCount)
+void llCsInitRclCmd(uint16 connId, csRclCmdData_t csRclDataInt, csConfigurationSet_t* csConfig)
 {
-    csProcedureEnable_t csData;
-    uint8 configId = llCsDbGetCurrentConfigId(connPtr->connId);
-    uint32_t anchorPoint;
+    csDefaultSettings_t defaultSettings;
+    /* Yes it is. Setup the command */
+    csRcl.rclCmd = RCL_CmdBleCs_DefaultRuntime();
 
-    llCsDbGetProcedureEnableData(connPtr->connId, configId, &csData);
-    /* Clear next procedure flag */
-    llCsDbSetNextProcedureFlag(connPtr->connId, FALSE);
-    if (subEventCount == 0)
+    csRcl.rclCmd.common.scheduling = RCL_Schedule_AbsTime;
+    csRcl.rclCmd.common.allowDelay = FALSE;
+
+    /* Set initiale status to idle */
+    csRcl.rclCmd.common.status = RCL_CommandStatus_Idle;
+    csRcl.rclCmd.common.runtime.callback = ll_rclCsCallback;
+    csRcl.rclCmd.common.runtime.lrfCallbackMask.value = LRF_EventRxOk.value;
+    // Need to add |RCL_EventSoftwareTriggered when S2R will be supported
+    csRcl.rclCmd.common.runtime.rclCallbackMask.value = RCL_EventLastCmdDone.value      |
+                                                        RCL_EventRxBufferFinished.value |
+                                                        RCL_EventTxBufferFinished.value;
+    csRcl.rclCmd.common.phyFeatures = csConfig->csSyncPhy;
+
+    if (csConfig->role == CS_ROLE_INITIATOR)
     {
-        anchorPoint = connPtr->llTask->anchorPoint;
-        llCsDbSetEventAnchorPoint(connPtr->connId, anchorPoint);
+        /* Define the role of the device */
+        csRcl.rclCmd.mode.role = RCL_CmdBleCs_Role_Initiator;
     }
     else
     {
-        anchorPoint = llCsDbGetEventAnchorPoint(connPtr->connId);
+        csRcl.rclCmd.mode.role = RCL_CmdBleCs_Role_Reflector;
     }
 
-    if (CS_ROLE_INITIATOR == llCsDbGetConfigRole(connPtr->connId, configId))
+    /* Update the command descriptor with the input arguments given from the
+        * user */
+    csRcl.rclCmd.mode.nSteps = csRclDataInt.numSteps;
+    if (csConfig->csSyncPhy == 1)
     {
-        csRcl.rclCmd.common.timing.absStartTime =
-            anchorPoint + (csData.offset * RAT_TICKS_IN_1US) +
-            (csData.subEventInterval * RAT_TICKS_IN_625US) * subEventCount +
-            RAT_TICKS_IN_64US;
-        // 64us anchor point = last start time but we need to add the time
-        // between the start time and the actual time the radio starts the
-        // preamble = (frequency synthisizes calibration) fs + pilot tune
+        csRcl.rclCmd.mode.phy = 0;
     }
     else
     {
-        csRcl.rclCmd.common.timing.absStartTime =
-            anchorPoint + (csData.offset * RAT_TICKS_IN_1US) +
-            (csData.subEventInterval * RAT_TICKS_IN_625US) * subEventCount -
-            connPtr->timerDrift;
+        csRcl.rclCmd.mode.phy = 1;
+    }
+    csRcl.rclCmd.mode.repeatSteps = 0;
+    csRcl.rclCmd.mode.chFilterEnable = 0;
+    csRcl.rclCmd.antennaConfig.select = 0; // #BLE_LOKI-1366
+    csRcl.rclCmd.antennaConfig.gpoMask = 0x0F;
+    csRcl.rclCmd.antennaConfig.gpoVal[0] = 0x01;
+    csRcl.rclCmd.antennaConfig.gpoVal[1] = 0x02;
+    csRcl.rclCmd.antennaConfig.gpoVal[2] = 0x03;
+    csRcl.rclCmd.antennaConfig.gpoVal[3] = 0x04;
+
+    csRcl.rclCmd.timing.tFcs =
+        RCL_BLE_CS_US_TO_MCE_TIMER(llCsDbGetTfcs(csConfig->tFCs));
+    csRcl.rclCmd.timing.tFm = RCL_BLE_CS_US_TO_MCE_TIMER(CS_DEFAULT_TFM);
+    csRcl.rclCmd.timing.tPm =
+        RCL_BLE_CS_US_TO_MCE_TIMER(llCsDbGetTpm(csConfig->tPM));
+    csRcl.rclCmd.timing.tIp1 =
+        RCL_BLE_CS_US_TO_MCE_TIMER(llCsDbGetTip(csConfig->tIP1));
+    csRcl.rclCmd.timing.tIp2 =
+        RCL_BLE_CS_US_TO_MCE_TIMER(llCsDbGetTip(csConfig->tIP2));
+
+    llCsDbGetDefaultSettings(connId, &defaultSettings);
+
+    // Setting the RX window. This value will be ignored if the CS role is
+    // initiator
+    csRcl.rclCmd.timing.tRxWideningR0 = llCsGetRxWidening();
+    csRcl.rclCmd.timing.tSw = llCsDbGetSwitchTime();
+    csRcl.rclCmd.timing.tSwAdjustA = 0;
+    csRcl.rclCmd.timing.tSwAdjustB = 0;
+    csRcl.rclCmd.frontend.rxGain = 0;
+    csRcl.rclCmd.frontend.foffOverride = 0;
+    csRcl.rclCmd.frontend.foffOverrideEnable = 0;
+    csRcl.rclCmd.stats = csRclDataInt.csOutput;
+    csRcl.rclCmd.frontend.txPower = llCsRclGetTxPower(defaultSettings.maxTxPower);
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_rcl.h.
+ */
+csStatus_e llCsSubmitTestCmd(void)
+{
+    if (llCsDbGetTestMode() == CS_TEST_MODE_ENABLE)
+    {
+        RCL_CommandStatus submitStatus = RCL_Command_submit(
+                                    MAP_llScheduler_getHandle(LL_TASK_ID_CS),
+                                    (RCL_Command_Handle)&csRcl.rclCmd);
+        if ((submitStatus >= RCL_CommandStatus_Error)||
+            (submitStatus >= RCL_CommandStatus_Finished) ||
+            (submitStatus == RCL_CommandStatus_Idle))
+        {
+            return CS_STATUS_RCL_SUBMIT_ERROR;
+        }
+        else
+        {
+            return CS_STATUS_SUCCESS;
+        }
+    }
+    else
+    {
+        // Not in a Test Mode, shouldn't be here
+        return CS_STATUS_UNEXPECTED_PARAMETER;
     }
 }
 
 /*******************************************************************************
  * Internal function defined in ll_cs_rcl_internal.h
  */
-void llCsRClBufferSetup(csRclCmdData_t csRclDataInt, bool init)
+uint16_t llCsGetRxWidening(void)
+{
+    if (llCsDbGetTestMode() == CS_TEST_MODE_ENABLE)
+    {
+        // Test Mode, so wait forever
+        return 0xFFFF;
+    }
+    else
+    {
+        return RCL_BLE_CS_US_TO_MCE_TIMER(250);
+    }
+}
+
+/*******************************************************************************
+ * Internal function defined in ll_cs_rcl_internal.h
+ */
+void llCsRclScheduleNextSubevent(void)
+{
+    if (llCsDbGetTestMode() == CS_TEST_MODE_DISABLE)
+    {
+        MAP_llScheduler();
+    }
+    else
+    {
+        llCsSubmitTestCmd();
+    }
+}
+
+/*******************************************************************************
+ * Internal function defined in ll_cs_rcl_internal.h
+ */
+RCL_Command_TxPower llCsRclGetTxPower(int8 maxTxPower)
+{
+    RCL_Command_TxPower retVal;
+    switch (maxTxPower)
+    {
+        case (CS_USE_MIN_TX_POWER):
+        {
+            retVal = LRF_TxPower_Use_Max;
+            break;
+        }
+        case (CS_USE_MAX_TX_POWER):
+        {
+            retVal = LRF_TxPower_Use_Min;
+            break;
+        }
+        default:
+        {
+            retVal = (RCL_Command_TxPower)maxTxPower;
+        }
+    }
+    return retVal;
+}
+
+/*******************************************************************************
+ * Internal function defined in ll_cs_rcl_internal.h
+ */
+
+uint32_t llCsSetupCmdStartTime( uint16 connId, uint8 role, uint8 subEventCount,
+                                RCL_CmdBleCs rclCmd )
+{
+    uint32_t anchorPoint = 0;
+    uint32_t cmdStartTime = 0;
+    uint32_t timerDrift = 0;
+    uint8 configId = llCsDbGetCurrentConfigId(connId);
+    uint8 testMode = llCsDbGetTestMode();
+    csProcedureEnable_t csData;
+    llConnState_t* connPtr = MAP_llDataGetConnPtr(connId);
+    if (testMode == CS_TEST_MODE_DISABLE && connPtr)
+    {
+        timerDrift = connPtr->timerDrift;
+        // Increase connection priority
+        connPtr->connPriority = LL_QOS_CS_PRIORITY;
+        if (subEventCount == 0)
+        {
+            anchorPoint = connPtr->llTask->anchorPoint;
+            llCsDbSetEventAnchorPoint(connId, anchorPoint);
+        }
+        else
+        {
+            anchorPoint = llCsDbGetEventAnchorPoint(connId);
+        }
+    }
+    else
+    {
+        timerDrift = 0;
+        if (subEventCount == 0)
+        {
+            anchorPoint = llGetCurrentTime() + RAT_TICKS_IN_1MS;
+            llCsDbSetEventAnchorPoint(connId, anchorPoint);
+        }
+        else
+        {
+            anchorPoint = llCsDbGetEventAnchorPoint(connId);
+        }
+    }
+
+    /* Clear next procedure flag */
+    llCsDbSetNextProcedureFlag(connId, FALSE);
+    llCsDbGetProcedureEnableData(connId, configId, &csData);
+    cmdStartTime = anchorPoint + csData.offset*RAT_TICKS_IN_1US +
+                csData.subEventInterval*RAT_TICKS_IN_625US*subEventCount;
+
+    if (CS_ROLE_INITIATOR == role )
+    {
+        return cmdStartTime + RAT_TICKS_IN_64US;
+        // 64us anchor point = last start time but we need to add the time
+        // between the start time and the actual time the radio starts the
+        // preamble = (frequency synthisizes calibration) fs + pilot tune
+    }
+    else
+    {
+        if ( testMode == CS_TEST_MODE_ENABLE )
+        {
+            csRcl.rclCmd.common.scheduling = RCL_Schedule_Now;
+            return 0;
+        }
+        else
+        {
+            return cmdStartTime - timerDrift;
+        }
+    }
+}
+
+/*******************************************************************************
+ * Internal function defined in ll_cs_rcl_internal.h
+ */
+void llCsRClBufferSetup(csRclCmdData_t csRclDataInt)
 {
     if ((csRclDataInt.csStepsBuff0 == NULL) ||
         (csRclDataInt.csStepsBuff1 == NULL) ||
@@ -272,34 +379,25 @@ void llCsRClBufferSetup(csRclCmdData_t csRclDataInt, bool init)
     // List_clearList(&csRcl.rclCmd.s2rBuffers);
     // List_clearList(&csRcl.rclCmd.s2rBuffersDone);
 
-    ble_cs_steps_buffer_size =
-        sizeof(ble_cs_steps_buffer_t) +
-        sizeof(RCL_CmdBleCs_Step) * (CS_STEP_BUFF_MAX_SIZE);
+    ble_cs_steps_buffer_size = sizeof(csStepsBuffer_t) + sizeof(RCL_CmdBleCs_Step) * (CS_STEP_BUFF_MAX_SIZE);
     ble_cs_step_results_buffer_size = CS_RESULT_BUFF_SIZE;
 
     /* Prepare the TX buffer containing the step list */
     /* ------------------------------------- */
     RCL_MultiBuffer* pStepBuffer;
-    uint8 bufferSteps = csRclDataInt.numSteps >= CS_STEP_BUFF_MAX_SIZE
-                            ? CS_STEP_BUFF_MAX_SIZE
-                            : csRclDataInt.numSteps;
+    uint8 bufferSteps = csRclDataInt.numSteps >= CS_STEP_BUFF_MAX_SIZE ? CS_STEP_BUFF_MAX_SIZE : csRclDataInt.numSteps;
 
     pStepBuffer = (RCL_MultiBuffer*)csRclDataInt.csStepsBuff0;
-    if (init)
-        RCL_MultiBuffer_init(pStepBuffer, ble_cs_steps_buffer_size);
+    RCL_MultiBuffer_init(pStepBuffer, ble_cs_steps_buffer_size);
     RCL_MultiBuffer_commitBytes(pStepBuffer,
                                 sizeof(RCL_CmdBleCs_Step) * bufferSteps);
     RCL_MultiBuffer_put(&csRcl.rclCmd.stepBuffers, pStepBuffer);
 
     if (csRclDataInt.numSteps > CS_STEP_BUFF_MAX_SIZE)
     {
-        bufferSteps = (csRclDataInt.numSteps - CS_STEP_BUFF_MAX_SIZE) >=
-                              CS_STEP_BUFF_MAX_SIZE
-                          ? CS_STEP_BUFF_MAX_SIZE
-                          : csRclDataInt.numSteps - CS_STEP_BUFF_MAX_SIZE;
+        bufferSteps = (csRclDataInt.numSteps - CS_STEP_BUFF_MAX_SIZE) >= CS_STEP_BUFF_MAX_SIZE ? CS_STEP_BUFF_MAX_SIZE : csRclDataInt.numSteps - CS_STEP_BUFF_MAX_SIZE;
         pStepBuffer = (RCL_MultiBuffer*)csRclDataInt.csStepsBuff1;
-        if (init)
-            RCL_MultiBuffer_init(pStepBuffer, ble_cs_steps_buffer_size);
+        RCL_MultiBuffer_init(pStepBuffer, ble_cs_steps_buffer_size);
         RCL_MultiBuffer_commitBytes(pStepBuffer,
                                     sizeof(RCL_CmdBleCs_Step) * bufferSteps);
         RCL_MultiBuffer_put(&csRcl.rclCmd.stepBuffers, pStepBuffer);
@@ -333,36 +431,58 @@ void llCsClearRclBuffers()
 void llCsSteps_PostProcess(void)
 {
     /* A steps buffer was consumed. */
-    RCL_MultiBuffer* pBuffer;
-    llConnState_t* connPtr = MAP_llDataGetConnPtr(llConns.currentConn);
-    uint8 numSteps =
-        llCsDbGetSubeventInfo(connPtr->connId, CS_SE_INFO_NUM_STPES);
-    uint8 stepCount =
-        llCsDbGetSubeventInfo(connPtr->connId, CS_SE_INFO_STEP_COUNT);
-    uint8 bufferSteps;
+    csStepsBuffer_t* pBuffer;
+    uint16 connId = llCsDbGetCurrentConnId();
+    uint8 configId = llCsDbGetCurrentConfigId(connId);
+    uint8 numBuffSteps = llCsGetNumStepsInBuffer(connId);
 
     /* Get Step Buffers Done */
-    pBuffer = RCL_MultiBuffer_get(&csRcl.rclCmd.stepBuffersDone);
-    if (pBuffer)
+    pBuffer = (csStepsBuffer_t*)RCL_MultiBuffer_get(&csRcl.rclCmd.stepBuffersDone);
+    if (pBuffer != NULL)
     {
-        RCL_MultiBuffer_clear(pBuffer);
-        if (stepCount < numSteps)
+        RCL_MultiBuffer_clear((RCL_MultiBuffer*)pBuffer);
+        if ((llCsDbGetNextSubeventFlag(connId) == CS_PREP_CURR_SUBEVENT) &&
+            (numBuffSteps > 0U))
         {
-            if (numSteps - stepCount < CS_STEP_BUFF_MAX_SIZE)
-            {
-                bufferSteps = numSteps - stepCount;
-            }
-            else
-            {
-                bufferSteps = CS_STEP_BUFF_MAX_SIZE;
-            }
-            RCL_MultiBuffer_init(pBuffer, ble_cs_steps_buffer_size);
-            RCL_MultiBuffer_put(&csRcl.rclCmd.stepBuffers, pBuffer);
-            RCL_MultiBuffer_commitBytes(pBuffer, sizeof(RCL_CmdBleCs_Step) *
-                                                     bufferSteps);
-            llCsGenerateMoreSteps(connPtr->connId, bufferSteps,
-                                  (ble_cs_steps_buffer_t*)pBuffer);
+            RCL_MultiBuffer_init((RCL_MultiBuffer*)pBuffer, ble_cs_steps_buffer_size);
+            RCL_MultiBuffer_put(&csRcl.rclCmd.stepBuffers, (RCL_MultiBuffer*)pBuffer);
+            RCL_MultiBuffer_commitBytes((RCL_MultiBuffer*)pBuffer,
+                                        sizeof(RCL_CmdBleCs_Step)*numBuffSteps);
+            llCsSetupStepBuffers(connId, configId, CS_CONTINUE_SUBEVENT, NULL, pBuffer);
         }
+        else
+        {
+            /* Prepare first buffer of the next subevent */
+            llCsPrepareForNextSubevent(connId, configId, numBuffSteps, pBuffer);
+        }
+    }
+}
+
+/*******************************************************************************
+ * External function defined in ll_cs_rcl.h
+ */
+void llCsPrepareForNextSubevent(uint16 connId, uint8 configId, uint8 numBuffSteps, csStepsBuffer_t* pBuffer)
+{
+    if (numBuffSteps == 0U)
+    {
+        /* This Subevent setup is DONE. But we may need another Subevent */
+        /* Check the number of remaining steps in the Procedure */
+        /* And the number of Subevents in the CS Event */
+        if ( (llCsDbGetRemainingMmSteps(connId, configId) > 0U) &&
+            (llCsDbGetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C) < llCsDbGetSubeventsPerEvent(connId, configId)))
+        {
+            llCsDbSetNextSubeventFlag(connId, CS_PREP_NEXT_SUBEVENT);
+            if (llCsInitProcedureStepList(connId, configId, FALSE) == CS_STATUS_SUCCESS)
+            {
+                /* Prepare only the FIRST buffer since the second buffer is busy */
+                llCsSetupStepBuffers(connId, configId, CS_NEW_SUBEVENT, pBuffer, NULL);
+            }
+        }
+    }
+    else
+    {
+        /* Prepare only the SECOND buffer since the first is ready. */
+        llCsSetupStepBuffers(connId, configId, CS_CONTINUE_SUBEVENT, NULL, pBuffer);
     }
 }
 
@@ -371,117 +491,136 @@ void llCsSteps_PostProcess(void)
  */
 void llCsSubevent_PostProcess(void)
 {
-    /* a subevent was completed */
-    llConnState_t* connPtr = MAP_llDataGetConnPtr(llConns.currentConn);
-    if (connPtr != NULL)
+    /* A subevent was completed */
+    uint16 connId = llCsDbGetCurrentConnId();
+    uint8 configId = llCsDbGetCurrentConfigId(connId);
+    uint16 procedureCounter = 0;
+    csProcedureEnable_t procEnable;
+    bool endProcedure = false;
+
+    if (configId == INVALID_CONFIG_ID)
     {
-        uint16 connId = connPtr->connId;
-        uint8 configId = llCsDbGetCurrentConfigId(connId);
-        uint16 subeventCounter = 0;
-        uint16 procedureCounter = 0;
-        csProcedureEnable_t procEnable;
-        uint8 endProcedure = 0;
+        /* Config ID is invalid */
+        llCsClearRclBuffers();
+        llCsRclFreeTask(connId);
+        return;
+    }
 
-        if ((configId == INVALID_CONFIG_ID) || (!connPtr))
+    /* Get Enabled Procedure Info */
+    llCsDbGetProcedureEnableData(connId, configId, &procEnable);
+
+    if ((llCsDbGetTestMode() != CS_TEST_MODE_DISABLE) &&
+        (procEnable.subEventInterval == 0U))
+    {
+        /* In case of a test mode, if subeventInterval is 0
+        This means the the test mode consists of a single subevent
+        hence, the procedure is done. */
+        endProcedure = true;
+    }
+
+    if (llCsDbGetNextSubeventFlag(connId) == CS_PREP_NEXT_SUBEVENT)
+    {
+        /* Need to schedule another subevent */
+        VOID llCsDbIncrementProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
+        /* Process the results */
+        llCsResults_PostProcess(CS_REPORT_NOT_DONE);
+        /* setup subevent (CS rcl command) */
+        llCsSetupSubEvent(connId);
+        llCsDbSetNextSubeventFlag(connId, CS_PREP_CURR_SUBEVENT);
+    }
+    else if ( llCsDbGetRemainingMmSteps(connId, configId) &&
+              (llCsDbGetProcedureTerminateState(connId) != CS_TERMINATE_RECEIVED) &&
+              (!endProcedure))
+    {
+        if (llCsDbIncrementProcCounter(connId, CS_PROC_INFO_EVENT_C) <
+            llCsDbGetEventsPerProcedure(connId))
         {
-            /* Config ID is invalid */
+            /* Process the results */
+            llCsResults_PostProcess(CS_REPORT_NOT_DONE);
+            /* Need to schedule another event */
+            llCsDbSetNextProcedureConnEvent(connId, configId,
+                                            procEnable.connEventCount +
+                                                procEnable.eventInterval);
+            llCsDbResetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
             llCsClearRclBuffers();
-            llCsRclFreeTask(connId, configId);
-            return;
-        }
-
-        llCsDbResetSubeventInfo(connId);
-
-        /* Get Enabled Procedure Info */
-        llCsDbGetProcedureEnableData(connId, configId, &procEnable);
-
-        if (llCsDbGetRemainingMmSteps(connId, configId))
-        {
-            subeventCounter =
-                llCsDbIncrementProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
-            if (subeventCounter < procEnable.subEventsPerEvent)
+            /* Setup the next subevent steplist */
+            if (llCsInitProcedureStepList(connId, configId, FALSE) == CS_STATUS_SUCCESS)
             {
-                /* Process the results */
-                llCsResults_PostProcess(CS_REPORT_NOT_DONE);
-                /* Need to schedule another subevent */
-                llCsClearRclBuffers();
-                llCsSetupStepList(connPtr, configId, FALSE);
-                llCsSetupSubEvent(connPtr);
+                /* Build the step buffers */
+                llCsSetupStepBuffers(connId, configId, CS_NEW_SUBEVENT,
+                                    csRclData.csStepsBuff0,
+                                    csRclData.csStepsBuff1);
             }
-            else if (llCsDbIncrementProcCounter(connId, CS_PROC_INFO_EVENT_C) <
-                     llCsDbGetEventsPerProcedure(connId))
-            {
-                /* Process the results */
-                llCsResults_PostProcess(CS_REPORT_NOT_DONE);
-                /* Need to schedule another event */
-                llCsDbSetNextProcedureConnEvent(connId, configId,
-                                                procEnable.connEventCount +
-                                                    procEnable.eventInterval);
-                llCsDbResetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
-                llCsClearRclBuffers();
-                /* setup the next subevent steplist */
-                llCsSetupStepList(connPtr, configId, FALSE);
 
-                if (csRcl.csTask != NULL)
-                {
-                    MAP_llFreeTask(&csRcl.csTask);
-                }
-            }
-            else
+            if (csRcl.csTask != NULL)
             {
-                /* Procedure ended because Num Events Per Procedure was reached
-                 */
-                endProcedure = 1;
+                MAP_llFreeTask(&csRcl.csTask);
             }
         }
         else
         {
-
-            endProcedure = 1;
+            /* Procedure ended because Num Events Per Procedure was reached */
+            endProcedure = true;
         }
-        if (endProcedure)
-        {
-
-            /* Process the results */
-            llCsResults_PostProcess(CS_REPORT_DONE);
-            /* Procedure ended */
-
-            procedureCounter = llCsDbIncrementProcCounter(connId, CS_PROC_C);
-            llCsSecIncProcCounter();
-            llCsSecResetStepCount();
-
-            if (procedureCounter == procEnable.procedureCount)
-            {
-                /* Done all the procedures, time to disable */
-                llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
-                llCsDbSetNextProcedureFlag(connId, FALSE);
-                llCsDbResetProcCounter(connId, CS_PROC_ALL_C);
-                /* It's time to end the CS procedure! */
-                llCsClearRclBuffers();
-
-                llCsRclFreeTask(connId, configId);
-            }
-            else
-            {
-                /* Need to repeat this procedure */
-                llCsDbSetNextProcedureConnEvent(
-                    connId, configId,
-                    procEnable.connEventCount + procEnable.procedureInterval);
-                llCsDbSetNextProcedureFlag(connId, TRUE);
-                llCsDbResetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
-                llCsDbResetProcCounter(connId, CS_PROC_INFO_EVENT_C);
-
-                llCsClearRclBuffers();
-
-                if (csRcl.csTask != NULL)
-                {
-                    MAP_llFreeTask(&csRcl.csTask);
-                }
-            }
-        }
-
-        MAP_llScheduler();
     }
+    else
+    {
+        endProcedure = true;
+    }
+
+    if (endProcedure)
+    {
+        /* Process the results */
+        llCsResults_PostProcess(CS_REPORT_DONE);
+        /* Procedure ended */
+
+        procedureCounter = llCsDbIncrementProcCounter(connId, CS_PROC_C);
+        llCsSecIncProcCounter();
+        llCsSecResetStepCount();
+
+        if (procedureCounter >= procEnable.procedureCount)
+        {
+            /* Done all the procedures, time to disable */
+            /* Disable the procedure params */
+            llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
+            /* Set next procedure flag to FALSE */
+            llCsDbSetNextProcedureFlag(connId, FALSE);
+            /* Reset Procedure Counter */
+            llCsDbResetProcCounter(connId, CS_PROC_ALL_C);
+            /* Disable Test Mode if it was enabled */
+            if (llCsDbGetTestMode() == CS_TEST_MODE_TERMINATE)
+            {
+                MAP_HCI_CS_TestEndCompleteCback(CS_STATUS_SUCCESS);
+            }
+            if (llCsDbGetTestMode() == CS_TEST_MODE_ENABLE)
+            {
+                llCsDbSetTestMode(CS_TEST_MODE_FINISHED);
+            }
+            /* Clear RCL buffers */
+            llCsClearRclBuffers();
+            llCsDbClearProcedureData(connId, configId);
+            /* Free RCL Task */
+            llCsRclFreeTask(connId);
+        }
+        else
+        {
+            /* Need to repeat this procedure */
+            llCsDbSetNextProcedureConnEvent(
+                connId, configId,
+                procEnable.connEventCount + procEnable.procedureInterval);
+            llCsDbSetNextProcedureFlag(connId, TRUE);
+            llCsDbResetProcCounter(connId, CS_PROC_INFO_SUBEVENT_C);
+            llCsDbResetProcCounter(connId, CS_PROC_INFO_EVENT_C);
+
+            llCsClearRclBuffers();
+
+            if (csRcl.csTask != NULL)
+            {
+                MAP_llFreeTask(&csRcl.csTask);
+            }
+        }
+    }
+    llCsRclScheduleNextSubevent();
 }
 
 /*******************************************************************************
@@ -491,9 +630,9 @@ void llCsResults_PostProcess(uint8 procedureDone)
 {
     /* Results are available */
     RCL_MultiBuffer* pBuffer;
-    llConnState_t* connPtr = MAP_llDataGetConnPtr(llConns.currentConn);
+    uint16 connId = llCsDbGetCurrentConnId();
     uint8 numSteps =
-        llCsDbGetSubeventInfo(connPtr->connId, CS_SE_INFO_NUM_STPES);
+        llCsDbGetSubeventInfo(connId, CS_SE_INFO_NUM_STPES);
 
     if ((pBuffer = RCL_MultiBuffer_get(&csRcl.rclCmd.resultBuffersDone)) !=
         NULL)
@@ -513,7 +652,7 @@ void llCsProcessResults(RCL_CmdBleCs_SubeventResults* resBuf,
 {
     uint16 connId = llCsDbGetActiveConnId();
     uint8 configId = llCsDbGetCurrentConfigId(connId);
-    uint8 aclCounter = llCsDbGetAclCounter(connId, configId);
+    uint16 aclCounter = llCsDbGetAclCounter(connId, configId);
     uint8 i = 0;
     uint8 totalStepsReported;
     uint16 bufSize;
@@ -525,12 +664,12 @@ void llCsProcessResults(RCL_CmdBleCs_SubeventResults* resBuf,
     {
         totalStepsReported = resBuf->numStepsReported;
         /* Prepare subevent report header */
-        resBuf->connectionHandle = connId;
+        resBuf->connectionHandle = llCsDbGetReportedConnId();
         resBuf->configID = configId;
         resBuf->procedureCounter = llCsDbGetProcCounter(connId, CS_PROC_C);
-        resBuf->procedureDoneStatus = isProcedureDone;
-        resBuf->abortReason =
-            CS_NO_ABORT; // aborting a procedure not implemented yet
+        resBuf->abortReason = llCsGetAbortReason(connId);
+        resBuf->procedureDoneStatus = llCsGetProcDoneStatus(isProcedureDone,
+                                                            resBuf->abortReason);
         resBuf->frequencyCompensation = CS_FC_UNAVAILABLE; // no FAE
         resBuf->numAntennaPath = CS_MAX_ANT_PATH_SUPPORTED;
         pBuf = resBuf->data;
@@ -581,16 +720,16 @@ void llCsProcessResults(RCL_CmdBleCs_SubeventResults* resBuf,
 /*******************************************************************************
  * Public function defined in ll_cs_rcl.h
  */
-void llCsRclFreeTask(uint16 connHandle, uint8 configId)
+void llCsRclFreeTask(uint16 connHandle)
 {
     // Free the step if already allocated
-    freeCsStepsAndResults();
+    llCsFreeStepsAndResults();
 
-    if (llCsDbGetProcedureTerminateState(connHandle, configId) ==
+    if (llCsDbGetProcedureTerminateState(connHandle) ==
         CS_TERMINATE_RECEIVED)
     {
         // reset terminateState to CS_TERMINATE_DISABLE
-        llCsDbSetProcedureTerminateState(connHandle, configId,
+        llCsDbSetProcedureTerminateState(connHandle,
                                          CS_TERMINATE_DISABLE);
     }
 

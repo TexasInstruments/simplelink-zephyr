@@ -157,10 +157,15 @@ extern "C"
 #define LL_STATUS_ERROR_UNKNOWN_ADVERTISING_IDENTIFIER 0x42 // Unknown Advertising Identifier
 #define LL_STATUS_ERROR_LIMIT_REACHED                  0x43 // Limit Reached
 #define LL_STATUS_ERROR_OP_CANCELLED_BY_HOST           0x44 // Operation Cancelled by Host
+#define LL_STATUS_ERROR_INSUFFICIENT_CHANNELS          0x48U // Number of channels is insufficient
 #define LL_STATUS_ERROR_PACKET_TOO_LONG                0x45 // Packet Too Long
+
 // Internal
-#define LL_STATUS_WARNING_TX_DISABLED                  0xFF // only used internally, so value doesn't matter
-#define LL_STATUS_WARNING_FLAG_UNCHANGED               0xFF // only used internally, so value doesn't matter
+// Handover
+#define LL_STATUS_HANDOVER_SUCCESSFUL                  0xFEU // This will be used for a new VS terminate reason
+// General
+#define LL_STATUS_WARNING_TX_DISABLED                  0xFF  // only used internally, so value doesn't matter
+#define LL_STATUS_WARNING_FLAG_UNCHANGED               0xFF  // only used internally, so value doesn't matter
 
 // Encryption Key Request Reason Codes
 #define LL_ENC_KEY_REQ_ACCEPTED                        LL_STATUS_SUCCESS
@@ -182,6 +187,9 @@ extern "C"
 #define LL_UNACCEPTABLE_CONN_INTERVAL_TERM             LL_STATUS_ERROR_UNACCEPTABLE_CONN_INTERVAL
 #define LL_MIC_FAILURE_TERM                            LL_STATUS_ERROR_CONN_TERM_DUE_TO_MIC_FAILURE
 #define LL_CONN_ESTABLISHMENT_FAILED_TERM              LL_STATUS_ERROR_CONN_FAILED_TO_BE_ESTABLISHED
+
+// Handover terminate reason
+#define LL_CONN_TERMINATE_SUCCESSFUL_HANDOVER          LL_STATUS_HANDOVER_SUCCESSFUL
 
 // Disconnect API Parameter
 #define LL_DISCONNECT_AUTH_FAILURE                     LL_STATUS_ERROR_AUTH_FAILURE
@@ -205,9 +213,7 @@ extern "C"
 /*
 ** LL Command Buffers Supported
 */
-#if !defined( CC26XX ) && !defined( CC13XX )
 #define LL_MAX_NUM_DATA_BUFFERS                        12
-#endif // !CC26XX/!CC13XX
 #define LL_MAX_NUM_CMD_BUFFERS                         1
 
 /*
@@ -408,49 +414,6 @@ extern "C"
 #define LL_EXT_RX_GAIN_STD                             0
 #define LL_EXT_RX_GAIN_HIGH                            1
 
-// TX Power Level Index
-#ifndef CC23X0
-#ifndef CC33xx
-#if defined( CC26XX ) || defined( CC13XX )
-#define LL_EXT_TX_POWER_MINUS_20_DBM                   0
-#define LL_EXT_TX_POWER_MINUS_18_DBM                   1
-#define LL_EXT_TX_POWER_MINUS_15_DBM                   2
-#define LL_EXT_TX_POWER_MINUS_12_DBM                   3
-#define LL_EXT_TX_POWER_MINUS_10_DBM                   4
-#define LL_EXT_TX_POWER_MINUS_9_DBM                    5
-#define LL_EXT_TX_POWER_MINUS_6_DBM                    6
-#define LL_EXT_TX_POWER_MINUS_5_DBM                    7
-#define LL_EXT_TX_POWER_MINUS_3_DBM                    8
-#define LL_EXT_TX_POWER_0_DBM                          9
-#define LL_EXT_TX_POWER_1_DBM                          10
-#define LL_EXT_TX_POWER_2_DBM                          11
-#define LL_EXT_TX_POWER_3_DBM                          12
-#define LL_EXT_TX_POWER_4_DBM                          13
-#define LL_EXT_TX_POWER_5_DBM                          14
-#if defined( CC13X2P )
-// Add the extra power level step for CC1352P devices
-#define LL_EXT_TX_POWER_P2_14_DBM_P4_6_DBM             15
-#define LL_EXT_TX_POWER_P2_15_DBM_P4_7_DBM             16
-#define LL_EXT_TX_POWER_P2_16_DBM_P4_8_DBM             17
-#define LL_EXT_TX_POWER_P2_17_DBM_P4_9_DBM             18
-#define LL_EXT_TX_POWER_P2_18_DBM_P4_10_DBM            19
-#define LL_EXT_TX_POWER_P2_19_DBM                      20
-#define LL_EXT_TX_POWER_P2_20_DBM                      21
-#endif // CC13X2P
-#else // CC254x
-#define LL_EXT_TX_POWER_MINUS_23_DBM                   0
-#define LL_EXT_TX_POWER_MINUS_6_DBM                    1
-#define LL_EXT_TX_POWER_0_DBM                          2
-#define LL_EXT_TX_POWER_4_DBM                          3
-#endif // CC26XX/CC13XX
-#else
-#define LL_EXT_TX_POWER_0_DBM                          0
-#define LL_EXT_TX_POWER_5_DBM                          1
-#define LL_EXT_TX_POWER_10_DBM                         2
-#define LL_EXT_TX_POWER_20_DBM                         3
-#endif
-#endif // CC23X0
-
 //
 #define LL_EXT_DISABLE_ONE_PKT_PER_EVT                 0
 #define LL_EXT_ENABLE_ONE_PKT_PER_EVT                  1
@@ -541,7 +504,7 @@ extern "C"
 
 #define LL_MAX_LINK_DATA_TIME_CODED                    17040 // in us
 
-#define LL_MAX_LINK_DATA_TIME                          MAX( LL_MAX_LINK_DATA_TIME_CODED, LL_MAX_LINK_DATA_TIME_UNCODED )
+#define LL_MAX_LINK_DATA_TIME                          LL_MAX_LINK_DATA_TIME_CODED // Coded is the maximum
 
 /*
 ** Event Parameters
@@ -576,29 +539,29 @@ extern "C"
 #define LL_SCA_20_PPM                                  7
 
 
-// CTE Sampling state
-#define LL_CTE_SAMPLING_NOT_INIT                       0
-#define LL_CTE_SAMPLING_ENABLE                         1
-#define LL_CTE_SAMPLING_DISABLE                        2
-
-// CTE sample slot type
-#define LL_CTE_SAMPLE_SLOT_1US                         1
-#define LL_CTE_SAMPLE_SLOT_2US                         2
-
-// CTE supported sample rates
-#define LL_CTE_SAMPLE_RATE_1US_AOD_TX                  0
-#define LL_CTE_SAMPLE_RATE_1US_AOD_RX                  1
-#define LL_CTE_SAMPLE_RATE_1US_AOA_RX                  2
-
-// CTE antenna switch length
-#define LL_CTE_ANTENNA_LIST_MIN_LENGTH                 2
-#define LL_CTE_ANTENNA_LIST_MAX_LENGTH                 75
-#define LL_CTE_MAX_ANTENNAS                            75
-
-// CTE types
-#define LL_CTE_TYPE_AOA                                0
-#define LL_CTE_TYPE_AOD_1US                            1
-#define LL_CTE_TYPE_AOD_2US                            2
+//// CTE Sampling state
+//#define LL_CTE_SAMPLING_NOT_INIT                       0
+//#define LL_CTE_SAMPLING_ENABLE                         1
+//#define LL_CTE_SAMPLING_DISABLE                        2
+//
+//// CTE sample slot type
+//#define LL_CTE_SAMPLE_SLOT_1US                         1
+//#define LL_CTE_SAMPLE_SLOT_2US                         2
+//
+//// CTE supported sample rates
+//#define LL_CTE_SAMPLE_RATE_1US_AOD_TX                  0
+//#define LL_CTE_SAMPLE_RATE_1US_AOD_RX                  1
+//#define LL_CTE_SAMPLE_RATE_1US_AOA_RX                  2
+//
+//// CTE antenna switch length
+//#define LL_CTE_ANTENNA_LIST_MIN_LENGTH                 2
+//#define LL_CTE_ANTENNA_LIST_MAX_LENGTH                 75
+//#define LL_CTE_MAX_ANTENNAS                            75
+//
+//// CTE types
+//#define LL_CTE_TYPE_AOA                                0
+//#define LL_CTE_TYPE_AOD_1US                            1
+//#define LL_CTE_TYPE_AOD_2US                            2
 #define LL_CTE_TYPE_NONE                               0xFF
 
 // CTE length
@@ -649,6 +612,7 @@ extern "C"
 #define LL_MIN_MAX_CONN_TIME_LENGTH_MASK                        0x7FFFFFFF
 #define LL_MAX_PERIPHERAL_NUM_LSTO_RETRIES                      2
 #define LL_MAX_CENTRAL_NUM_LSTO_RETRIES                         1
+#define LL_MAX_WINDOW_OFFSET_SIZE                               0xFFFF
 #define LL_MIN_NUM_EVENTS_LEFT_LSTO_MARGIN                      3
 #define LL_SET_STARVATION_MODE_OFF                              0
 #define LL_SET_STARVATION_MODE_ON                               1
@@ -664,13 +628,6 @@ typedef struct
   uint16 numPkts[ LL_MAX_NUM_DATA_CHAN ];
   uint16 numCrcErr[ LL_MAX_NUM_DATA_CHAN ];
 } perByChan_t;
-
-typedef struct
-{
-  uint32 antennaGPIOMask;
-  uint8  antennaTblSize;
-  uint32_t *antennaTbl;
-} cteAntennaProp_t;
 
 /*******************************************************************************
  * LOCAL VARIABLES
@@ -838,7 +795,6 @@ extern void *LL_RX_bm_alloc( uint16 size );
  */
 extern llStatus_t LL_Reset( void );
 
-#ifdef CC23X0
 #ifndef USE_HSM
 /*******************************************************************************
  * @fn          LL_initRNGNoise API
@@ -859,7 +815,6 @@ extern llStatus_t LL_Reset( void );
  * 						 system cannot boot.
  */
 extern llStatus_t LL_initRNGNoise( void );
-#endif
 #endif
 /*******************************************************************************
  * @fn          LL_ReadBDADDR API
@@ -1771,16 +1726,23 @@ extern llStatus_t LL_ConnUpdate( uint16 connId,
  *
  * @brief       This API is called by the HCI to update the Host data channels
  *              initiating an Update Data Channel control procedure.
+ *              (For a specific connection, or for all active connections)
  *
  *              Note: While it isn't specified, it is assumed that the Host
  *                    expects an update channel map on all active connections.
  *
- *              Note: This API currently only supports one connection.
  *
  * input parameters
  *
  * @param       chanMap - A five byte array containing one bit per data channel
  *                        where a 1 means the channel is "used".
+ * @param       connID  - The connection handle. If equals to maxNumConns, it is
+ *                        assumed  that the Host expects an update channel map
+ *                        on all active Master connections. if connID > maxNumConns
+ *                        or connection isnt active,LL_STATUS_ERROR_BAD_PARAMETER
+ *                        status will return. When in specific connection mode, if the
+ *                        channel map control procedure is already pending,
+ *                        LL_STATUS_ERROR_CTRL_PROC_ALREADY_ACTIVE will return.
  *
  * output parameters
  *
@@ -1788,6 +1750,7 @@ extern llStatus_t LL_ConnUpdate( uint16 connId,
  *
  * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_BAD_PARAMETER,
  *              LL_STATUS_ERROR_ILLEGAL_PARAM_COMBINATION
+ *              LL_STATUS_ERROR_CTRL_PROC_ALREADY_ACTIVE
  */
 extern llStatus_t LL_ChanMapUpdate( uint8 *chanMap , uint16 connID );
 
@@ -2416,73 +2379,6 @@ extern llStatus_t LL_EnhancedTxTest( uint8 txChan,
                                      uint8 txPhy );
 
 /*******************************************************************************
- * @fn          LL_EnhancedCteRxTest API
- *
- * @brief       This API is used to start a test where the DUT receives
- *              reference packets at a fixed interval. The tester generates
- *              the test reference packets.
- *
- * input parameters
- *
- * @param       rxChan - Rx Channel k=0..39, where F=2402+(k*2MHz).
- * @param       rxPhy  - Rx PHY to use.
- * @param       modIndex - LL_DTM_STANDARD_MODULATION_INDEX,
- *                         LL_DTM_STABLE_MODULATION_INDEX
- * @param       expectedCteLength - Expected CTE length in 8 -s units.
- * @param       expectedCteType - Expected CTE type as bitmask (bit 0 - Allow AoA CTE Response).
- * @param       slotDurations - Switching and sampling slots in 1 us or 2 us each (1 or 2).
- * @param       length - The number of Antenna IDs in the pattern (2 to 75).
- * @param       pAntenna - List of Antenna IDs in the pattern.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_EnhancedCteRxTest( uint8 rxChan,
-                                        uint8 rxPhy,
-                                        uint8 modIndex,
-                                        uint8 expectedCteLength,
-                                        uint8 expectedCteType,
-                                        uint8 slotDurations,
-                                        uint8 length,
-                                        uint8 *pAntenna);
-
-/*******************************************************************************
- * @fn          LL_EnhancedCteTxTest API
- *
- * @brief       This API is used to start a test where the DUT generates
- *              test reference packets at a fixed interval. The Controller
- *              shall transmit at maximum power.
- *
- * input parameters
- *
- * @param       txChan      - Tx RF channel k=0..39, where F=2402+(k*2MHz).
- * @param       payloadLen  - Byte length (0..37) in payload for each packet.
- * @param       payloadType - The type of pattern to transmit.
- * @param       txPhy       - Tx PHY to use.
- * @param       cteLength - CTE length in 8 -s units.
- * @param       cteType - CTE type as bitmask (bit 0 - Allow AoA CTE Response).
- * @param       length - The number of Antenna IDs in the pattern (2 to 75).
- * @param       pAntenna - List of Antenna IDs in the pattern.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_EnhancedCteTxTest( uint8 txChan,
-                                        uint8 payloadLen,
-                                        uint8 payloadType,
-                                        uint8 txPhy,
-                                        uint8 cteLength,
-                                        uint8 cteType,
-                                        uint8 length,
-                                        uint8 *pAntenna);
-
-/*******************************************************************************
  * @fn          LE_ReadTxPowerCmd API
  *
  * @brief       This function is used to is used to read the minimum and
@@ -2545,140 +2441,6 @@ extern llStatus_t LE_ReadRfPathCompCmd( int16 *txPathParam,
  */
 extern llStatus_t LE_WriteRfPathCompCmd( int16 txPathParam,
                                          int16 rxPathParam );
-
-/*******************************************************************************
- * @fn          LE_SetConnectionCteReceiveParams API
- *
- * @brief       This API is used to enable or disable sampling received Constant Tone
- *              Extension fields on a connection and to set the antenna switching
- *              pattern and switching and sampling slot durations to be used.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle - Connection handle.
- * @param       samplingEnable - Sample CTE on a connection and report the samples
- *                               to the Host (0 or 1).
- * @param       slotDurations - Switching and sampling slots in 1 us or 2 us each (1 or 2).
- * @param       length - The number of Antenna IDs in the pattern (2 to 75).
- * @param       pAntenna - List of Antenna IDs in the pattern.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_SetConnectionCteReceiveParams( uint16 connHandle,
-                                                    uint8 samplingEnable,
-                                                    uint8 slotDurations,
-                                                    uint8 length,
-                                                    uint8 *pAntenna);
-
-/*******************************************************************************
- * @fn          LL_SetConnectionCteTransmitParams API
- *
- * @brief       This API is used to to set the antenna switching pattern and permitted
- *              Constant Tone Extension types used for transmitting Constant Tone Extensions
- *              requested by the peer device on a connection.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle - Connection handle.
- * @param       types - CTE types as bitmask (bit 0 - Allow AoA CTE Response).
- * @param       length - The number of Antenna IDs in the pattern (2 to 75).
- * @param       pAntenna - List of Antenna IDs in the pattern.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_SetConnectionCteTransmitParams( uint16 connHandle,
-                                                     uint8 types,
-                                                     uint8 length,
-                                                     uint8 *pAntenna);
-
-/*******************************************************************************
- * @fn          LL_SetConnectionCteRequestEnable API
- *
- * @brief       This API is used to start or stop initiating the CTE Request
- *              procedure on a connection.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle - Connection handle.
- * @param       enable - Enable or disable CTE Request for a connection (1 or 0).
- * @param       interval - Requested interval for initiating the CTE Request procedure
- *                         in number of connection events (1 to 0xFFFF)
- * @param       length - Min length of the CTE being requested in 8 us units (2 to 20).
- * @param       type - Requested CTE type (0 - AoA, 1 - AoD with 1us slots,
- *                     2 - AoD with 2us slots).
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_SetConnectionCteRequestEnable( uint16 connHandle,
-                                                    uint8 enable,
-                                                    uint16 interval,
-                                                    uint8 length,
-                                                    uint8 type);
-
-/*******************************************************************************
- * @fn          LL_SetConnectionCteResponseEnable API
- *
- * @brief       This API is used to set a respond to LL_CTE_REQ PDUs with LL_CTE_RSP
- *              PDUs on a connection.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle - Connection handle.
- * @param       enable - Enable or disable CTE Response for a connection (1 or 0).
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_SetConnectionCteResponseEnable( uint16 connHandle,
-                                                     uint8 enable);
-
-/*******************************************************************************
- * @fn          LL_ReadAntennaInformation API
- *
- * @brief       This function is used to read the CTE antenna information
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       sampleRates - Supported switching sampling rates.
- * @param       maxNumOfAntennas - The number of antennae supported.
- * @param       maxSwitchPatternLen - Max length of antenna switching pattern supported.
- * @param       maxCteLen - Max length of a transmitted CTE supported in 8 us units.
- *
- * @return      llStatus_t
- */
-extern llStatus_t LL_ReadAntennaInformation( uint8 *sampleRates,
-                                             uint8 *maxNumOfAntennas,
-                                             uint8 *maxSwitchPatternLen,
-                                             uint8 *maxCteLen);
 
 /*********************************************************************
  * @fn      LE_SetPeriodicAdvParams
@@ -2761,57 +2523,6 @@ extern llStatus_t LE_SetPeriodicAdvData( uint8 advHandle,
  */
 extern llStatus_t LE_SetPeriodicAdvEnable( uint8 enable,
                                            uint8 advHandle );
-
-/*********************************************************************
- * @fn      LE_SetConnectionlessCteTransmitParams
- *
- * @brief   Used to set the type, length, and antenna switching pattern
- *          for the transmission of Constant Tone Extensions in any periodic advertising.
- *
- *
- * input parameters
- *
- * @param   advHandle - Used to identify a periodic advertising train
- * @param   cteLen    - CTE length (0x02 - 0x14) 16 usec - 160 usec
- * @param   cteType   - CTE type (0 - AoA, 1 - AoD 1usec, 2 - AoD 2usec)
- * @param   cteCount  - Number of CTE's to transmit in the same periodic event
- * @param   length    - Number of items in Antenna array (relevant to AoD only)
- * @param   pAntenna  - Pointer to Antenna array (relevant to AoD only)
- *
- * output parameters
- *
- * @param       None.
- *
- * @return  llStatus_t
- */
-extern llStatus_t LE_SetConnectionlessCteTransmitParams( uint8 advHandle,
-                                                         uint8 cteLen,
-                                                         uint8 cteType,
-                                                         uint8 cteCount,
-                                                         uint8 length,
-                                                         uint8 *pAntenna);
-
-/*********************************************************************
- * @fn      LE_SetConnectionlessCteTransmitEnable
- *
- * @brief   Used to request that the Controller enables or disables
- *          the use of Constant Tone Extensions in any periodic advertising.
- *
- *
- * input parameters
- *
- * @param   advHandle - Used to identify a periodic advertising train
- * @param   enable    - 0x00 - Advertising with CTE is disabled (default)
- *                      0x01 - Advertising with CTE is enabled
- *
- * output parameters
- *
- * @param       None.
- *
- * @return  llStatus_t
- */
-extern llStatus_t LE_SetConnectionlessCteTransmitEnable( uint8 advHandle,
-                                                         uint8 enable );
 
 /*********************************************************************
  * @fn      LE_PeriodicAdvCreateSync
@@ -2967,29 +2678,6 @@ extern llStatus_t LE_ReadPeriodicAdvListSize( uint8 *listSize );
 extern llStatus_t LE_SetPeriodicAdvReceiveEnable( uint16 syncHandle,
                                                   uint8  enable );
 
-/*********************************************************************
- * @fn      LE_SetConnectionlessIqSamplingEnable
- *
- * @brief   Used by the Host to request that the Controller enables or disables capturing
- *          IQ samples from the CTE of periodic advertising packets in the periodic
- *          advertising train identified by the syncHandle parameter.
- *
- * @param   syncHandle - Handle identifying the periodic advertising train (Range: 0x0000 to 0x0EFF)
- * @param   samplingEnable - Sample CTE on a received periodic advertising and report the samples to the Host.
- * @param   slotDurations - Switching and sampling slots in 1 us or 2 us each (1 or 2).
- * @param   maxSampledCtes - 0 - Sample and report all available CTEs
- *                           1 to 16 - Max number of CTEs to sample and report in each periodic event
- * @param   length    - Number of items in Antenna array (relevant to AoA only)
- * @param   pAntenna  - Pointer to Antenna array (relevant to AoA only)
- *
- * @return  llStatus_t
- */
-extern llStatus_t LE_SetConnectionlessIqSamplingEnable( uint16 syncHandle,
-                                                        uint8 samplingEnable,
-                                                        uint8 slotDurations,
-                                                        uint8 maxSampledCtes,
-                                                        uint8 length,
-                                                        uint8 *pAntenna);
 
 /*
 ** Vendor Specific Command API
@@ -3256,33 +2944,6 @@ extern llStatus_t LL_EXT_SetPeripheralLatencyOverride( uint8 control );
  */
 extern llStatus_t LL_EXT_ModemTestTx( uint8 cwMode,
                                       uint8 rfChan );
-
-/*******************************************************************************
- * @fn          LL_EXT_ModemHopTestTx
- *
- * @brief       This API is used to start a continuous transmitter direct test
- *              mode test using a modulated carrier wave and transmitting a
- *              37 byte packet of Pseudo-Random 9-bit data. A packet is
- *              transmitted on a different frequency (linearly stepping through
- *              all RF channels 0..39) every 625us. Use LL_EXT_EndModemTest
- *              command to end the test.
- *
- *              Note: A LL reset will be issued by LL_EXT_EndModemTest!
- *              Note: The BLE device will transmit at maximum power.
- *              Note: This API can be used to verify this device meets Japan's
- *                    TELEC regulations.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_UNEXPECTED_STATE_ROLE
- */
-extern llStatus_t LL_EXT_ModemHopTestTx( void );
 
 /*******************************************************************************
  * @fn          LL_EXT_ModemTestRx
@@ -3705,44 +3366,6 @@ extern llStatus_t LL_EXT_PERbyChan( uint16       connId,
                                     perByChan_t *perByChan );
 
 /*******************************************************************************
- * @fn          LL_EXT_ExtendRfRange Vendor Specific API
- *
- * @brief       This API is used to Extend Rf Range using the TI CC2590
- *              2.4 GHz RF Front End device.
- *
- * input parameters
- *
- * @param       cmdComplete - Pointer to get indication if command is done.
- *
- * output parameters
- *
- * @param       cmdComplete - Boolean to indicate the command is still pending.
- *
- * @return      LL_STATUS_SUCCESS
- */
-extern llStatus_t LL_EXT_ExtendRfRange( uint8 *cmdComplete );
-
-/*******************************************************************************
- * @fn          LL_EXT_HaltDuringRf Vendor Specific API
- *
- * @brief       This function is used to enable or disable halting the
- *              CPU during RF. The system defaults to enabled.
- *
- * input parameters
- *
- * @param       mode - LL_EXT_HALT_DURING_RF_ENABLE,
- *                     LL_EXT_HALT_DURING_RF_DISABLE
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS, LL_STATUS_ERROR_COMMAND_DISALLOWED,
- *              LL_STATUS_ERROR_BAD_PARAMETER
- */
-extern llStatus_t LL_EXT_HaltDuringRf( uint8 mode );
-
-/*******************************************************************************
  * @fn          LL_EXT_BuildRevision Vendor Specific API
  *
  * @brief       This API is used to to set a user revision number or read the
@@ -4106,77 +3729,6 @@ extern llStatus_t LL_EXT_ReadRandomAddress( uint8 *bdAddr );
 extern llStatus_t LL_EXT_SetVirtualAdvAddr( uint8 advHandle , uint8 *bdAddr );
 
 /*******************************************************************************
- * @fn          LL_EXT_SetPinOutput API
- *
- * @brief       This API is called by the HCI to set given pin as output or input
- *              and in case of output, set an init value on it .
- *
- * input parameters
- *
- * @param       dio - GPIO port number.
- * @param       value - initialize GPIO as output and set it for 0 or 1,
- *                      or set it as input in case the value is 0xFF.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS
- */
-extern llStatus_t LL_EXT_SetPinOutput( uint8 dio, uint8 value );
-
-/*******************************************************************************
- * @fn          LL_EXT_SetLocationingAccuracy API
- *
- * @brief       This API is called by the HCI to set CTE accuracy for PHY 1M and 2M
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       handle - Connection handle (0x0XXX) or Periodic advertising train handle (0x1XXX).
- * @param       sampleRate1M - sample rate for PHY 1M
- *                             range : 1 - least accuracy (as in 5.1 spec) to 4 - most accuracy
- * @param       sampleSize1M - sample size for PHY 1M
- *                             range : 1 - 8 bits (as in 5.1 spec) or 2 - 16 bits (more accurate)
- * @param       sampleRate2M - sample rate for PHY 2M
- *                             range : 1 - least accuracy (as in 5.1 spec) to 4 - most accuracy
- * @param       sampleSize2M - sample size for PHY 2M
- *                             range : 1 - 8 bits (as in 5.1 spec) or 2 - 16 bits (more accurate)
- * @param       sampleCtrl   - sample control flags
- *                             range : bit0=0 - Default filtering, bit0=1 - RAW_RF(no filtering), , bit1..7=0 - spare
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS
- */
-extern llStatus_t LL_EXT_SetLocationingAccuracy( uint16 handle,
-                                                 uint8  sampleRate1M,
-                                                 uint8  sampleSize1M,
-                                                 uint8  sampleRate2M,
-                                                 uint8  sampleSize2M,
-                                                 uint8  sampleCtrl);
-
-/*******************************************************************************
- * @fn          LL_EXT_CoexEnable API
- *
- * @brief       This API is called by the HCI to enable or disable the Coex feature
- *
- * input parameters
- *
- * @param       enable - 1 enable the coex feature or 0 to disable.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS
- */
-extern llStatus_t LL_EXT_CoexEnable( uint8 enable );
-
-/*******************************************************************************
  * @fn          LL_EXT_GetRxStats API
  *
  * @brief       This API is called by the HCI to Reset or Read the RX
@@ -4201,18 +3753,6 @@ extern llStatus_t LL_EXT_GetRxStats( uint16 connId, uint8 command );
  * @return      LL_STATUS_SUCCESS
  */
 extern llStatus_t LL_EXT_GetTxStats( uint16 connId, uint8 command );
-
-/*******************************************************************************
- * @fn          LL_EXT_GetCoexStats API
- *
- * @brief       This API is called by the HCI to Reset or Read the COEX
- *              Statistics counters
- *
- * @param       command - Reset/Read
- *
- * @return      LL_STATUS_SUCCESS
- */
-extern llStatus_t LL_EXT_GetCoexStats( uint8 command );
 
 /*******************************************************************************
  * @fn          LE_SetHostFeature API
@@ -4682,24 +4222,6 @@ extern void LL_EXT_PacketErrorRateCback( uint16 numPkts,
                                          uint16 numMissedEvts );
 
 /*******************************************************************************
- * @fn          LL_EXT_ExtendRfRangeCback Callback
- *
- * @brief       This Callback is used by the LL to notify the HCI that the
- *              Extend Rf Range command has been completed.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void LL_EXT_ExtendRfRangeCback( void );
-
-/*******************************************************************************
  * @fn          LL_DataLenExceedEventCback
  *
  * @brief       This EXT LL callback is used to generate an event after receiving L2CAP
@@ -4962,30 +4484,6 @@ extern void LL_EXT_GetTxStatsCback( uint16 numTx,
                                     uint16 numTxEntryDone );
 
 /*******************************************************************************
- * @fn          LL_EXT_ChanMapUpdateCback Callback
- *
- * @brief       This LL callback is used to generate a vendor specific channel map
- *              update event
- *
- * input parameters
- *
- * @param       grants         - Number of grants
- * @param       rejects        - Number of rejects (no grant)
- * @param       contRejects    - Number of continuously rejected requests
- * @param       maxContRejects - Max continuously rejected requests
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void LL_EXT_GetCoexStatsCback( uint32 grants,
-                                      uint32 rejects,
-                                      uint16 contRejects,
-                                      uint16 maxContRejects );
-
-/*******************************************************************************
  * @fn          LL_SetDefChanMap API
  *
  * @brief       This API is called by the HCI to update the default channel map initiating an
@@ -5031,164 +4529,6 @@ extern llStatus_t LL_SetDefChanMap( uint8 *chanMap );
  *              LL_STATUS_ERROR_ILLEGAL_PARAM_COMBINATION
  */
 extern llStatus_t LL_SetSecAdvChanMap( uint8 *chanMap );
-
-
-/*******************************************************************************
- * @fn          HCI_ConnectionIqReportEvent Callback
- *
- * @brief       This function is used to generate a I/Q CTE report event
- *              after receiving packet with CTE.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle    - Connection handle.
- * @param       phy           - current phy 1M or 2M
- * @param       dataChIndex   - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       connEvent     - current connection event counter
- * @param       sampleCtrl    - sample control flags
- *                              range : bit0=0 - Default filtering, bit0=1 - RAW_RF(no filtering), , bit1..7=0 - spare
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_ConnectionIqReportEvent( uint16 connHandle,
-                                         uint8  phy,
-                                         uint8  dataChIndex,
-                                         uint16 rssi,
-                                         uint8  rssiAntenna,
-                                         uint8  cteType,
-                                         uint8  slotDuration,
-                                         uint8  status,
-                                         uint16 connEvent,
-                                         uint8  sampleCount,
-                                         uint32 *cteData);
-
-/*******************************************************************************
- * @fn          HCI_CteRequestFailedEvent Callback
- *
- * @brief       This function is used to report an issue following a failure
- *              in CTE procedure
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       status        - report issue:
- *                              0 - LL_CTE_RSP PDU received successfully but without
- *                                  a CTE field or fail in sampling the CTE
- * @param       connHandle    - Connection handle.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_CteRequestFailedEvent( uint8  status,
-                                       uint16 connHandle);
-
-/*******************************************************************************
- * @fn          HCI_ExtConnectionIqReportEvent Callback
- *
- * @brief       This function is used to generate an Extended I/Q CTE (Oversampling)
- *              report event after receiving packet with CTE.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle    - Connection handle.
- * @param       phy           - current phy 1M or 2M
- * @param       dataChIndex   - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       connEvent     - current connection event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       sampleRate    - number of samples per 1us represent CTE accuracy
- *                              range : 1 - least accuracy (as in 5.1 spec) to 4 - most accuracy
- * @param       sampleSize    - sample size represent CTE accuracy
- *                              range : 1 - 8 bit (as in 5.1 spec) or 2 - 16 bits (most accurate)
- * @param       sampleCtrl    - sample control flags
- *                              range : bit0=0 - Default filtering, bit0=1 - RAW_RF(no filtering), , bit1..7=0 - spare
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_ExtConnectionIqReportEvent( uint16 connHandle,
-                                            uint8  phy,
-                                            uint8  dataChIndex,
-                                            uint16 rssi,
-                                            uint8  rssiAntenna,
-                                            uint8  cteType,
-                                            uint8  slotDuration,
-                                            uint8  status,
-                                            uint16 connEvent,
-                                            uint16 sampleCount,
-                                            uint8  sampleRate,
-                                            uint8  sampleSize,
-                                            uint8  sampleCtrl,
-                                            uint32 *cteData);
-
-/*******************************************************************************
- * @fn          HCI_ConnectionlessIqReportEvent Callback
- *
- * @brief       This function is used to generate a I/Q CTE report event
- *              after receiving advertise or generic rx packet with CTE.
- *
- * input parameters
- *
- * @param       syncHandle    - periodic advertisment sync handle.
- * @param       channelIndex  - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       eventCounter  - current periodic adv event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-extern void HCI_ConnectionlessIqReportEvent(uint16 syncHandle,
-                                            uint8  channelIndex,
-                                            uint16 rssi,
-                                            uint8  rssiAntenna,
-                                            uint8  cteType,
-                                            uint8  slotDuration,
-                                            uint8  status,
-                                            uint16 eventCounter,
-                                            uint8  sampleCount,
-                                            uint32 *cteData);
 
 /*********************************************************************
  * @fn      HCI_PeriodicAdvSyncEstablishedEvent

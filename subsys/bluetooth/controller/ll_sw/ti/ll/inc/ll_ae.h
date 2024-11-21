@@ -237,8 +237,10 @@
 #define AE_EXT_HDR_ADV_TYPE_FIELD_SIZE                      1 // 6 bits extended header size and 2 bits for the adv type
 
 // Periodic soft stop Time values - gracefulStopTime when using RCL
-#define PER_SUCCESS_SOFTSTOPTIME_DEFAULT                 RAT_TICKS_IN_10MS
-#define PER_SOFTSTOP_ADDITION_PER_SKIP                   RAT_TICKS_IN_140US   // increase the soft stop time for each skip
+// Stop Time is Jitter with some grace
+#define PER_SUCCESS_SOFTSTOPTIME_DEFAULT                    LL_JITTER_CORRECTION + LL_RX_RAMP_OVERHEAD + RAT_TICKS_IN_625US
+
+#define PER_DRIFT_RATIO                                     4                        // For every 1s add 50us drift
 
 // Auxilary Offset Units
 #define AE_AUX_OFFSET_UNITS_30_US                           0
@@ -322,6 +324,9 @@
 #define AE_EXT_SCAN_MIN_TIME                                4      // in 625us = 2.5ms
 #define AE_EXT_SCAN_MAX_TIME                                0xFFFF // in 625us units = 40.959375s
 
+// Max adv sets to store their scan report state in parallel
+#define EXT_SCAN_STATE_LIST_MAX_ENTRIES                     10
+
 #define AE_EXT_SCAN_DURATION_DISABLED                       0
 #define AE_EXT_SCAN_MIN_DURATION                            1      // in 10ms units = 10ms
 #define AE_EXT_SCAN_MAX_DURATION                            0xFFFF // in 10ms units = 655.35s
@@ -342,6 +347,10 @@
 #define AE_EVT_TYPE_DIR_ADV                                 BV(AE_EVT_TYPE_DIRECTED_ADVERTISING)
 #define AE_EVT_TYPE_SCAN_RSP                                BV(AE_EVT_TYPE_SCAN_RESPONSE)
 #define AE_EVT_TYPE_LEGACY                                  BV(AE_EVT_TYPE_LEGACY_PDU)
+
+// SID filtering
+#define AE_EXT_SID_FILTERING_ENTRY_EMPTY                    -1
+#define AE_EXT_SID_FILTERING_TIMEOUT                        RAT_TICKS_IN_1S * 2;
 
 // Advertising Event Types for Legacy PDUs
 #define AE_EXT_ADV_RPT_EVT_TYPE_ADV_IND                     AE_EVT_TYPE_LEGACY    | \
@@ -393,13 +402,6 @@
 // Parameters to indicate if common data set operation is for Adv, Scan Response or update during Adv
 #define LE_AE_EXT_DATA_CMD_ADV                              0
 #define LE_AE_EXT_DATA_CMD_SCAN_RSP                         1
-#define LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE                2
-#define LE_AE_EXT_DATA_CMD_SCAN_LAST_CMD_DONE               3
-
-// Flags to identify which data was updated
-#define LE_AE_EXT_DATA_NO_PENDING                           0
-#define LE_AE_EXT_DATA_ADV_PENDING                          1
-#define LE_AE_EXT_DATA_SCAN_RSP_PENDING                     2
 
 // Indicate that the adv data was not changed during advertising
 #define EXT_DATA_NO_UPDATE_DURING_ADV                       0xFF
@@ -417,6 +419,7 @@
 // ALT: Make these values configurable from ll_config? Allow user to set?
 #define AE_T_IFS_US                                         150
 #define AE_T_MAFS_IN_US                                     300
+#define AE_MIN_T_MAFS_IN_US                                 310
 #define AE_MIN_OFFSET_UNIT_IN_US                             30
 #define AE_MAX_OFFSET_UNIT_IN_US                            300
 #define AE_1M_OR_CODED_TO_2M_TIME_COMPENSATION_IN_TICKS     7
@@ -429,23 +432,8 @@
 // adv sorted list node start time error code
 #define AE_INVALID_START_TIME                               0
 
-#if defined(CC26X2) || defined(CC13X2) || defined(CC13X2P) || defined(CC13X4) || defined(CC23X0) || defined(CC26X4)
-  // TEMP: Define substitute for StartSynthToRatOffset, a radio parameter(?).
-  #define START_SYNTH_TO_RAT_OFFSET                         166
-  #define PRIMARY_CMD_START_SYNTH_TO_RAT_OFFSET             180
-  //
-  #define AE_MIN_CMD_TIME_IN_US                             300
-  #define AE_MIN_T_MAFS_IN_US                               310
-#else // !CC26XX && !CC13XX
-  // TEMP: Define substitute for StartSynthToRatOffset, a radio parameter(?).
-  #define START_SYNTH_TO_RAT_OFFSET                         256
-  //
-  #define AE_MIN_CMD_TIME_IN_US                             500
-  #define AE_MIN_T_MAFS_IN_US                               500
-#endif // CC26X2 || CC13X2 || CC13X2P || CC13X4 || CC26X4
-
-#define AE_MIN_CMD_TIME_IN_RAT_TICKS                        (4*AE_MIN_CMD_TIME_IN_US)
-#define AE_MIN_T_MAFS_IN_RAT_TICKS                          (4*AE_MIN_T_MAFS_IN_US)
+// TEMP: Define substitute for StartSynthToRatOffset, a radio parameter(?).
+#define START_SYNTH_TO_RAT_OFFSET                         166
 
 // scan timeout flags to track duration/period
 #define AE_SCAN_DURATION_TIMEOUT                            0
@@ -1165,6 +1153,7 @@ typedef struct
   uint8  lastScanRsp;            // indicate chain after AUX or after SCAN RSP
   uint8  directed;               // Indicate if received adv is directed or not
   uint8  advAddr[B_ADDR_LEN];    // advertising address
+  uint8  addrType;               // address type given by the advertiser
 }extScanReportState_t;
 
 //
@@ -1344,9 +1333,9 @@ struct advSet_t
   uint8           fragLen;                        // length of fragment
   uint8           lastFragLen;                    // length of last fragment
   uint8           numFrags;                       // number of advertising data fragments
-  aeSetDataCmd_t  *pPendingData;                  // pointer to the ext data that is pending while adv is on
-  uint8           pendingDataUpdate;              // flag to signal if there is a pending data update
 #endif
+  aeSetDataCmd_t  *pPendingAdvData;               // pointer to the ext data that is pending while adv is on
+  aeSetDataCmd_t  *pPendingScanRspData;           // pointer to the scan rsp data that is pending while adv is on
   uint16          dataLen;                        // original length of data
   uint8          *pData;                          // pointer to raw data
   // ISR Related
@@ -1375,28 +1364,42 @@ struct sortedAdv_t
   sortedAdv_t *next;
 };
 
+// Scan Response filter by sid
+typedef struct
+{
+  uint32      scanStartTimeStamp;                           // timeStamp of the begining of Scanning
+  uint32      timeOut;                                      // when timeout reached, sid table will be reset
+  int8        sidTable[ EXT_SCAN_STATE_LIST_MAX_ENTRIES ];  // known sid list, none value is -1
+} extSidScanRspFilter;
+
 // Extended Scanner Information
 typedef struct
 {
-  taskInfo_t *llTask;                         // pointer to associated task block
+  taskInfo_t *llTask;                               // pointer to associated task block
   // Note: Address must start on word boundary!
-  uint8        ownAddr[ LL_DEVICE_ADDR_LEN ]; // own device address
-  uint8        ownAddrType;                   // own device address type of public or random
-  uint8        paramValid;                    // flag to indicate parameters are valid
-  uint8        scanMode;                      // flag to indicate if currently scanning
+  uint8        ownAddr[ LL_DEVICE_ADDR_LEN ];       // own device address
+  uint8        ownAddrType;                         // own device address type of public or random
+  uint8        ownAddrRclCtx[ LL_DEVICE_ADDR_LEN ]; // own device address. used for processing directed advertising
+                                                    // with a resolveable TargetA which is not the same as our latest RPA
+                                                    // When set to zero address, it shall not be used.
+  uint8        paramValid;                          // flag to indicate parameters are valid
+  uint8        scanMode;                            // flag to indicate if currently scanning
   //
-  uint32       scanStartTime;                 // start time of scanner event
-  uint32       scanPeriodLeft;                // Period - Duration
-  uint8        scanStartState;                // flag to indicate start state
-  uint8        timingFlag;                    // flag to indicate duration or period end
-  uint8        lastLegacyAdv;                 // used to track last received legacy Adv PDU
+  uint32       scanStartTime;                       // start time of scanner event
+  uint32       scanPeriodLeft;                      // Period - Duration
+  uint8        scanStartState;                      // flag to indicate start state
+  uint8        timingFlag;                          // flag to indicate duration or period end
+  uint8        lastLegacyAdv;                       // used to track last received legacy Adv PDU
   //
   // Host Extended Scanner Parameters
-  aeSetScanParamCmd_t *pScanParam;            // ptr to Host provided params
-  aeEnableScanCmd_t   *pEnable;               // ptr to Host provided enable params
+  aeSetScanParamCmd_t *pScanParam;                  // ptr to Host provided params
+  aeEnableScanCmd_t   *pEnable;                     // ptr to Host provided enable params
   //
   // Extended Scan Priority
-  uint8                priority;              // Extended Scan Priority as a Secondary Task.
+  uint8                priority;                    // Extended Scan Priority as a Secondary Task.
+  //
+  // filter scanRsp SID table
+  extSidScanRspFilter  extScanRspSidFltr;          // filter scanRsp by their SID value
 } extScanInfo_t;
 
 // Extended Initiator Event Information
@@ -1490,19 +1493,6 @@ typedef struct
   uint8                             props[2];              // Set bit number 6 for include TxPower in the advertising PDU
 } llPeriodicAdvParamsCmd_t;
 
-#ifdef RTLS_CTE
-//Connectionless CTE struct
-typedef struct
-{
-  uint8                             enable;                // CTE enable or disable received from Host
-  uint8                             pending;               // pending to enable or disable the CTE after received from Host
-  uint8                             type;                  // CTE type and use as flag indicates that CTE Params was set by Host
-  uint8                             len;                   // CTE length
-  uint8                             count;                 // number of CTE's to transmit/receive in the same periodic event
-  llCteAntSwitch_t                  *pAntenna;             // antenna switch pattern
-} llConnectionlessCte_t;
-#endif
-
 typedef struct
 {
   RCL_CmdBle5PeriodicAdvertiser    perAdvCmd;                           // Command to run BLE periodic advertiser
@@ -1523,9 +1513,6 @@ typedef struct llPeriodicAdvSet_t
   llPeriodicAdvParamsCmd_t          paramsCmd;             // Pointer to periodic params command
   aeSetDataCmd_t                    dataCmd;               // Pointer to periodic data command
   llPeriodicAdvSyncInfo_t           syncInfo;              // Sync information in AUX_ADV_IND
-#ifdef RTLS_CTE
-  llConnectionlessCte_t             cteInfo;               // transmit CTE info struct
-#endif
   uint32                            startTime;             // start of periodic event
   uint32                            totalOtaTime;          // total OTA time in RAT ticks per length and PHY
   llPeriodicChanMap_t               *pChanMap;             // pointer to current channel map
@@ -1591,10 +1578,6 @@ typedef struct llPeriodicScanSet_t
   llPeriodicScanSyncCmd_t           syncCmd;               // current periodic syncing params command
   llPeriodicAdvSyncInfo_t           syncInfo;              // Sync information in AUX_ADV_IND
   llPeriodicAdvChanMap_t            chanMap;               // channel map received from advertiser
-#ifdef RTLS_CTE
-  llConnectionlessCte_t             cteInfo;               // CTE parameters setup by host
-  llCteSampleConfig_t               cteConfig;             // CTE sample Host configuration
-#endif
   uint32                            startTime;             // scanning start time in ticks
   uint32                            totalOtaTime;          // total OTA time in RAT ticks per length and PHY
   uint16                            handle;                // identify a periodic advertising train (Range: 0x00 to 0xEF)
@@ -1666,9 +1649,9 @@ extern llPeriodicAdv_t llPeriodicAdv;
 #endif
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
 
-#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)) || (FLASH_ROM_BUILD)
+#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG))
 extern extScanInfo_t  *extScanInfo;
-#endif // SCAN_CFG || FLASH_ROM_BUILD
+#endif // SCAN_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 extern uint8           extScanIndex;
@@ -1688,7 +1671,7 @@ extern llPeriodicScan_t llPeriodicScan;
 
 #if (defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG))
 extern extInitInfo_t  *extInitInfo;
-#endif // INIT_CFG || FLASH_ROM_BUILD
+#endif // INIT_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
 extern uint8           extInitIndex;
@@ -1727,17 +1710,17 @@ extern llStatus_t    LL_AE_RegCBack( uint8 cBackId, void * );
 extern advSet_t     *LL_GetAdvSet( uint8, uint8 );
 extern uint8         LL_CountAdvSets( uint8 );
 extern void          LL_DisableAdvSets( void );
+extern void          LL_AE_SetPendingData( advSet_t * );
 #ifdef USE_PERIODIC_ADV
 extern llPeriodicAdvSet_t *llGetPeriodicAdv( uint8 handle );
 extern llPeriodicAdvSet_t *llGetCurrentPeriodicAdv( void );
-extern void          llUpdatePeriodicAdvChainPacket( llPeriodicAdvSet_t *pPeriodicAdv );
+extern void          llUpdatePeriodicAdvChainPacket( void );
 extern void          llSetPeriodicAdvChmapUpdate( uint8 set );
 extern void          llClearPeriodicAdvSets( void );
 #endif
 #ifdef USE_PERIODIC_SCAN
 extern llPeriodicScanSet_t *llGetPeriodicScan( uint16 handle );
 extern llPeriodicScanSet_t *llGetCurrentPeriodicScan( uint8 state );
-extern uint8         llGetPeriodicScanCteTasks( void );
 void                 llClearPeriodicScanSets( void );
 void                 llProcessPeriodicScanSyncInfo( uint8 *pPkt, aeExtAdvRptEvt_t *advEvent, uint32 timeStamp, uint8 phy );
 void                 llTerminatePeriodicScan(void);
@@ -1748,7 +1731,6 @@ extern llStatus_t    llSetExtendedAdvParams( advSet_t *, aeSetParamCmd_t * );
 #endif
 extern void          llSetRfCmdPreemptionParams( uint32 );
 extern uint8         llGetRfCmdPreemptionEnable( void );
-extern void          llClearAdvSets( void );
 
 /*******************************************************************************
  * LL Internal API
@@ -1817,6 +1799,8 @@ extern void          llPeriodicAdv_PostProcess( void );
 extern void          llPeriodicScan_PostProcess( void );
 extern void          llExtScan_PostProcess( void );
 extern void          llExtInit_PostProcess( void );
+extern void          LL_rclScanRxEntryDone( void );
+
 // RF Event Processing
 extern void          llProcessExtScanRxFIFO( void );
 extern void          llSendAdvSetTermEvent( advSet_t *, uint8, uint8 );
@@ -1831,7 +1815,15 @@ extern void         *llFindNextPeriodicAdv( void );
 extern uint8 llAddExtAlAndSetIgnBit(aeExtAdvRptEvt_t *extAdvRpt, uint8 ignoreBit);
 extern uint8 llFlushIgnoredRxEntry(uint8 ignoreBit);
 extern void llSetRxCfg(void);
-void *llFindNextPeriodicScan( void );
+void  *llFindNextPeriodicScan( void );
+uint32 llReturnCurrentPeriodicStartTime();
+uint16 llReturnMinConnInterval( aeCreateConnCmd_t *pCmdParams);
+uint8  llUpdateSIDFilterScanRsp(uint8, uint8, uint8);
+void   llSetSIDFilterScanRsp(void);
+uint32 llExtAdvTxTime(advSet_t* pAdvSet, uint8 primPhy, uint8 secPhy);
+uint32 llEstimateAuxOtaTime(advSet_t * pAdvSet, uint8 secPhy);
+void   llSetExtHdrFlags( aeSetDataCmd_t *pCmdParams );
+
 /*******************************************************************************
  */
 

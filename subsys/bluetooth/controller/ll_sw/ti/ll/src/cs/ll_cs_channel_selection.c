@@ -23,8 +23,7 @@
 #include "cs/ll_cs_common.h"
 #include "cs/ll_cs_sec.h"
 #include "cs/ll_cs_logs.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * CONSTANTS
@@ -56,9 +55,13 @@
 csStatus_e llCsChSel3aAnd3b(uint8* pShuffledChannelArray, uint8* pFilteredArr,
                           uint8 nChannels, csTransactionId_e trId)
 {
+    if ((pFilteredArr == NULL) || (pShuffledChannelArray == NULL))
+    {
+        return CS_STATUS_UNEXPECTED_PARAMETER;
+    }
     // vaidate the channel array and bit map array is intialized and
     // there is at least 15 channels
-    if ((pShuffledChannelArray == NULL) || (nChannels < CS_MIN_NUM_OF_CHN))
+    if (nChannels < CS_MIN_NUM_OF_CHN)
     {
         return CS_STATUS_INVALID_CHM;
     }

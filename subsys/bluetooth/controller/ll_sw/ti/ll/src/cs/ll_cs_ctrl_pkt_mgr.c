@@ -26,7 +26,7 @@
 #include "cs/ll_cs_common.h"
 #include "cs/ll_cs_procedure.h"
 #include "ble.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "ll_enc.h"
 #include "osal_bufmgr.h"
 #include "hci_data.h"
@@ -37,7 +37,7 @@
  */
 #define CS_DEFAULT_CONNEVENT_OFFSET    5 /* The default connEvent offset to start the CS procedure */
 #define CS_T_MEAS_MIN                  150 /* The minimum subevent space. Units: us */
-#define CS_SUBEVENT_SPACE              CS_T_MEAS_MIN + 20000 /* 20000 us is the time it currently takes us to finish reporting a subevent and generate new steps */
+#define CS_SUBEVENT_SPACE              CS_T_MEAS_MIN + 1500 /* 1.5ms is the time it currently takes us to finish reporting a subevent and generate new steps */
 
 /*******************************************************************************
  * MACROS
@@ -331,12 +331,13 @@ csStatus_e llCsProcessCsControlPacket(uint8 ctrlType, llConnState_t* connPtr,
         case LL_CTRL_CS_REQ:
         {
             csProcedureEnable_t csReq = {0};
+            uint16 eventsPerProcedure;
 
             llCsParseCsReqData(&csReq, &pBuf[0]);
 
             if (llCsConfigIdCheck(connPtr->connId, csReq.configId))
             {
-                /* invalid configId */
+                /* Invalid configId */
                 MAP_llSendReject(connPtr, ctrlType, CS_STATUS_INVALID_LL_PARAM);
                 return (CS_STATUS_INVALID_LL_PARAM);
             }
@@ -353,18 +354,19 @@ csStatus_e llCsProcessCsControlPacket(uint8 ctrlType, llConnState_t* connPtr,
                 return (status);
             }
 
-            /* set the procedure request data in the db */
+            /* Set the procedure request data in the db */
             llCsDbSetProcedureEnableData(connPtr->connId, csReq.configId,
                                          &csReq);
-            /* set the enable flag */
+            /* Set the enable flag */
             llCsDbEnableProcedureParams(connPtr->connId, csReq.configId,
-                                        CS_ENABLE);
-            /* set events per procedure */
-            llCsDbSetEventsPerProcedure(
-                connPtr->connId, CS_EVENTS_PER_PROCEDURE(
-                                     csReq.maxProcedureDur, csReq.eventInterval,
-                                     connPtr->curParam.connInterval));
-            // if central, send CS_IND
+                                        (uint8)CS_ENABLE);
+            /* Set events per procedure */
+            eventsPerProcedure = CS_EVENTS_PER_PROCEDURE(csReq.maxProcedureDur,
+                                                         csReq.eventInterval,
+                                                         connPtr->curParam.connInterval);
+            llCsDbSetEventsPerProcedure(connPtr->connId, eventsPerProcedure);
+
+            // If central, send CS_IND
             if (connPtr->llTask->taskID == LL_TASK_ID_CENTRAL)
             {
                 // Enqueue the ctrl packet
@@ -372,17 +374,18 @@ csStatus_e llCsProcessCsControlPacket(uint8 ctrlType, llConnState_t* connPtr,
                 llCsDbMarkProcedureCompleted(connPtr->connId,
                                              CS_START_PROCEDURE);
 
-                MAP_HCI_CS_ProcedureEnableCompleteCback(
-                    LL_STATUS_SUCCESS, connPtr->connId, CS_ENABLE, &csReq);
+                MAP_HCI_CS_ProcedureEnableCompleteCback(LL_STATUS_SUCCESS,
+                                                        connPtr->connId,
+                                                        CS_ENABLE, &csReq);
             }
             else
             {
-                // peripheral, send CS_RSP
-                // setup ctrl packet
+                // Peripheral, send CS_RSP
+                // Setup ctrl packet
                 if (llCsSetupCtrlPkt(connPtr, LL_CTRL_CS_RSP,
                                      LL_CS_RSP_PL_LEN) == FALSE)
                 {
-                    // unable to malloc a packet!
+                    // Unable to malloc a packet!
                     (void)MAP_osal_set_event(LL_TaskID, LL_EVT_OUT_OF_MEMORY);
                     status = CS_STATUS_INSUFFICIENT_MEMORY;
                     break;
@@ -476,34 +479,33 @@ csStatus_e llCsProcessCsControlPacket(uint8 ctrlType, llConnState_t* connPtr,
             break;
         }
 
-        case LL_CTRL_CS_TERMINATE_IND:
+        case LL_CTRL_CS_TERMINATE_REQ:
         {
-            uint8 configId = pBuf[0];
-            csProcedureEnable_t enData;
-
-            if (llCsConfigIdSafeToUse(connPtr->connId, configId) ==
-                CS_STATUS_CONFIG_ENABLED)
+            status = llCsCtrlProcessTerminateReq(connPtr->connId, pBuf);
+            if (status == CS_STATUS_SUCCESS)
             {
-                llCsDbGetProcedureEnableData(connPtr->connId, configId,
-                                             &enData);
-
-                /* Set terminateState field to CS_TERMINATE RECEIVED */
-                llCsDbSetProcedureTerminateState(connPtr->connId, configId,
-                                                 CS_TERMINATE_RECEIVED);
-
-                /* Notify Host */
-                MAP_HCI_CS_ProcedureEnableCompleteCback(
-                    LL_STATUS_SUCCESS, connPtr->connId, CS_DISABLE, &enData);
-
-                /* Mark CS_IND procedure as completed */
-                llCsDbMarkProcedureCompleted(connPtr->connId, CS_IND);
-
-                /* update enable field to CS_DISABLE */
-                llCsDbEnableProcedureParams(connPtr->connId, configId,
-                                            CS_DISABLE);
+                MAP_llEnqueueCtrlPkt(connPtr, LL_CTRL_CS_TERMINATE_RSP);
             }
+            else
+            {
+                MAP_llSendReject(connPtr, ctrlType,
+                                 LL_STATUS_ERROR_COMMAND_DISALLOWED);
+                status = CS_STATUS_UNEXPECTED_PARAMETER;
+            }
+            break;
+        }
 
-            status = CS_STATUS_SUCCESS;
+        case LL_CTRL_CS_TERMINATE_RSP:
+        {
+            status = llCsCtrlProcessTerminateRsp(connPtr->connId, pBuf);
+            break;
+        }
+
+        default:
+        {
+            // Should never reach this.
+            // But just in case
+            status = CS_STATUS_UNEXPECTED_PARAMETER;
             break;
         }
     }
@@ -515,27 +517,30 @@ csStatus_e llCsProcessCsControlPacket(uint8 ctrlType, llConnState_t* connPtr,
  */
 uint8 llCsProcessCsCtrlProcedures(llConnState_t* connPtr, uint8 ctrlPkt)
 {
+    uint8 status = LL_CTRL_PROC_STATUS_SUCCESS;
     switch (ctrlPkt)
     {
         case LL_CTRL_CS_CAPABILITIES_REQ:
         {
-            return llCsProcessCsCtrlProcedure(
-                connPtr, ctrlPkt, CS_CAPABILITIES_EXCHANGE_PROCEDURE,
-                LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN);
+            return llCsProcessCsCtrlProcedure(connPtr, ctrlPkt,
+                                              CS_CAPABILITIES_EXCHANGE_PROCEDURE,
+                                              LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN);
             break;
         }
 
         case LL_CTRL_CS_CONFIG_REQ:
         {
-            return llCsProcessCsCtrlProcedure(
-                connPtr, ctrlPkt, CS_CONFIG_PROCEDURE, LL_CS_CONFIG_REQ_PL_LEN);
+            return llCsProcessCsCtrlProcedure(connPtr, ctrlPkt,
+                                              CS_CONFIG_PROCEDURE,
+                                              LL_CS_CONFIG_REQ_PL_LEN);
             break;
         }
 
         case LL_CTRL_CS_SEC_REQ:
         {
-            return llCsProcessCsCtrlProcedure(
-                connPtr, ctrlPkt, CS_SECURITY_PROCEDURE, LL_CS_SEC_REQ_PL_LEN);
+            return llCsProcessCsCtrlProcedure(connPtr, ctrlPkt,
+                                              CS_SECURITY_PROCEDURE,
+                                              LL_CS_SEC_REQ_PL_LEN);
             break;
         }
 
@@ -577,29 +582,21 @@ uint8 llCsProcessCsCtrlProcedures(llConnState_t* connPtr, uint8 ctrlPkt)
             break;
         }
 
-        case LL_CTRL_CS_TERMINATE_IND:
+        case LL_CTRL_CS_TERMINATE_REQ:
+        case LL_CTRL_CS_TERMINATE_RSP:
         {
-            csProcedureEnable_t enData;
-
-            uint8 configId = llCsDbGetCurrentConfigId(connPtr->connId);
-            llCsDbGetProcedureEnableData(connPtr->connId, configId, &enData);
-
-            if (!llCsDbIsProcdureCompleted(connPtr->connId, CS_IND))
-            {
-                llCsDbMarkProcedureCompleted(connPtr->connId, CS_IND);
-            }
-            else
-            {
-                MAP_HCI_CS_ProcedureEnableCompleteCback(
-                    LL_STATUS_SUCCESS, connPtr->connId, CS_DISABLE, &enData);
-            }
-
-            return llCsProcessCsCtrlProcedure(connPtr, ctrlPkt, CS_IND,
-                                              LL_CS_TERMINATE_IND_PL_LEN);
+            return llCsProcessCsCtrlProcedure(connPtr, ctrlPkt,
+                                              CS_TERMINATE_PROCEDURE,
+                                              ctrlCsPktLenTable[LL_CTRL_CS_PKT_CALC_LEN_INDEX(ctrlPkt)]);
+            break;
+        }
+        default:
+        {
+            status = LL_CTRL_UNDEFINED_PKT;
             break;
         }
     }
-    return (LL_CTRL_PROC_STATUS_SUCCESS);
+    return (status);
 }
 
 /*******************************************************************************
@@ -776,9 +773,10 @@ uint8 llCsSetupCtrlPkt(llConnState_t* connPtr, uint8 ctrlType, uint8 ctrlLen)
                 break;
             }
 
-            case LL_CTRL_CS_TERMINATE_IND:
+            case LL_CTRL_CS_TERMINATE_REQ:
+            case LL_CTRL_CS_TERMINATE_RSP:
             {
-                llCsSetupTerminateInd(&pData[1], connPtr->connId);
+                llCsSetupTerminateReqOrRsp(connPtr->connId, &pData[1]);
                 break;
             }
 
@@ -942,6 +940,8 @@ void llCsSetupCsReq(uint8* data, uint16 connId)
         procedureParams.maxProcedureDur, connPtr->curParam.connInterval,
         csReq.subEventInterval);
     csReq.procedureCount = procedureParams.maxProcedureCount;
+    csReq.txSnrI = 0xFU;
+    csReq.txSnrR = 0xFU;
 
     if (csReq.subEventsPerEvent == 1)
     {
@@ -993,6 +993,7 @@ void llCsReq2Data(uint8* data, csProcedureEnable_t* csReq)
     *data++ = csReq->preferredPeerAntenna;
     *data++ = csReq->phy;
     *data++ = csReq->pwrDelta;
+    *data   = (csReq->txSnrI << 4) | csReq->txSnrR;
 }
 
 /*******************************************************************************
@@ -1016,6 +1017,8 @@ void llCsParseCsReqData(csProcedureEnable_t* csReq, uint8* pBuf)
     csReq->preferredPeerAntenna = llCsReqPkt->preferredPeerAntenna;
     csReq->phy = llCsReqPkt->phy;
     csReq->pwrDelta = llCsReqPkt->pwrDelta;
+    csReq->txSnrI = llCsReqPkt->txSnrI;
+    csReq->txSnrR = llCsReqPkt->txSnrR;
 }
 
 /*******************************************************************************
@@ -1135,13 +1138,15 @@ void llCsParseCsIndData(csProcedureEnable_t* csInd, uint8* pBuf)
 /*******************************************************************************
  * Internal function defined in ll_cs_ctrl_pkt_internal.h
  */
-void llCsSetupTerminateInd(uint8* data, uint16 connId)
+void llCsSetupTerminateReqOrRsp(uint16 connId, uint8* data)
 {
     uint8 configId = llCsDbGetCurrentConfigId(connId);
-    *data++ = configId;
-    // Note: the following should be the error code. Will be implemented
-    // as part of BLE_LOKI-1356
-    *data++ = 0;
+    uint16 procedureCount = llCsSecGetProcedureCount();
+    uint8 errorCode = llCsDbGetTerminateReason(connId);
+    data[0] = configId;
+    data[1] = LO_UINT16(procedureCount);
+    data[2] = HI_UINT16(procedureCount);
+    data[3] = errorCode;
 }
 
 /*******************************************************************************
@@ -1424,7 +1429,8 @@ uint32 llCsGetSubeventLen(uint32 maxSubeventLen, uint32 offsetMin, uint16 procLe
     if ((maxSubeventLen + CS_SUBEVENT_SPACE + offsetMin) > connInt)
     {
         /* subeventInterval and minimal offset exceed the connInterval */
-        if (connInt - (CS_SUBEVENT_SPACE + offsetMin) < CS_MIN_SUBEVENT_LEN)
+        if ((connInt < (CS_SUBEVENT_SPACE + offsetMin)) ||
+           ((connInt - (CS_SUBEVENT_SPACE + offsetMin)) < CS_MIN_SUBEVENT_LEN))
         {
             /* cannot  */
             return 0;
@@ -1477,4 +1483,102 @@ uint8 llCsSubeventsPerEvent(uint16 procedureLen, uint16 connInterval,
         (procedureLen > connInterval) ? connInterval : procedureLen;
     uint8 subeventsPerEvent = usedInterval / subeventInterval;
     return (subeventsPerEvent == 0) ? 1 : subeventsPerEvent;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_ctrl_pkt_internal.h
+ */
+csStatus_e llCsCtrlProcessTerminateReq(uint16 connId, const uint8* pBuf)
+{
+    csStatus_e status = CS_STATUS_SUCCESS;
+    if (pBuf != NULL)
+    {
+        uint8 configId = pBuf[0];
+        uint16 peerProcCnt = BUILD_UINT16(pBuf[1], pBuf[2]);
+
+        /* Check if the configId status */
+        if (llCsConfigIdSafeToUse(connId, configId) ==
+            CS_STATUS_CONFIG_ENABLED)
+        {
+            csProcedureEnable_t enData;
+            /* This configId can be disabled */
+            /* Get Procedure enable data */
+            llCsDbGetProcedureEnableData(connId, configId,
+                                            &enData);
+
+            if (peerProcCnt < enData.procedureCount)
+            {
+                /* Set terminateState field to CS_TERMINATE RECEIVED */
+                llCsDbSetProcedureTerminateState(connId,
+                                                CS_TERMINATE_RECEIVED);
+
+                /* Notify Host */
+                MAP_HCI_CS_ProcedureEnableCompleteCback( LL_STATUS_SUCCESS,
+                                                         connId,
+                                                         (uint8)CS_DISABLE,
+                                                         &enData);
+
+                llCsDbSetTerminateReason(connId,
+                                        LL_STATUS_ERROR_PEER_TERM);
+                /* Mark CS_IND procedure as completed */
+                llCsDbMarkProcedureCompleted(connId, (uint8)CS_IND);
+
+                /* Update enable field to CS_DISABLE */
+                llCsDbEnableProcedureParams(connId, configId,
+                                            (uint8)CS_DISABLE);
+            }
+            else
+            {
+                /* Procedure Count is larger than endProcedureCount */
+                status = CS_STATUS_COMMAND_DISALLOWED;
+            }
+        }
+        else
+        {
+            status = CS_STATUS_DISABLED_CONFIG_ID;
+        }
+    }
+    else
+    {
+        status = CS_STATUS_UNEXPECTED_PARAMETER;
+    }
+    llCsDbMarkProcedureCompleted(connId, (uint8)CS_TERMINATE_PROCEDURE);
+    return status;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_ctrl_pkt_internal.h
+ */
+csStatus_e llCsCtrlProcessTerminateRsp(uint16 connId, const uint8* pBuf)
+{
+    csStatus_e status = CS_STATUS_SUCCESS;
+    if (pBuf != NULL)
+    {
+        csProcedureEnable_t enData;
+        uint8 configId = pBuf[0];
+        uint16 peerProcCnt = BUILD_UINT16(pBuf[1], pBuf[2]);
+        uint16 localProcCnt = llCsSecGetProcedureCount();
+
+        if (peerProcCnt > localProcCnt)
+        {
+            /* Must use the higher value of procedure count
+               To keep the two LLs synchronized */
+            llCsSecSetProcedureCount(peerProcCnt);
+        }
+
+        /* This configId can be disabled */
+        /* Get Procedure enable data */
+        llCsDbGetProcedureEnableData(connId, configId, &enData);
+        /* Notify Host */
+        MAP_HCI_CS_ProcedureEnableCompleteCback( LL_STATUS_SUCCESS,
+                                                    connId,
+                                                    (uint8)CS_DISABLE,
+                                                    &enData);
+    }
+    else
+    {
+        status = CS_STATUS_UNEXPECTED_PARAMETER;
+    }
+    llCsDbMarkProcedureCompleted(connId, (uint8)CS_TERMINATE_PROCEDURE);
+    return status;
 }

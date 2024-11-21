@@ -33,11 +33,7 @@ extern "C"
 /*********************************************************************
  * CONSTANTS
  */
-#ifdef USE_ICALL
 #define TASK_NO_TASK      ICALL_UNDEF_DEST_ID
-#else /* USE_ICALL */
-#define TASK_NO_TASK      0xFF
-#endif /* USE_ICALL */
 
 /*********************************************************************
  * TYPEDEFS

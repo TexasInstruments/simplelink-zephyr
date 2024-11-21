@@ -36,35 +36,13 @@
 #define DFL_RANK_REMOVE_ENTRY                   2U
 
 // Number of entries in the radio filter list.
-#define DFL_SIZE                                16
+#define DFL_SIZE                                16U
+// Initial value for radio filter list entry.
+#define BLE_INITIAL_RCL_FL_Entry                0x0
 
 /*******************************************************************************
  * MACROS
  */
-// Dynamic filter list flags
-// Note: Assumes dflFlags = dynamic filter list entry's flags.
-#define CLR_DFL_ENTRY( dflFlags )               \
-  (dflFlags) = 0
-#define IS_DFL_ENTRY_FREE( dflFlags )           \
-  (((dflFlags) & BV(0)) == 0)
-#define SET_DFL_ENTRY_BUSY( dflFlags )          \
-  (dflFlags) |= BV(0)
-#define SET_DFL_ENTRY_FREE( dflFlags )          \
-  (dflFlags) &= ~BV(0)
-#define GET_DFL_ENTRY_ADDR_TYPE( dflFlags )     \
-  (((dflFlags) & BV(1)) >> 1)
-#define SET_DFL_ENTRY_PUBLIC( dflFlags )        \
-  (dflFlags) &= ~BV(1)
-#define SET_DFL_ENTRY_RANDOM( dflFlags )        \
-  (dflFlags) |= BV(1)
-#define CLR_DFL_ENTRY_DUP_IGNORE( dflFlags )    \
-  (dflFlags) &= ~BV(2)
-#define SET_DFL_ENTRY_DUP_IGNORE( dflFlags )    \
-  (dflFlags) |= BV(2)
-#define SET_DFL_ENTRY_PRIV_IGNORE( dflFlags )   \
-  (dflFlags) |= BV(3)
-#define CLR_DFL_ENTRY_PRIV_IGNORE( dflFlags )   \
-  (dflFlags) &= ~BV(3)
 
 /*******************************************************************************
  * EXTERNS
@@ -73,27 +51,6 @@
 /*******************************************************************************
  * TYPEDEFS
  */
-// RCL - BLE Filter List Flags
-// | 15..4 |        3       |        2          |      1       |      0       |
-// |  N/A  | Privacy Ignore | Duplicate Ignored | Address Type | Entry In Use |
-//
-typedef uint8 dflFlags_t; // To approve with Maxim
-
-// Dynamic Filter List Entry
-// Note: see RCL filter list entry struct (RCL_FL_Entry).
-PACKED_TYPEDEF_STRUCT
-{
-  dflFlags_t        dflFlags;
-  uint8             devAddr[BLE_BDADDR_SIZE];
-} dynamicFLEntry_t;
-
-// Dynamic Filter List
-// Note: see RCL filter list struct (RCL_FilterList).
-PACKED_TYPEDEF_STRUCT
-{
-  uint8             numEntries;
-  dynamicFLEntry_t  entries[DFL_SIZE];
-} dynamicFL_t;
 
 // rank table of the dynamic filter list
 typedef struct
@@ -136,23 +93,24 @@ typedef struct
  * @return      The index of the available entry in the dynamic filter list.
  *              The index shall be in the range (0 - (DFL_SIZE-1)).
  */
-uint8 llDFLGetAvailableEntry( dynamicFL_t        *dynamicFL,
-                              rankDynamicFL_t    *pRankFLTable );
+uint8 llDFLGetAvailableEntry( RCL_FilterList* const    pDynamicFL,
+                              rankDynamicFL_t*         pRankFLTable );
 
 /*******************************************************************************
  * @fn          llDFLUpdateRanks
  *
  * @brief       This subroutine used to maintain the LRU mechanism on the rank
- *              table of the dynamic filter list.
+ *              table of the dynamic filter list - the higher the rank,
+ *              the older the entry.
  *              The subroutine will be called when adding new entry, removing
  *              or updating an existing entry:
  *              - When adding a new device to the filter list, the rank of the
  *                new entry will be updated to 0, and the remaining busy entries
  *                will increment by 1.
- *              - When removing an existing entry in the filter list, the rank of
- *                the existing entry will be updated to DFL_SIZE, and the
- *                remaining busy entries with higher rank will decrement by 1.
- *                will increment by 1.
+ *              - When removing an existing entry in the filter list, the rank
+ *                of the existing entry will be updated to DFL_INVALID_RANK,
+ *                and the remaining busy entries with higher rank will decrement
+ *                by 1.
  *              - When updating an existing entry in the filter list, the rank of
  *                the existing entry will be updated to 0, and the remaining
  *                busy entries with lower rank will increment by 1.
@@ -164,7 +122,8 @@ uint8 llDFLGetAvailableEntry( dynamicFL_t        *dynamicFL,
  * @param       pRankFLTable - pointer to the rank table of the dynamic filter
  *                             list.
  * @param       indexEntry   - index entry of the dynamic filter list.
- *                             (shall be in the range 0-DFL_SIZE)
+ *                             The index shall be in the
+ *                             range (0 - (DFL_SIZE-1)).
  * @param       operation    - The operation performed on the entry in the
  *                             dynamic filter list.
  *                             (shall be DFL_RANK_ADD_NEW_ENTRY,

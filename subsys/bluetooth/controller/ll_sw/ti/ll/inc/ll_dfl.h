@@ -31,6 +31,13 @@
  * CONSTANTS
  */
 
+// Invaliid rank for dynamic filter list.
+#define DFL_INVALID_RANK                        0xFFU
+// Invaliid index for dynamic filter list entry.
+#define DFL_INVALID_INDEX                       0xFFU
+// Invaliid number of dynamic filter list entries.
+#define BLE_INVALID_NUM_FL_ENTRIES              0xFFU
+
 /*******************************************************************************
  * MACROS
  */
@@ -64,15 +71,16 @@
  * @design      BLE_LOKI-355
  * input parameters
  *
- * @param       dynamicFL - pointer to dynamic filter list
+ * @param       pDynamicFL - pointer to dynamic filter list
  *
  * output parameters
  *
  * @param       None.
  *
- * @return      The number of entries of the filter list.
+ * @return      The number of entries of the filter list or
+ *              BLE_INVALID_NUM_FL_ENTRIES for input invalid.
  */
-uint8 LL_DFL_GetDynamicFLSize( dynamicFL_t *dynamicFL );
+uint8 LL_DFL_GetDynamicFLSize( RCL_FilterList* const pDynamicFL );
 
 /*******************************************************************************
  * @fn          LL_DFL_SetDynamicFLSize
@@ -83,7 +91,7 @@ uint8 LL_DFL_GetDynamicFLSize( dynamicFL_t *dynamicFL );
  * @design      BLE_LOKI-355
  * input parameters
  *
- * @param       dynamicFL - pointer to dynamic filter list
+ * @param       pDynamicFL - pointer to dynamic filter list
  * @param       size - The number of entries of the filter list
  *
  * output parameters
@@ -92,45 +100,8 @@ uint8 LL_DFL_GetDynamicFLSize( dynamicFL_t *dynamicFL );
  *
  * @return      None.
  */
-void LL_DFL_SetDynamicFLSize( dynamicFL_t *dynamicFL, uint8 size );
+void LL_DFL_SetDynamicFLSize( RCL_FilterList* pDynamicFL, uint8 size );
 
-/*******************************************************************************
- * @fn          LL_DFL_GetDynamicFLEntries
- *
- * @brief       This subroutine used to get pointer to the entries of the
- *              filter list.
- *
- * @design      BLE_LOKI-355
- * input parameters
- *
- * @param       dynamicFL - pointer to dynamic filter list
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      pointer to the filter list entries.
- */
-dynamicFLEntry_t* LL_DFL_GetDynamicFLEntries( dynamicFL_t *dynamicFL );
-
-/*******************************************************************************
- * @fn          rfBleDpl_GetRadioFLPtr
- *
- * @brief       This subroutine used to get pointer to the radio filter list.
- *
- * @design      BLE_LOKI-355
- * input parameters
- *
- * @param       dynamicFL - pointer to dynamic filter list
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      pointer to the to the radio filter list.
- */
-
-void* rfBleDpl_GetRadioFLPtr( dynamicFL_t *dynamicFL );
 /*******************************************************************************
  * @fn          LL_DFL_Init
  *
@@ -155,7 +126,7 @@ void* rfBleDpl_GetRadioFLPtr( dynamicFL_t *dynamicFL );
  * @return      LL_STATUS_SUCCESS               - for success.
  *              LL_STATUS_ERROR_INVALID_PARAMS  - for invalid input.
  */
-llStatus_t  LL_DFL_Init( dynamicFL_t       *pDynamicFL,
+llStatus_t  LL_DFL_Init( RCL_FilterList    *pDynamicFL,
                          rankDynamicFL_t   *pRankFLTable );
 
 /*******************************************************************************
@@ -182,9 +153,10 @@ llStatus_t  LL_DFL_Init( dynamicFL_t       *pDynamicFL,
  *
  * @return      The index of the new/replaced entry in the dynamic filter list.
  *              Valid index shall be in the range (0 - (DFL_SIZE-1)).
- *              DFL_SIZE index indicates that the input parameters invalid.
+ *              DFL_INVALID_INDEX index indicates that the input parameters
+ *              invalid.
  */
-uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
+uint8 LL_DFL_AddEntry( RCL_FilterList   *pDynamicFL,
                        rankDynamicFL_t  *pRankFLTable,
                        uint8            *devAddr,
                        uint8            devAddrType );
@@ -203,7 +175,8 @@ uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
  * @param       pRankFLTable - pointer to the rank table of the dynamic filter
  *                             list.
  * @param       indexEntry   - index entry to be removed in the dynamic filter
- *                             list. (shall be in the range 0-DFL_SIZE)
+ *                             list. Valid index shall be in the
+ *                             range (0 - (DFL_SIZE-1)).
  *
  * output parameters
  *
@@ -212,9 +185,9 @@ uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
  * @return      LL_STATUS_SUCCESS              - for success.
  *              LL_STATUS_ERROR_INVALID_PARAMS - for invalid input.
  */
-llStatus_t LL_DFL_RemoveEntry( dynamicFL_t      *pDynamicFL,
-                               rankDynamicFL_t  *pRankFLTable,
-                               uint8            indexEntry );
+llStatus_t LL_DFL_RemoveEntry( RCL_FilterList* const  pDynamicFL,
+                               rankDynamicFL_t        *pRankFLTable,
+                               uint8                  indexEntry );
 
 /*******************************************************************************
  * @fn          LL_DFL_UpdateEntry
@@ -244,9 +217,10 @@ llStatus_t LL_DFL_RemoveEntry( dynamicFL_t      *pDynamicFL,
  *
  * @return      The index of the new/updated entry in the dynamic filter list.
  *              Valid index shall be in the range (0 - (DFL_SIZE-1)).
- *              DFL_SIZE index indicates that the input parameters invalid.
+ *              DFL_INVALID_INDEX index indicates that the input parameters
+ *              invalid.
  */
-uint8 LL_DFL_UpdateEntry( dynamicFL_t       *pDynamicFL,
+uint8 LL_DFL_UpdateEntry( RCL_FilterList    *pDynamicFL,
                           rankDynamicFL_t   *pRankFLTable,
                           uint8             *oldRPA,
                           uint8             *newRPA );
@@ -273,11 +247,12 @@ uint8 LL_DFL_UpdateEntry( dynamicFL_t       *pDynamicFL,
  *
  * @return      The index of the found entry in the dynamic filter list.
  *              Valid index shall be in the range (0 - (DFL_SIZE-1)).
- *              DFL_SIZE index indicates that the input parameters invalid.
+ *              DFL_INVALID_INDEX index indicates that the input parameters
+ *              invalid.
  */
-uint8 LL_DFL_FindEntry( dynamicFL_t    *pDynamicFL,
-                        uint8          *devAddr,
-                        uint8          devAddrType);
+uint8 LL_DFL_FindEntry( RCL_FilterList* const pDynamicFL,
+                        uint8*                devAddr,
+                        uint8                 devAddrType);
 
 /*******************************************************************************
  * @fn          LL_DFL_GetDynamicFilterlist
@@ -294,7 +269,7 @@ uint8 LL_DFL_FindEntry( dynamicFL_t    *pDynamicFL,
  *
  * @return      pointer to dynamic filter list.
  */
-dynamicFL_t *LL_DFL_GetDynamicFilterlist( void );
+RCL_FilterList *LL_DFL_GetDynamicFilterlist( void );
 
 /*******************************************************************************
  * @fn          LL_DFL_GetRankTable

@@ -635,45 +635,6 @@ extern "C"
 /** @} End RX_Gain */
 
 /**
- * @defgroup TX_Power_Index TX Power Index
- * @{
- */
-#ifndef CC23X0
-#if defined( CC26XX ) || defined( CC13XX ) || defined ( CC33xx )
-#define HCI_EXT_TX_POWER_MINUS_20_DBM                   LL_EXT_TX_POWER_MINUS_20_DBM            //!< -20 dBm
-#define HCI_EXT_TX_POWER_MINUS_18_DBM                   LL_EXT_TX_POWER_MINUS_18_DBM            //!< -18 dBm
-#define HCI_EXT_TX_POWER_MINUS_15_DBM                   LL_EXT_TX_POWER_MINUS_15_DBM            //!< -15 dBm
-#define HCI_EXT_TX_POWER_MINUS_12_DBM                   LL_EXT_TX_POWER_MINUS_12_DBM            //!< -12 dBm
-#define HCI_EXT_TX_POWER_MINUS_10_DBM                   LL_EXT_TX_POWER_MINUS_10_DBM            //!< -10 dBm
-#define HCI_EXT_TX_POWER_MINUS_9_DBM                    LL_EXT_TX_POWER_MINUS_9_DBM             //!< -9 dBm
-#define HCI_EXT_TX_POWER_MINUS_6_DBM                    LL_EXT_TX_POWER_MINUS_6_DBM             //!< -6 dBm
-#define HCI_EXT_TX_POWER_MINUS_5_DBM                    LL_EXT_TX_POWER_MINUS_5_DBM             //!< -5 dBm
-#define HCI_EXT_TX_POWER_MINUS_3_DBM                    LL_EXT_TX_POWER_MINUS_3_DBM             //!< -3 dBm
-#define HCI_EXT_TX_POWER_0_DBM                          LL_EXT_TX_POWER_0_DBM                   //!< 0 dBm
-#define HCI_EXT_TX_POWER_1_DBM                          LL_EXT_TX_POWER_1_DBM                   //!< 1 dBm
-#define HCI_EXT_TX_POWER_2_DBM                          LL_EXT_TX_POWER_2_DBM                   //!< 2 dBm
-#define HCI_EXT_TX_POWER_3_DBM                          LL_EXT_TX_POWER_3_DBM                   //!< 3 dBm
-#define HCI_EXT_TX_POWER_4_DBM                          LL_EXT_TX_POWER_4_DBM                   //!< 4 dBm
-#define HCI_EXT_TX_POWER_5_DBM                          LL_EXT_TX_POWER_5_DBM                   //!< 5 dBm
-#if defined( CC13X2P ) || defined( CC33xx )
-#define HCI_EXT_TX_POWER_P2_14_DBM_P4_6_DBM             LL_EXT_TX_POWER_P2_14_DBM_P4_6_DBM      //!< P2: 14 dBm P4: 6 dBm
-#define HCI_EXT_TX_POWER_P2_15_DBM_P4_7_DBM             LL_EXT_TX_POWER_P2_15_DBM_P4_7_DBM      //!< P2: 15 dBm P4: 7 dBm
-#define HCI_EXT_TX_POWER_P2_16_DBM_P4_8_DBM             LL_EXT_TX_POWER_P2_16_DBM_P4_8_DBM      //!< P2: 16 dBm P4: 8 dBm
-#define HCI_EXT_TX_POWER_P2_17_DBM_P4_9_DBM             LL_EXT_TX_POWER_P2_17_DBM_P4_9_DBM      //!< P2: 17 dBm P4: 9 dBm
-#define HCI_EXT_TX_POWER_P2_18_DBM_P4_10_DBM            LL_EXT_TX_POWER_P2_18_DBM_P4_10_DBM     //!< P2: 18 dBm P4: 10 dBm
-#define HCI_EXT_TX_POWER_P2_19_DBM                      LL_EXT_TX_POWER_P2_19_DBM               //!< P2: 19 dBm
-#define HCI_EXT_TX_POWER_P2_20_DBM                      LL_EXT_TX_POWER_P2_20_DBM               //!< P2: 20 dBm
-#endif // CC13X2P || CC33xx
-#else // CC254x
-#define HCI_EXT_TX_POWER_MINUS_23_DBM                  LL_EXT_TX_POWER_MINUS_23_DBM //!< -23 dBm
-#define HCI_EXT_TX_POWER_MINUS_6_DBM                   LL_EXT_TX_POWER_MINUS_6_DBM  //!< -6 dBm
-#define HCI_EXT_TX_POWER_0_DBM                         LL_EXT_TX_POWER_0_DBM        //!< 0 dBm
-#define HCI_EXT_TX_POWER_4_DBM                         LL_EXT_TX_POWER_4_DBM        //!< 4 dBm
-#endif // CC26XX/CC13XX
-#endif //CC23X0
-/** @} End TX_Power_Index */
-
-/**
  * @defgroup One_Pkt One Packet Per Event
  * @{
  */
@@ -1299,11 +1260,7 @@ typedef struct
 
 /// @endcond // NODOC
 
-#if defined( CC26XX ) || defined( CC13XX )  || defined( CC23X0 )
 PACKED_TYPEDEF_STRUCT
-#else // CC254x
-typedef struct
-#endif // CC26XX/CC13XX
 {
   uint8 connId;                           //!< device connection handle
   uint8 role;                             //!< device connection role
@@ -1311,11 +1268,7 @@ typedef struct
   uint8 addrType;                         //!< peer device address type
 } hciConnInfo_t; //!< Connection Info
 
-#if defined( CC26XX ) || defined( CC13XX )  || defined( CC23X0 )
 PACKED_TYPEDEF_STRUCT
-#else // CC254x
-typedef struct
-#endif // CC26XX/CC13XX
 {
   uint32_t  accessAddr;                          //! return error code if failed to get conn info
   uint16_t  connInterval;                        //! connection interval time, range (7.5ms, 4s), 625us increments
@@ -1327,11 +1280,7 @@ typedef struct
   uint8_t   ownAddrType;                         //! the own address type when the connection established
 }hciActiveConnInfo_t;
 
-#if defined( CC26XX ) || defined( CC13XX ) || defined( CC23X0 )
 PACKED_TYPEDEF_STRUCT
-#else // CC254x
-typedef struct
-#endif // CC26XX/CC13XX
 {
   uint16 numPkts;                         //!< total number of rx packets
   uint16 numCrcErr;                       //!< number rx packets with CRC error
@@ -2234,7 +2183,7 @@ extern hciStatus_t HCI_LE_ReceiverTestCmd( uint8 rxChan );
  * @ref hciEvt_CmdComplete_t with cmdOpcode @ref HCI_LE_TRANSMITTER_TEST
  *
  * @param txChan Tx RF frequency k=0..39, where F=2402+(k*2MHz).
- * @param dataLen Test data length: 0..37 bytes
+ * @param dataLen Test data length: 0..255 bytes
  * @param pktPayload @ref DTM_params
  *
  * @return @ref HCI_SUCCESS
@@ -2680,7 +2629,7 @@ extern hciStatus_t HCI_LE_EnhancedRxTestCmd( uint8 rxChan,
  * @ref hciEvt_CmdComplete_t with cmdOpcode @ref HCI_LE_ENHANCED_TRANSMITTER_TEST
  *
  * @param txChan Tx RF channel k=0..39, where F=2402+(k*2MHz).
- * @param payloadLen Byte length (0..37) in payload for each packet.
+ * @param payloadLen Byte length (0..255) in payload for each packet.
  * @param payloadType @ref DTM_params
  * @param txPhy Tx PHY to use. See @ref PHY_2_CODED
  *
@@ -2729,7 +2678,7 @@ extern hciStatus_t HCI_LE_EnhancedCteRxTestCmd( uint8 rxChan,
  * @ref hciEvt_CmdComplete_t with cmdOpcode HCI_LE_ENHANCED_CTE_TRANSMITTER_TEST
  *
  * @param txChan Tx RF channel k=0..39, where F=2402+(k*2MHz).
- * @param payloadLen Byte length (0..37) in payload for each packet.
+ * @param payloadLen Byte length (0..255) in payload for each packet.
  * @param payloadType @ref DTM_params
  * @param txPhy Tx PHY to use. See @ref PHY_2_CODED
  * @param cteLength - CTE length in 8 &mu;s units.
@@ -3154,29 +3103,6 @@ extern hciStatus_t HCI_LE_SetHostFeature( uint8, uint8  );
 extern hciStatus_t HCI_LE_SetPeriodicAdvReceiveEnableCmd( uint16 syncHandle,
                                                           uint8  enable );
 
-/**
- * HCI_LE_SetConnectionlessIqSamplingEnableCmd
- *
- * Used by the Host to request that the Controller enables or disables capturing
- * IQ samples from the CTE of periodic advertising packets in the periodic
- * advertising train identified by the syncHandle parameter.
- *
- * @param   syncHandle - Handle identifying the periodic advertising train (Range: 0x0000 to 0x0EFF)
- * @param   samplingEnable - Sample CTE on a received periodic advertising and report the samples to the Host.
- * @param   slotDurations - Switching and sampling slots in 1 us or 2 us each (1 or 2).
- * @param   maxSampledCtes � 0 - Sample and report all available CTEs
- *                           1 to 16 - Max number of CTEs to sample and report in each periodic event
- * @param   length    � Number of items in Antenna array (relevant to AoA only)
- * @param   pAntenna  � Pointer to Antenna array (relevant to AoA only)
- *
- * @return  HCI status
- */
-extern hciStatus_t HCI_LE_SetConnectionlessIqSamplingEnableCmd( uint16 syncHandle,
-                                                                uint8 samplingEnable,
-                                                                uint8 slotDurations,
-                                                                uint8 maxSampledCtes,
-                                                                uint8 length,
-                                                                uint8 *pAntenna);
 /// @endcond // NODOC
 
 /*
@@ -3206,6 +3132,14 @@ extern hciStatus_t HCI_EXT_SetRxGainCmd( uint8 rxGain );
  *
  * @par Corresponding Events
  * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_SET_TX_POWER_DBM
+ *
+ * @param txPower This value represents the power level, in dBm,
+ *                at which the transmitter is operating. @ref TX_Power_Index
+ *
+ * @param fraction  If set to 1, raises the requested power level by 0.5 dB @ref LRF_TxPowerTable_Index
+ *                  In CC23xx Family devices, the fraction is currently not used (i.e. should be set to 0).
+ *
+ * @note This function will have no impact on the txPower used for DTM test functions.
  *
  * @return @ref HCI_SUCCESS
  */
@@ -3369,7 +3303,8 @@ extern hciStatus_t HCI_EXT_SetPeripheralLatencyOverrideCmd( uint8 control );
  * specified RF channel. Use @ref HCI_EXT_EndModemTestCmd command to end the
  * test.
  *
- * The BLE device will transmit at maximum power.
+ * By default, the maximum transmit power is used.
+ * This value can be altered using HCI_EXT_SetTxPowerDbmCmd.
  *
  * This modem test can be used to satisfy in part radio regulation
  * requirements as specific in standards such as ARIB STD-T66.
@@ -3396,7 +3331,8 @@ extern hciStatus_t HCI_EXT_ModemTestTxCmd( uint8 cwMode,
  * channels 0..39) every 625 us. Use @ref HCI_EXT_EndModemTestCmd command to end
  * the test.
  *
- * The BLE device will transmit at maximum power.
+ * By default, the maximum transmit power is used.
+ * This value can be altered using HCI_EXT_SetTxPowerDbmCmd.
  *
  * This modem test can be used to satisfy in part radio regulation
  * requirements as specific in standards such as ARIB STD-T66.
@@ -3442,7 +3378,8 @@ extern hciStatus_t HCI_EXT_ModemTestRxCmd( uint8 rxChan );
  * to the specified RF channel for a given PHY (1M, 2M, Coded S2, or Coded S8).
  * Use @ref HCI_EXT_EndModemTestCmd command to end the test.
  *
- * The BLE device will transmit at maximum power.
+ * By default, the maximum transmit power is used.
+ * This value can be altered using HCI_EXT_SetTxPowerDbmCmd.
  *
  * This modem test can be used to satisfy in part radio regulation
  * requirements as specific in standards such as ARIB STD-T66.
@@ -3472,7 +3409,8 @@ extern hciStatus_t HCI_EXT_EnhancedModemTestTxCmd( uint8 cwMode,
  * payload length, as given Vol. 6, Part F, section 4.1.6). Use
  * @ref HCI_EXT_EndModemTestCmd command to end the test.
  *
- * The BLE device will transmit at maximum power.
+ * By default, the maximum transmit power is used.
+ * This value can be altered using HCI_EXT_SetTxPowerDbmCmd.
  *
  * This modem test can be used to satisfy in part radio regulation
  * requirements as specific in standards such as ARIB STD-T66.
@@ -3651,7 +3589,14 @@ extern hciStatus_t HCI_EXT_SaveFreqTuneCmd( void );
  * @par Corresponding Events
  * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_SET_MAX_DTM_TX_POWER_DBM
  *
- * @param txPower @ref TX_Power_Index
+ * @param txPower This value represents the power level, in dBm,
+ *                at which the transmitter is operating. @ref TX_Power_Index
+ *
+ * @param fraction  If set to 1, raises the requested power level by 0.5 dB @ref LRF_TxPowerTable_Index
+ *                  In CC23xx Family devices, the fraction is currently not used (i.e. should be set to 0).
+ *
+ * @note This function will have no impact on the txPower used for
+ *       non-DTM functionality such as advertising, connections, etc.
  *
  * @return @ref HCI_SUCCESS
  */
@@ -3781,149 +3726,6 @@ extern hciStatus_t HCI_EXT_PacketErrorRateCmd( uint16 connHandle, uint8 command 
  * @return @ref HCI_SUCCESS
  */
 extern hciStatus_t HCI_EXT_PERbyChanCmd( uint16 connHandle, perByChan_t *perByChan );
-
-/// @cond CC254X
-
-/**
- * Extend Rf Range using the TI CC2590 2.4 GHz RF Front End device.
- *
- * @par Corresponding Events
- * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_EXTEND_RF_RANGE
- *
- * @return @ref HCI_SUCCESS
- */
-extern hciStatus_t HCI_EXT_ExtendRfRangeCmd( void );
-
-/**
- * Halt During RF Command
- *
- * Enable or disable halting the CPU during RF. The system defaults to enabled.
- *
- * @par Corresponding Events
- * @ref hciEvt_VSCmdComplete_t with cmdOpcode @ref HCI_EXT_HALT_DURING_RF
- *
- * @param mode @ref Halt_RF
- *
- * @return @ref HCI_SUCCESS
- */
-extern hciStatus_t HCI_EXT_HaltDuringRfCmd( uint8 mode );
-
-/// @endcond // CC254X
-
-/// @cond NODOC
-
-/**
- * Advertising Event Notice Command
- *
- * Enable or disable a notification to the specified task using the specified
- * task event whenever an advertising event ends. A non-zero taskEvent value is
- * taken to be "enable", while a zero valued taskEvent is taken to be "disable".
- *
- * @warning This command does not check if the taskID and/or taskEvent are valid.
- *
- * @note This command does not return any HCI events but has a meaningful return
- * status.
- *
- * If configured successfully, it will result in BLE stack events sent as shown
- * in the following example
- *
- *
- * @par         Usage
- * 1. Define the event in the application
- * @code{.c}
- * // Application specific event ID for HCI Advertisement End Events
- * #define SBP_HCI_ADV_EVT_END_EVT              0x0001
- * @endcode
- * 2. Configure the Bluetooth low energy protocol stack to return the event
- * @code{.c}
- * HCI_EXT_AdvEventNoticeCmd( selfEntity, SBP_HCI_ADV_EVT_END_EVT);
- * @endcode
- * 3. Check for and receive these events in the application
- * @code{.c}
- * if (ICall_fetchServiceMsg(&src, &dest,
- *                           (void **)&pMsg) == ICALL_ERRNO_SUCCESS)
- * {
- *   uint8 safeToDealloc = TRUE;
- *
- *   if ((src == ICALL_SERVICE_CLASS_BLE) && (dest == selfEntity))
- *   {
- *     ICall_Stack_Event *pEvt = (ICall_Stack_Event *)pMsg;
- *
- *     // Check for BLE stack events first
- *     if (pEvt->signature == 0xffff)
- *     {
- *       if (pEvt->event_flag & SBP_HCI_ADV_EVT_END_EVT)
- *       {
- *         //Advertisement ended. Process as desired.
- *       }
- * @endcode
- *
- * @param taskID User's task ID.
- * @param taskEvent User's task event.
- *
- * @return @ref HCI_SUCCESS
- * @return @ref HCI_ERROR_CODE_INVALID_HCI_CMD_PARAMS : More than 1 bit was set
- *         in taskEvent
- */
-extern hciStatus_t HCI_EXT_AdvEventNoticeCmd( uint8 taskID, uint16 taskEvent );
-
-/// @endcond // NODOC
-
-/**
- * Connection Event Notice Command
- *
- * For a given connection handle, enable or disable a notification to the
- * specified task using the specified task event whenever a Connection event
- * ends. A non-zero taskEvent value is taken to be "enable", while a zero valued
- * taskEvent taken to be "disable".
- *
- * @warning This command does not check if the taskID and/or taskEvent are valid
- *
- * @note This command does not return any HCI events but has a meaningful
- * return status.
- *
- * If configured successfully, it will result in BLE stack events sent as shown
- * in the following example.
- *
- * @par Usage
- * 1. Define the event in the application
- * @code{.c}
- * // Application specific event ID for HCI Connection Event End Events
- * #define SBP_HCI_CONN_EVT_END_EVT              0x0001
- * @endcode
- * 2. Configure the Bluetooth low energy protocol stack to return the event. This
- * must be done after the connection has been formed.
- * @code{.c}
- * HCI_EXT_ConnEventNoticeCmd(pMsg->connHandle, selfEntity, SBP_HCI_CONN_EVT_END_EVT)
- * @endcode
- * 3. Check for and receive these events in the application
- * @code{.c}
- * if (ICall_fetchServiceMsg(&src, &dest,
- *                           (void **)&pMsg) == ICALL_ERRNO_SUCCESS)
- * {
- *   uint8 safeToDealloc = TRUE;
- *
- *   if ((src == ICALL_SERVICE_CLASS_BLE) && (dest == selfEntity))
- *   {
- *     ICall_Stack_Event *pEvt = (ICall_Stack_Event *)pMsg;
- *
- *     // Check for BLE stack events first
- *     if (pEvt->signature == 0xffff)
- *     {
- *       if (pEvt->event_flag & SBP_HCI_CONN_EVT_END_EVT)
- *       {
- *         //Connection event ended. Process as desired.
- *       }
- * @endcode
- *
- * @param connHandle The HCI connection ID for connection event notice.
- * @param taskID User's task ID.
- * @param taskEvent User's task event.
- *
- * @return @ref HCI_SUCCESS
- * @return @ref HCI_ERROR_CODE_INVALID_HCI_CMD_PARAMS : >1 bit was set in taskEvent
- */
-extern hciStatus_t HCI_EXT_ConnEventNoticeCmd( uint16 connHandle, uint8 taskID, uint16 taskEvent );
 
 /**
  * Set a user revision number or read the build revision number.
@@ -4477,21 +4279,6 @@ hciStatus_t HCI_LE_CS_SetDefaultSettings( uint16 connHandle,
 
 /**
  *  read the per-channel Mode 0 Frequency
- *  Actuation Error table of the local Controller
- * @design      BLE_LOKI-506
- *
- * @par Corresponding Events
- * @ref hciEvt_CmdComplete_t with cmdOpcode
- *      @ref HCI_LE_CS_READ_LOCAL_FAE_TABLE
- *
- * @param none
- *
- * @return @ref HCI_SUCCESS
- */
-hciStatus_t HCI_LE_CS_ReadLocalFAETable( void );
-
-/**
- *  read the per-channel Mode 0 Frequency
  *  Actuation Error table of the remote Controller
  * @design      BLE_LOKI-506
  *
@@ -4533,21 +4320,7 @@ hciStatus_t HCI_LE_CS_WriteRemoteFAETable( uint16 ConnHandle, void* reflectorFae
  * @param  connHandle,
  * @param  configID,
  * @param  createContext,
- * @param  mainModeType,
- * @param  subModeType,
- * @param  mainModeMinSteps,
- * @param  mainModeMaxSteps,
- * @param  mainModeRepetition,
- * @param  modeZeroSteps,
- * @param  role,
- * @param  rttTypes,
- * @param  csSyncPhy,
- * @param  channelMap,
- * @param  channelMapRep,
- * @param  channelSelType,
- * @param  ch3cShape,
- * @param  ch3cJump,
- * @param  companionSignalEnable
+ * @param  pBufConfig,
  *
  * @return @ref HCI_SUCCESS
  */
@@ -4638,8 +4411,8 @@ hciStatus_t HCI_LE_CS_SetProcedureParameters( uint16 connHandle,
  * @return @ref HCI_SUCCESS
  */
 hciStatus_t HCI_LE_CS_ProcedureEnable( uint16 connHandle,
-                                        uint8 enable,
-                                        uint8 configID );
+                                        uint8 configID,
+                                        uint8 enable );
 /**
  * Start a CS test where the DUT (Device Under Test) is
  * placed in the role of either the initiator or reflector
@@ -4654,7 +4427,7 @@ hciStatus_t HCI_LE_CS_ProcedureEnable( uint16 connHandle,
  *
  * @return @ref HCI_SUCCESS
  */
-hciStatus_t HCI_LE_CS_Test( void);
+hciStatus_t HCI_LE_CS_Test( uint8* pParams );
 
 /**
  * Stop any CS test that is in
@@ -4671,6 +4444,30 @@ hciStatus_t HCI_LE_CS_Test( void);
  * @return @ref HCI_SUCCESS
  */
 hciStatus_t HCI_LE_CS_TestEnd(void);
+
+/*******************************************************************************
+ * @fn          HCI_CMD_Parser
+ *
+ * @brief       This API is called by an external or internal host to send
+ *              a raw HCI packet command to the controller. The API runs on all
+ *              parser functions and looks for opcode matches. Inside the parser
+ *              function, a call is made to the HCI function, which returns the
+ *              HCI status or HCI_ERROR_CODE_UNKNOWN_HCI_CMD if the opcode
+ *              is not found.
+ *
+ * input parameters
+ *
+ * @param       pData - Pointer to packet's data.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return        HCI/LL status
+ *                HCI_ERROR_CODE_UNKNOWN_HCI_CMD.
+ *
+ */
+hciStatus_t HCI_CMD_Parser(uint8 *pData);
 
 #ifdef __cplusplus
 }

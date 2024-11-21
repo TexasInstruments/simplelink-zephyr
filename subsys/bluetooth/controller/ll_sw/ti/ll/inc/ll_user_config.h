@@ -80,14 +80,6 @@ typedef struct
   uint8                 maxNumConns;           // Max number of BLE connections
   uint8                 numTxEntries;          // Max number of BLE connection Tx buffers
   uint8                 maxPduSize;            // Max PDU data size
-  uint8                 rfFeModeBias;          // RF Front End Mode and Bias
-#ifndef CC23X0
-  rfDrvTblPtr_t         *rfDrvTblPtr;           // Table of Rf Driver API
-  eccDrvTblPtr_t        *eccDrvTblPtr;          // Table of ECC Driver API
-  cryptoDrvTblPtr_t     *cryptoDrvTblPtr;       // Table of Crypto Driver API
-  trngDrvTblPtr_t       *trngDrvTblPtr;         // Table of TRNG Driver API
-  rtosApiTblPtr_t       *rtosApiTblPtr;         // Table of RTOS API
-#endif
   uint8                 maxAlElems;             // Max elements in the accept list
   uint8                 maxRlElems;             // Max elements in the resolving list
   ECCParams_CurveParams *eccCurveParams;        // ECC curve parameters
@@ -96,19 +88,6 @@ typedef struct
   uint32                extStackSettings;       // BLE misc stack settings
   /* The define EM_CC1354P10_1_LP is needed since it is High PA device for
      other stacks (not for BLE) and thus needed to be defined */
-#if defined(CC13X2P) || defined(EM_CC1354P10_1_LP)
-  txPwrBackoffTbl_t     *txPwrBackoffTblPtr;    // Tx Power Table
-  regOverride_t         *rfRegOverrideTx20Ptr;  // High gain overrides
-  regOverride_t         *rfRegOverrideTxStdPtr; // Default PA overrides
-#endif //CC13X2P
-#ifndef CC23X0
-  RF_Mode               *rfMode;                // Specify PRCM Mode and pointers to CPE/MCE/RFE patches
-  regOverride_t         *rfRegOverrideCtePtr;   // CTE overrides
-  cteAntProp_t          *cteAntProp;            // CTE antenna properties
-  uint8                 privOverrideOffset;    // Privacy Override Offset
-  coexUseCaseConfig_t   *coexUseCaseConfig;     // CoEx priority and RX request configuration
-  uint8                 maxNumCteBufs;         // num of CTE samples buffers (each ~2.5KB) used for RF auto copy
-#endif
   uint8                 advReportIncChannel;   // include channel index in advertising report
   const LRF_TxPowerTable  *lrfTxPowerTablePtr;
   const LRF_Config        *lrfConfigPtr;
@@ -122,7 +101,6 @@ typedef struct
   uint16                  rclPhyFeatureCoded;     // RCL_PHY_FEATURE_SUB_PHY_CODED
   uint16                  rclPhyFeatureCodedS8;   // RCL_PHY_FEATURE_CODED_TX_RATE_S8
   uint16                  rclPhyFeatureCodedS2;   // RCL_PHY_FEATURE_CODED_TX_RATE_S2
-  sdaaUsrCfg_t            *sdaaCfgPtr;            // sdaa module user's parameters
   uint8                   useSrcClkLFOSC;         // Specifies whether Source Clock is LFOSC (RCOSC)
   uint16                  cfgLFOSCExtraPPM;       // Additional PPM configured by the user, applicable when using LFOSC (default: 1500ppm)
   uint8                   useDFL;                 // Use dynamic filter list

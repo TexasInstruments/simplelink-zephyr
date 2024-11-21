@@ -39,13 +39,11 @@
 #include "hci_ext.h"
 #include "ble_dispatch.h"
 #include "icall_apimsg.h"
-#ifndef CC23X0
-#include "trng_api.h"
-#endif
+
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 
 #include "ll_common.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*********************************************************************
  * MACROS
@@ -734,21 +732,6 @@ static uint8 processICallLL(uint16 opCode, ICall_CmdMsg *msg_ptr,
       break;
 #endif // ADV_CONN_CFG | INIT_CFG
 
-#if defined(CTRL_CONFIG) && ((CTRL_CONFIG & ADV_NCONN_CFG) || (CTRL_CONFIG & ADV_CONN_CFG))
-    case HCI_EXT_ADV_EVENT_NOTICE:
-      stat = HCI_EXT_AdvEventNoticeCmd(msg_ptr->hciParams.param1,
-                                       msg_ptr->hciParams.param2);
-      break;
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && ((CTRL_CONFIG & ADV_CONN_CFG) || (CTRL_CONFIG & INIT_CFG))
-    case HCI_EXT_CONN_EVENT_NOTICE:
-      stat = HCI_EXT_ConnEventNoticeCmd(msg_ptr->hciParams.param1,
-                                        msg_ptr->hciParams.param2,
-                                        msg_ptr->hciParams.param3);
-      break;
-#endif // ADV_CONN_CFG | INIT_CFG
-
     case HCI_EXT_BUILD_REVISION:
       stat = HCI_EXT_BuildRevisionCmd(msg_ptr->hciParams.param1,
                                       msg_ptr->hciParams.param2);
@@ -940,9 +923,6 @@ static uint8 processICallUTIL(uint8 cmdID, ICall_CmdMsg *msg_ptr,
 
     case HCI_EXT_UTIL_FORCE_BOOT:
       {
-        extern void appForceBoot(void);
-        appForceBoot();
-
         // Should never get here if SBL is present
         stat = INVALIDPARAMETER;
       }
@@ -1027,10 +1007,6 @@ static uint8 buildRevision(ICall_BuildRevision *pBuildRev)
 #if defined(__TI_COMPILER_VERSION__)
       BLDREV_STK_CCS_PROJ |
 #endif // __TI_COMPILER_VERSION__
-#if defined(FLASH_ROM_BUILD)
-      BLDREV_STK_IAR_LIB  |
-      BLDREV_STK_ROM_BLD  |
-#endif // FLASH_ROM_BUILD
       0;
 
     // Controller info - part 1 (Byte 6)
@@ -2250,9 +2226,6 @@ static uint8 processExtMsgUTIL( uint8 cmdID, hciExtCmd_t *pCmd, uint8 *pRspDataL
 
     case HCI_EXT_UTIL_FORCE_BOOT:
       {
-        extern void appForceBoot(void);
-        appForceBoot();
-
         // Should never get here if SBL is present
         stat = INVALIDPARAMETER;
       }

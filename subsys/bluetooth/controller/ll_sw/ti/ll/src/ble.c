@@ -23,6 +23,7 @@
 #include "hal_mcu.h"
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
+#include <ti/drivers/utils/Math.h>
 #include "osal_bufmgr.h"
 #include "osal_cbtimer.h"
 #include "ble.h"
@@ -32,26 +33,13 @@
 #include "ll_enc.h"
 #include "ll_config.h"
 #include "hci_event.h"
-#include "hal_gpio_wrapper.h"
 #include "cs/ll_cs_ctrl_pkt_mgr.h"
 #include "cs/ll_cs_db.h"
-
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
  */
-
-#ifdef DEBUG
-#define RFHAL_ASSERT(cond) {volatile uint8 i = (cond); while(!i);}
-#else // !DEBUG
-// Note: Use HALNODEBUG to eliminate HAL assert handling (i.e. no assert).
-// Note: If HALNODEBUG is not used, use ASSERT_RESET to reset system on assert.
-//       Otherwise, evaluation board hazard lights are used.
-// Note: Unused input parameter possible when HALNODEBUG; PC-Lint error 715.
-#define RFHAL_ASSERT(cond) HAL_ASSERT(cond)
-#endif // DEBUG
 
 /*******************************************************************************
  * CONSTANTS
@@ -463,175 +451,6 @@ void *llSetupConnRxDataEntryQueue( uint8 connId )
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-#ifdef RTLS_CTE
-/*******************************************************************************
- * @fn          llSetRfReportAodPackets
- *
- * @brief       This routine is used to set the RF to Report samples from AoD packets
- *
- * input parameters
- *
- * @param       None
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llSetRfReportAodPackets( void )
-{
-  //Report samples from AoD packets
-  llCteSamples.autoCopy.samplesConfig.bFlushAod1us = 0;
-  llCteSamples.autoCopy.samplesConfig.bFlushAod2us = 0;
-}
-
-/*******************************************************************************
- * @fn          llSetupCteSamplesEntryQueue
- *
- * @brief       This routine is used to setup a queue with single buffer queue
- *              dynamically to receive a CTE samples packet.
- *
- * input parameters
- *
- * @param       numBuffers - number of auto copy buffers to allocate (between 1 to 16)
- *                           in connection mode this value is 1.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      TRUE or FALSE
- */
-uint8 llSetupCteSamplesEntryQueue( uint8 numBuffers )
-{
-  dataEntry_t *pEntryQ;
-  uint8 *pBuffer;
-  uint16 bufSize;
-
-  if (numBuffers > LL_CTE_COUNT_MAX)
-  {
-    return FALSE;
-  }
-
-  llCteSamples.autoCopyCompleted = 0;
-  //Report samples regardless of CRC result
-  llCteSamples.autoCopy.samplesConfig.bFlushCrcErr = 0;
-  //Do not report samples from packets with invalid CTEInfo
-  llCteSamples.autoCopy.samplesConfig.bFlushCteInfoErr = 1;
-  //Report samples from AoA packets
-  llCteSamples.autoCopy.samplesConfig.bFlushAoa = 0;
-  //Do not Report samples from AoD packets - default setting
-  //will be overwrite in case of CTE test mode
-  llCteSamples.autoCopy.samplesConfig.bFlushAod1us = 1;
-  llCteSamples.autoCopy.samplesConfig.bFlushAod2us = 1;
-  //Report gain as single-bit value in status field only
-  llCteSamples.autoCopy.samplesConfig.bIncludeRfGain = 1;
-  //Report RSSI in status field
-  llCteSamples.autoCopy.samplesConfig.bIncludeRssi = 1;
-  //Minimum value of CTETime for packets to report
-  llCteSamples.autoCopy.minReportSize = LL_CTE_MIN_LEN;
-  //Maximum value of CTETime for packets to report
-  llCteSamples.autoCopy.maxReportSize = LL_CTE_MAX_LEN;
-  //Disable the CTE limit counter
-  llCteSamples.autoCopy.cteCopyLimitCount = 0xFF;
-  //In case of CTE test - configure the RF to report samples from AoD packets
-  MAP_llSetRfReportAodPackets();
-  //allocate the RF IQ samples buffer = ~2.5kb
-  // buffer size = 32 bit size * max sample rate *((max cte Length * 8) - CTE_OFFSET)
-  bufSize = sizeof(dataEntry_t) + sizeof(llCteSamplesRfHeader_t) + (sizeof(uint32) * LL_CTE_NUM_RF_SAMPLES(LL_CTE_MAX_LEN));
-  // allocate the complete memory - theoretically could be up to ~2.5KB * 16 = ~40KB
-  llCteSamples.pAutoCopyBuffers = MAP_osal_mem_alloc( numBuffers * bufSize );
-
-  if (llCteSamples.pAutoCopyBuffers == NULL)
-  {
-    return( FALSE );
-  }
-  pEntryQ = llCteSamples.pAutoCopyBuffers;
-  pBuffer = (uint8 *)llCteSamples.pAutoCopyBuffers;
-  for (uint8 i=0; i < numBuffers; i++)
-  {
-    pEntryQ->status     = DATASTAT_PENDING;
-    pEntryQ->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_2;
-    pEntryQ->length     = bufSize;
-    // last entry will points to the first - in case of one entry, it will point to itself.
-    pEntryQ->pNextEntry = (i+1 < numBuffers)?(dataEntry_t *)(pBuffer + bufSize):llCteSamples.pAutoCopyBuffers;
-    pBuffer += bufSize;
-    pEntryQ = (dataEntry_t *)pBuffer;
-  }
-  // initialize data queue
-  llCteSamples.queue.dataEntryQ.pCurEntry  = llCteSamples.pAutoCopyBuffers;
-  llCteSamples.queue.dataEntryQ.pLastEntry = NULL;
-  llCteSamples.queue.pNextDataEntry        = llCteSamples.pAutoCopyBuffers;
-  llCteSamples.queue.pTempDataEntry        = NULL;
-
-  // set the queue pointer
-  llCteSamples.autoCopy.pSamplesQueue = (uint32_t *)&llCteSamples.queue.dataEntryQ;
-  return ( TRUE );
-}
-
-/*******************************************************************************
- * @fn          llFreeCteSamplesEntryQueue
- *
- * @brief       This routine is used to free the buffer queue
- *              which hold the received CTE samples packet.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      TRUE or FALSE
- */
-uint8 llFreeCteSamplesEntryQueue( void )
-{
-  uint8 tasksCounter = 0;
-
-  if (llCteSamples.pAutoCopyBuffers == NULL)
-  {
-    return FALSE;
-  }
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  // search on connection list
-  for (uint8 i = 0; i < maxNumConns; i++)
-  {
-    // check if Connection CTE sampling is or was enable
-    if (llCte[i].initiator.samplingEnable != LL_CTE_SAMPLING_NOT_INIT)
-    {
-      tasksCounter++;
-    }
-  }
-#endif
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-  // get the number of periodic scanners with active CTE sampling
-  tasksCounter += MAP_llGetPeriodicScanCteTasks();
-#endif
-  if (tasksCounter > 0)
-  {
-    return FALSE;
-  }
-  // reset data queue
-  llCteSamples.queue.dataEntryQ.pCurEntry  = NULL;
-  llCteSamples.queue.dataEntryQ.pLastEntry = NULL;
-  llCteSamples.queue.pNextDataEntry        = NULL;
-  llCteSamples.queue.pTempDataEntry        = NULL;
-  llCteSamples.autoCopyCompleted = 0;
-  llCteSamples.autoCopy.pSamplesQueue = NULL;
-  // reset the struct pointer in RF memory
-  llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-  // disable the antenna switch
-  llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-  // release the buffers
-  MAP_osal_mem_free(llCteSamples.pAutoCopyBuffers);
-  llCteSamples.pAutoCopyBuffers = NULL;
-
-  return TRUE;
-}
-#endif //RTLS_CTE
-
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
  * @fn          llMoveTempTxDataEntries
@@ -810,69 +629,74 @@ void llManageControlPacketQueue( llConnState_t *connPtr, uint8 llCtrlPacket )
  * @return      None.
  */
 void llProcessPeripheralControlPacket( llConnState_t *connPtr,
-                                  uint8         *pBuf )
+                                       uint8         *pBuf )
 {
   uint8 opcode = *pBuf++;
   uint8 status;
 
   // check the type of control packet
   if ((opcode >= LL_CTRL_CS_SEC_RSP) &&
-      (opcode <= LL_CTRL_CS_SEC_REQ) )
+      (opcode <= LL_CTRL_CS_TERMINATE_RSP) )
   {
       MAP_llCsProcessCsControlPacket(opcode, connPtr, pBuf);
       return;
   }
+
   switch( opcode )
   {
     // Update Connection Parameters
     case LL_CTRL_CONNECTION_UPDATE_IND:
-      // Note: It is assumed that we have automatically ACK'ed this
-      //       packet since the only time the nR sends a NACK is when
-      //       the RX FIFO is too full to receive a packet. The fact
-      //       that we received this packet means this wasn't the case.
-      // Note: What we don't know here is whether or not the Central
-      //       in fact received the ACK. The only way to know that is
-      //       if the Central's next packet is an ACK. For now, we are
-      //       going to assume we only have to verify that we sent an
-      //       ACK to the Central, not that the Central actually received
-      //       it.
-      // Note: The spec limits the number of control procedures that
-      //       the Peripheral has to handle to one. It is assumed that the
-      //       Central will ensure this isn't violated, so the Peripheral
-      //       only need keep track of control procedures it starts.
-
-      // save the connection udpate parameters
+    {
+      // Save the parameters, if they are wrong we will drop the connection
       connPtr->paramUpdate.winSize = *pBuf++;
       pBuf = MAP_llMemCopySrc( (uint8 *)&connPtr->paramUpdate.winOffset, pBuf, 2 );
       pBuf = MAP_llMemCopySrc( (uint8 *)&connPtr->paramUpdate.connInterval, pBuf, 2 );
       pBuf = MAP_llMemCopySrc( (uint8 *)&connPtr->paramUpdate.peripheralLatency, pBuf, 2 );
       pBuf = MAP_llMemCopySrc( (uint8 *)&connPtr->paramUpdate.connTimeout, pBuf, 2 );
 
-      // convert this data into units of 625us
+      // Validate window size, each unit here is 1.25ms
+      // The transmitWindowSize shall be a multiple of 1.25 ms in the
+      // range of 1.25 ms to the lesser of 10ms (8 in 1.25ms units) and (connInterval - 1.25 ms)
+      // Validate winOffset and connInterval as well
+      if ( (connPtr->paramUpdate.winSize < 1 ||
+            connPtr->paramUpdate.winSize > Math_MIN((uint16)8, (uint16)(connPtr->paramUpdate.connInterval - 1))) ||
+           (connPtr->paramUpdate.winOffset > connPtr->paramUpdate.connInterval) ||
+           (connPtr->paramUpdate.connInterval < LL_CONN_INTERVAL_MIN || connPtr->paramUpdate.connInterval > LL_CONN_INTERVAL_MAX) )
+      {
+        // Set the terminate reason code
+        connPtr->termInfo.reason = LL_STATUS_ERROR_PARAM_OUT_OF_RANGE;
+
+        // Set flag to indicate a termination indication was received
+        connPtr->termInfo.termIndRcvd = TRUE;
+
+        return;
+      }
+
+      // Convert this data into units of 625us
       connPtr->paramUpdate.winSize      <<= 1;
       connPtr->paramUpdate.winOffset    <<= 1;
       connPtr->paramUpdate.connInterval <<= 1;
       connPtr->paramUpdate.connTimeout  <<= 4;
 
-      // connection event when update is activated
+      // Connection event when update is activated
       pBuf = MAP_llMemCopySrc( (uint8 *)&connPtr->paramUpdateEvent, pBuf, 2 );
 
-      // check if update event count is still valid
-      // Note: The spec indicates the connection should be termainted when
+      // Check if update event count is still valid
+      // Note: The spec indicates the connection should be terminated when
       //       the instant is in the past.
       if ( ((connPtr->paramUpdateEvent - connPtr->currentEvent) & 0xFFFF) >= LL_MAX_UPDATE_COUNT_RANGE )
       {
-        // instant past, so terminate the connection
+        // Instant past, so terminate the connection
         // Note: When using PM, it is possible this routine could terminate
         //       connection and try to shutdown the RF Core while the radio
         //       is still running (as we are in the context of an ISR). To
         //       prevent this, we wait until the connection ends before
         //       terminating by letting the connection event complete.
 
-        // set the terminate reason code
+        // Set the terminate reason code
         connPtr->termInfo.reason = LL_CTRL_PKT_INSTANT_PASSED_PEER_TERM;
 
-        // set flag to indicate a termination indication was received
+        // Set flag to indicate a termination indication was received
         connPtr->termInfo.termIndRcvd = TRUE;
 
         // ALT: Halt the radio first, then terminate the connection.
@@ -882,25 +706,24 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         return;
       }
 
-      // check that the LSTO is valid (i.e. meets the requirements)
+      // Check that the LSTO is valid (i.e. meets the requirements)
       // Note: LSTO > (1 + Peripheral Latency) * (Connection Interval * 2)
       // Note: The CI * 2 requirement based on ESR05 V1.0, Erratum 3904.
       // Note: All times are in 625us.
       if ( (uint32)connPtr->paramUpdate.connTimeout <=
-           ((uint32)(1 + connPtr->paramUpdate.peripheralLatency) *
-            (uint32)(connPtr->paramUpdate.connInterval << 1)) )
+           ((uint32)(1 + connPtr->paramUpdate.peripheralLatency) * (uint32)(connPtr->paramUpdate.connInterval << 1)) )
       {
-        // invalid connection parameters, so terminate
+        // Invalid connection parameters, so terminate
         // Note: When using PM, it is possible this routine could terminate
         //       the connection and try to shutdown the RF Core while the radio
         //       is still running (as we are in the context of an ISR). To
         //       prevent this, we wait until the connection ends before
         //       terminating by letting the connection event complete.
 
-        // set termination reason code
+        // Set termination reason code
         connPtr->termInfo.reason = LL_UNACCEPTABLE_CONN_INTERVAL_TERM;
 
-        // set flag to indicate a termination indication was received
+        // Set flag to indicate a termination indication was received
         connPtr->termInfo.termIndRcvd = TRUE;
 
         // ALT: Halt the radio first, then terminate the connection.
@@ -910,20 +733,21 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         return;
       }
 
-      // set flag in current connection to indicate an param update is valid
+      // Set flag in current connection to indicate an param update is valid
       connPtr->pendingParamUpdate = PARAM_UPDATE_PENDING;
 
-      // disable peripheral latency so peripheral can listen to every connection
+      // Disable peripheral latency so peripheral can listen to every connection
       // event, per the spec
       // ALT: Technically this is only required until an ACK of this Update is
       //      confirmed, or if at the connection event before the instant, or
       //      at the connection event instant itself.
       connPtr->peripheralLatency = 0;
 
-      // set flag to monitor for Central confirmation of Peripheral's ACK for update
+      // Set flag to monitor for Central confirmation of Peripheral's ACK for update
       connPtr->updateSLPending = UPDATE_RX_CTRL_ACK_PENDING;
 
-      break;
+    }
+    break;
 
     // Update Data Channel Map
     case LL_CTRL_CHANNEL_MAP_IND:
@@ -1088,9 +912,6 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       // Note: Leave the SKDs in LSO..MSO order for now since it has to
       //       be sent OTA in this way. Reservse bytes after that.
       MAP_LL_ENC_GenDeviceIV( &connPtr->encInfo.IV[ LL_ENC_IV_S_OFFSET ] );
-
-      // schedule a cache update of FIPS TRNG values for next SKD/IV usage
-      postRfOperations |= LL_POST_RADIO_CACHE_RANDOM_NUM;
 
       // check if this is a pause encryption procedure
       if ( connPtr->encInfo.encRestart == TRUE )
@@ -1508,13 +1329,6 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
              SET_FEATURE_FLAG( connPtr->phyInfo.phyFlags,
                                REJECT_EXT_IND_RECEIVED );
              break;
-#ifdef RTLS_CTE
-           case LL_CTRL_CTE_REQ:
-             llCte[connPtr->connId].initiator.requestEnable = FALSE;
-             llCte[connPtr->connId].initiator.sendRequest = FALSE;
-             HCI_CteRequestFailedEvent(connPtr->rejectIndExt.errorCode,connPtr->connId);
-             break;
-#endif // RTLS_CTE
            default:
              break;
          }
@@ -1528,6 +1342,17 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
     // Connection Parameter Request or Response
     case LL_CTRL_CONNECTION_PARAM_REQ:
+    {
+      uint16_t intervalMin;
+      uint16_t intervalMax;
+      uint16_t latency;
+      uint16_t timeout;
+      uint8_t  periodicity;
+      uint16_t refConnEvtCount;
+      uint16_t offsets[6];
+
+      status = LL_STATUS_SUCCESS;
+
       // check if the Connection Parameter Request feature is supported
       if ( !(connPtr->featureSetInfo.featureSet[0] & LL_FEATURE_CONN_PARAMS_REQ) )
       {
@@ -1544,42 +1369,39 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       }
       else // okay to process parameters
       {
-        // save parameters
-        connPtr->connParams.intervalMin     = BUILD_UINT16(pBuf[0], pBuf[1]);
-        connPtr->connParams.intervalMax     = BUILD_UINT16(pBuf[2], pBuf[3]);
-        connPtr->connParams.latency         = BUILD_UINT16(pBuf[4], pBuf[5]);
-        connPtr->connParams.timeout         = BUILD_UINT16(pBuf[6], pBuf[7]);
-        connPtr->connParams.periodicity     = pBuf[8];
-        connPtr->connParams.refConnEvtCount = BUILD_UINT16(pBuf[9], pBuf[10]);
-        connPtr->connParams.offset0         = BUILD_UINT16(pBuf[11], pBuf[12]);
-        connPtr->connParams.offset1         = BUILD_UINT16(pBuf[13], pBuf[14]);
-        connPtr->connParams.offset2         = BUILD_UINT16(pBuf[15], pBuf[16]);
-        connPtr->connParams.offset3         = BUILD_UINT16(pBuf[17], pBuf[18]);
-        connPtr->connParams.offset4         = BUILD_UINT16(pBuf[19], pBuf[20]);
-        connPtr->connParams.offset5         = BUILD_UINT16(pBuf[21], pBuf[22]);
+        // Read parameters from the packet
+        intervalMin     = BUILD_UINT16(pBuf[0], pBuf[1]);
+        intervalMax     = BUILD_UINT16(pBuf[2], pBuf[3]);
+        latency         = BUILD_UINT16(pBuf[4], pBuf[5]);
+        timeout         = BUILD_UINT16(pBuf[6], pBuf[7]);
+        periodicity     = pBuf[8];
+        refConnEvtCount = BUILD_UINT16(pBuf[9], pBuf[10]);
+        offsets[0]      = BUILD_UINT16(pBuf[11], pBuf[12]);
+        offsets[1]      = BUILD_UINT16(pBuf[13], pBuf[14]);
+        offsets[2]      = BUILD_UINT16(pBuf[15], pBuf[16]);
+        offsets[3]      = BUILD_UINT16(pBuf[17], pBuf[18]);
+        offsets[4]      = BUILD_UINT16(pBuf[19], pBuf[20]);
+        offsets[5]      = BUILD_UINT16(pBuf[21], pBuf[22]);
 
-        status = LL_STATUS_SUCCESS;
         // check LE event mask
         if ( MAP_HCI_CheckEventMaskLe(LE_EVT_REMOTE_CONN_PARAM_REQUEST_BIT) == 0 )
         {
           status = LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE;
         }
         else
-        // check the basic connection parameters are valid
-        // check the combination of the basic connection parameters are valid
-        // check the parameters for the connection parameters request are valid
-        // check the parameters for APTO are valid
-        if ( MAP_llValidateConnParams( connPtr,
-                                       connPtr->connParams.intervalMin,
-                                       connPtr->connParams.intervalMax,
-                                       connPtr->connParams.latency,
-                                       connPtr->connParams.timeout,
-                                       connPtr->currentEvent,
-                                       connPtr->connParams.periodicity,
-                                       connPtr->connParams.refConnEvtCount,
-                                       (uint16 *)&connPtr->connParams.offset0 ) )
         {
-          status = LL_STATUS_ERROR_INVALID_PARAMS;
+          if ( MAP_llValidateConnParams( connPtr,
+                                         intervalMin,
+                                         intervalMax,
+                                         latency,
+                                         timeout,
+                                         connPtr->currentEvent,
+                                         periodicity,
+                                         refConnEvtCount,
+                                         offsets ) )
+          {
+            status = LL_STATUS_ERROR_INVALID_PARAMS;
+          }
         }
 
         if ( status != LL_STATUS_SUCCESS )
@@ -1609,13 +1431,27 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
             MAP_LL_ConnParamUpdateRejectCback( status,
                                                connPtr->connId,
-                                               connPtr->connParams.intervalMax,
-                                               connPtr->connParams.latency,
-                                               connPtr->connParams.timeout );
+                                               intervalMax,
+                                               latency,
+                                               timeout );
           }
         }
         else // parameters are okay
         {
+          // save parameters
+          connPtr->connParams.intervalMin     = intervalMin;
+          connPtr->connParams.intervalMax     = intervalMax;
+          connPtr->connParams.latency         = latency;
+          connPtr->connParams.timeout         = timeout;
+          connPtr->connParams.periodicity     = periodicity;
+          connPtr->connParams.refConnEvtCount = refConnEvtCount;
+          connPtr->connParams.offset0         = offsets[0];
+          connPtr->connParams.offset1         = offsets[1];
+          connPtr->connParams.offset2         = offsets[2];
+          connPtr->connParams.offset3         = offsets[3];
+          connPtr->connParams.offset4         = offsets[4];
+          connPtr->connParams.offset5         = offsets[5];
+
           // TBD: Extend this feature by comparing/evaluating parameters, and
           //      determine the best connection interval between min/max,
           //      taking periodicity into account.
@@ -1624,9 +1460,9 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
           // for now, set the values as before.
           // Note: If indicated to the Host, these values could be changed by
           //       the Host's Reply.
-          connPtr->paramUpdate.connInterval = connPtr->connParams.intervalMax; // Interval_Max;
-          connPtr->paramUpdate.peripheralLatency = connPtr->connParams.latency;     // Latency;
-          connPtr->paramUpdate.connTimeout  = connPtr->connParams.timeout;     // Timeout;
+          connPtr->paramUpdate.connInterval = connPtr->connParams.intervalMax;
+          connPtr->paramUpdate.peripheralLatency = connPtr->connParams.latency;
+          connPtr->paramUpdate.connTimeout  = connPtr->connParams.timeout;
 
           // TBD: If a valid offset is used, then set window size and window
           //      offset based on this.
@@ -1729,8 +1565,9 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
           }
         }
       }
+    }
+    break;
 
-      break;
 
     /*
     ** PHY Request
@@ -1853,7 +1690,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         //       to a PHY change. In either case, this ends when the Update
         //       is received.
         connPtr->lenInfo.connActualMaxTxOctets =
-          MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+               Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
                MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
                                   connPtr->phyInfo.phyOpts,
                                   connPtr->lenInfo.connEffectiveMaxTxTime,
@@ -1954,10 +1791,12 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
                                                 connPtr->phyInfo.curPhy );
           }
           connPtr->pendingPhyUpdate = PHY_UPDATE_APPLIED;
-          connPtr->phyUpdatedNoChange = TRUE;
           // set the slowest PHY based on update PHY
           connPtr->lenInfo.connSlowestPhy = connPtr->phyInfo.curPhy;
         }
+
+        // Indicate that a PHY update is received
+        connPtr->phyUpdateSentOrReceivedInd = TRUE;
 
         // update the effective Tx buffer size, factoring in Time
         // Note: Specfication indicates a Peripheral packet trasmit time restriction
@@ -1967,7 +1806,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
         //       to a PHY change. In either case, this ends when the Update
         //       is received.
         connPtr->lenInfo.connActualMaxTxOctets =
-          MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+              Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
               MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
                                  connPtr->phyInfo.phyOpts,
                                  connPtr->lenInfo.connEffectiveMaxTxTime,
@@ -2062,13 +1901,13 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Rx time
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxRxTime,
-                             connPtr->lenInfo.connRemoteMaxTxTime );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxRxTime,
+                                  connPtr->lenInfo.connRemoteMaxTxTime );
 
       // based on current phy
       if ( connPtr->phyInfo.curPhy == LL_PHY_CODED )
       {
-        newEffectiveVal = MAX( 2704, newEffectiveVal );
+        newEffectiveVal = Math_MAX( 2704, newEffectiveVal );
       }
 
       // check if length info has changed
@@ -2096,8 +1935,8 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       else // !LL_PHY_CODED
       {
         // find the effective Tx time
-        newEffectiveVal = MIN( connPtr->lenInfo.connMaxTxTime,
-                               connPtr->lenInfo.connRemoteMaxRxTime );
+        newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxTxTime,
+                                    connPtr->lenInfo.connRemoteMaxRxTime );
 
         // check if length info has changed
         notifyHost |= (newEffectiveVal != connPtr->lenInfo.connEffectiveMaxTxTime);
@@ -2111,8 +1950,8 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Tx buffer size
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxTxOctets,
-                             connPtr->lenInfo.connRemoteMaxRxOctets );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxTxOctets,
+                                  connPtr->lenInfo.connRemoteMaxRxOctets );
 
       // check if length info has changed
       // Note: Sets variable to zero or one.
@@ -2134,7 +1973,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //       used to cap Tx based on PHY and PHY changes (as given by
       //       connSlowestPhy).
       connPtr->lenInfo.connActualMaxTxOctets =
-        MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+            Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
              MAP_llTime2Octets( connPtr->phyInfo.curPhy,
                                 connPtr->phyInfo.phyOpts,
                                 connPtr->lenInfo.connEffectiveMaxTxTime,
@@ -2145,8 +1984,8 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Rx buffer size
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxRxOctets,
-                             connPtr->lenInfo.connRemoteMaxTxOctets );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxRxOctets,
+                                  connPtr->lenInfo.connRemoteMaxTxOctets );
 
       // check if length info has changed
       notifyHost |= (newEffectiveVal != connPtr->lenInfo.connEffectiveMaxRxOctets);
@@ -2207,48 +2046,7 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
       }
     }
     break;
-#ifdef RTLS_CTE
-    /*
-    ** CTE Request and Response
-    */
-    case LL_CTRL_CTE_REQ:
-      {
-        uint8 cteLen = pBuf[0] & LL_CTE_INFO_TIME_MASK;
-        uint8 cteType = (pBuf[0] & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
 
-        // check if the CTE Feature is a supported feature set item
-        if (( llCte[connPtr->connId].responder.responseEnable == FALSE ) ||
-            ((llCte[connPtr->connId].responder.supportedTypes & BV(cteType)) == 0) ||
-            (connPtr->phyInfo.curPhy == LL_PHY_CODED))
-        {
-           MAP_llSendReject( connPtr,LL_CTRL_CTE_REQ, LL_STATUS_ERROR_UNSUPPORTED_PARAM_VAL );
-        }
-        else // this feature is supported
-        {
-          llCte[connPtr->connId].responder.len = cteLen;
-          llCte[connPtr->connId].responder.type = cteType;
-          // setup/send a Response
-          if ( MAP_llSetupCte( connPtr,FALSE ) == FALSE )
-          {
-            // unable to malloc a packet!
-            (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
-          }
-        }
-      }
-      break;
-
-    case LL_CTRL_CTE_RSP:
-      if (llCte[connPtr->connId].initiator.requestInterval == 0)
-      {
-        llCte[connPtr->connId].initiator.requestEnable = FALSE;
-      }
-      llCte[connPtr->connId].initiator.sendRequest = FALSE;
-      break;
-
-    /*
-    ** Unknown Response
-    */
-#endif // RTLS_CTE
     // Peer Device Received an Unknown Control Type
     case LL_CTRL_UNKNOWN_RSP:
       // Note: There doesn't appear to be any action for this message,
@@ -2283,15 +2081,6 @@ void llProcessPeripheralControlPacket( llConnState_t *connPtr,
 
           break;
 
-#ifdef RTLS_CTE
-        case LL_CTRL_CTE_REQ:
-          llCte[connPtr->connId].initiator.requestEnable = FALSE;
-          llCte[connPtr->connId].initiator.sendRequest = FALSE;
-          // Clear CTE response feature bit
-          connPtr->featureSetInfo.featureSet[2] &= ~(LL_FEATURE_CONNECTION_CTE_RESPONSE);
-          HCI_CteRequestFailedEvent(LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE,connPtr->connId);
-          break;
-#endif
         default:
           break;
       }
@@ -2348,7 +2137,7 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
 
   // check the type of control packet
   if ((opcode >= LL_CTRL_CS_SEC_RSP) &&
-      (opcode <= LL_CTRL_CS_SEC_REQ) )
+      (opcode <= LL_CTRL_CS_TERMINATE_RSP) )
   {
       MAP_llCsProcessCsControlPacket(opcode, connPtr, pBuf);
       return;
@@ -3255,15 +3044,6 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       // save rejected opcode and error code, and indicate RejectIndExt received
       connPtr->rejectIndExt.rejectOpcode = (uint8)pBuf[0];
       connPtr->rejectIndExt.errorCode    = pBuf[1];
-#ifdef RTLS_CTE
-      if (connPtr->rejectIndExt.rejectOpcode == LL_CTRL_CTE_REQ)
-      {
-        llCte[connPtr->connId].initiator.requestEnable = FALSE;
-        llCte[connPtr->connId].initiator.sendRequest = FALSE;
-        HCI_CteRequestFailedEvent(connPtr->rejectIndExt.errorCode,connPtr->connId);
-      }
-      else
-#endif // RTLS_CTE
       {
         // either the peripheral's Host has failed to provide an LTK, or
         // the encryption feature is not supported by the peripheral, so read
@@ -3429,11 +3209,11 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
           //       PHY data rate, connEffectiveMaxTxOctets can be the lesser of
           //       octets and time, but all in terms of octets.
           connPtr->lenInfo.connActualMaxTxOctets =
-            MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
-                 MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
-                                    connPtr->phyInfo.phyOpts,
-                                    connPtr->lenInfo.connEffectiveMaxTxTime,
-                                    MIC_ENABLED ) );
+              Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+                        MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
+                                           connPtr->phyInfo.phyOpts,
+                                           connPtr->lenInfo.connEffectiveMaxTxTime,
+                                           MIC_ENABLED ) );
         }
 
         // queue update phy control packet
@@ -3542,11 +3322,11 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       //       connEffectiveMaxTxOctets can be the lesser of octets and time,
       //       but all in terms of octets.
       connPtr->lenInfo.connActualMaxTxOctets =
-        MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
-             MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
-                                connPtr->phyInfo.phyOpts,
-                                connPtr->lenInfo.connEffectiveMaxTxTime,
-                                MIC_ENABLED ) );
+          Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+                    MAP_llTime2Octets( connPtr->lenInfo.connSlowestPhy,
+                                       connPtr->phyInfo.phyOpts,
+                                       connPtr->lenInfo.connEffectiveMaxTxTime,
+                                       MIC_ENABLED ) );
 
       // set flag to indicate we received a response to our request
       // Note: This will cause an Update Phy to be sent to Central.
@@ -3633,13 +3413,13 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Rx time
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxRxTime,
-                             connPtr->lenInfo.connRemoteMaxTxTime );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxRxTime,
+                                  connPtr->lenInfo.connRemoteMaxTxTime );
 
       // based on current phy
       if ( connPtr->phyInfo.curPhy == LL_PHY_CODED )
       {
-        newEffectiveVal = MAX( 2704, newEffectiveVal );
+        newEffectiveVal = Math_MAX( 2704, newEffectiveVal );
       }
 
       // check if length info has changed
@@ -3667,8 +3447,8 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       else // !LL_PHY_CODED
       {
         // find the effective Tx time
-        newEffectiveVal = MIN( connPtr->lenInfo.connMaxTxTime,
-                               connPtr->lenInfo.connRemoteMaxRxTime );
+        newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxTxTime,
+                                    connPtr->lenInfo.connRemoteMaxRxTime );
 
         // check if length info has changed
         notifyHost |= (newEffectiveVal != connPtr->lenInfo.connEffectiveMaxTxTime);
@@ -3682,8 +3462,8 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Tx buffer size
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxTxOctets,
-                             connPtr->lenInfo.connRemoteMaxRxOctets );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxTxOctets,
+                                  connPtr->lenInfo.connRemoteMaxRxOctets );
 
       // check if length info has changed
       // Note: Sets variable to zero or one.
@@ -3705,19 +3485,19 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
       //       used to cap Tx based on PHY and PHY changes (as given by
       //       connSlowestPhy).
       connPtr->lenInfo.connActualMaxTxOctets =
-        MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
-             MAP_llTime2Octets( connPtr->phyInfo.curPhy,
-                                connPtr->phyInfo.phyOpts,
-                                connPtr->lenInfo.connEffectiveMaxTxTime,
-                                MIC_ENABLED ) );
+        Math_MIN( connPtr->lenInfo.connEffectiveMaxTxOctets,
+                  MAP_llTime2Octets( connPtr->phyInfo.curPhy,
+                                     connPtr->phyInfo.phyOpts,
+                                     connPtr->lenInfo.connEffectiveMaxTxTime,
+                                     MIC_ENABLED ) );
 
       //////////////////////////////////////////////////////////////////////////
       // Effective Maximum Rx Octets
       //////////////////////////////////////////////////////////////////////////
 
       // find the effective Rx buffer size
-      newEffectiveVal = MIN( connPtr->lenInfo.connMaxRxOctets,
-                             connPtr->lenInfo.connRemoteMaxTxOctets );
+      newEffectiveVal = Math_MIN( connPtr->lenInfo.connMaxRxOctets,
+                                  connPtr->lenInfo.connRemoteMaxTxOctets );
 
       // check if length info has changed
       notifyHost |= (newEffectiveVal != connPtr->lenInfo.connEffectiveMaxRxOctets);
@@ -3789,45 +3569,6 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
     break;
 
     /*
-    ** CTE Request and Response
-    */
-#ifdef RTLS_CTE
-    case LL_CTRL_CTE_REQ:
-      {
-        uint8 cteLen = pBuf[0] & LL_CTE_INFO_TIME_MASK;
-        uint8 cteType = (pBuf[0] & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
-
-        // check if the CTE Feature is a supported feature set item
-        if (( llCte[connPtr->connId].responder.responseEnable == FALSE ) ||
-            ((llCte[connPtr->connId].responder.supportedTypes & BV(cteType)) == 0) ||
-            (connPtr->phyInfo.curPhy == LL_PHY_CODED))
-        {
-           MAP_llSendReject( connPtr,LL_CTRL_CTE_REQ, LL_STATUS_ERROR_UNSUPPORTED_PARAM_VAL );
-        }
-        else // this feature is supported
-        {
-          llCte[connPtr->connId].responder.len = cteLen;
-          llCte[connPtr->connId].responder.type = cteType;
-          // setup/send a Response
-          if ( MAP_llSetupCte( connPtr,FALSE ) == FALSE )
-          {
-            // unable to malloc a packet!
-            (void)MAP_osal_set_event( LL_TaskID, LL_EVT_OUT_OF_MEMORY );
-          }
-        }
-      }
-      break;
-
-    case LL_CTRL_CTE_RSP:
-      if (llCte[connPtr->connId].initiator.requestInterval == 0)
-      {
-        llCte[connPtr->connId].initiator.requestEnable = FALSE;
-      }
-      llCte[connPtr->connId].initiator.sendRequest = FALSE;
-
-      break;
-#endif // RTLS_CTE
-    /*
     ** Unknown Response
     */
 
@@ -3855,15 +3596,6 @@ void llProcessCentralControlPacket( llConnState_t *connPtr,
           SET_FEATURE_FLAG( connPtr->phyInfo.phyFlags, UNKNOWN_RSP_RECEIVED );
           SET_FEATURE_FLAG( connPtr->phyInfo.phyFlags, DISABLE_PHY_REQUEST );
           break;
-#ifdef RTLS_CTE
-        case LL_CTRL_CTE_REQ:
-          llCte[connPtr->connId].initiator.requestEnable = FALSE;
-          llCte[connPtr->connId].initiator.sendRequest = FALSE;
-          // Clear CTE response feature bit
-          connPtr->featureSetInfo.featureSet[2] &= ~(LL_FEATURE_CONNECTION_CTE_RESPONSE);
-          HCI_CteRequestFailedEvent(LL_STATUS_ERROR_UNSUPPORTED_REMOTE_FEATURE,connPtr->connId);
-          break;
-#endif // RTLS_CTE
         default:
           break;
       }
@@ -3974,13 +3706,13 @@ void llClearTxDataQueue(txDataQ_t *txDataQueue)
 {
   if (NULL != txDataQueue)
   {
-    // clear the LL Tx data list
+    // Clear the LL Tx data list
     List_clearList(&txDataQueue->llDataBuffers);
 
-    // clear the Temp Tx data list
+    // Clear the Temp Tx data list
     List_clearList(&txDataQueue->tmpDataBuffers);
 
-    // clear the RCL TX queue
+    // Clear the RCL TX queue
     List_clearList(txDataQueue->rfDataBuffers);
   }
 }

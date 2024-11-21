@@ -54,9 +54,7 @@ extern "C"
   #elif ( HOST_CONFIG == BROADCASTER_CFG )
     #define CTRL_CONFIG   ADV_NCONN_CFG
   #else
-    #if defined ( FLASH_ONLY_BUILD ) || defined ( FLASH_ROM_BUILD )
-      #error "Build Configuration Error: Invalid Host Role!"
-    #endif
+    #error "Build Configuration Error: Invalid Host Role!"
   #endif
 #else
   // Controller Sanity Check: Stop build when no configuration is defined.
@@ -64,9 +62,7 @@ extern "C"
                                                     ADV_CONN_CFG  | \
                                                     SCAN_CFG      | \
                                                     INIT_CFG ) )
-    #if defined ( FLASH_ONLY_BUILD ) || defined ( FLASH_ROM_BUILD )
-      #error "Build Configuration Error: At least one Controller build component required!"
-    #endif
+    #error "Build Configuration Error: At least one Controller build component required!"
   #endif // no Controller build components defined
 #endif
 

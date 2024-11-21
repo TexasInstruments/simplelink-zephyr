@@ -24,15 +24,8 @@
 
 #include "hal_types.h"
 #include "ble_user_config.h"
-#ifdef CC33xx
-#include "os_resources.h"
-#endif // CC33xx
 
-#ifdef ICALL_JT
 extern icall_userCfg_t user0Cfg;		//!< user config
-#else /* !(ICALL_JT) */
-extern bleUserCfg_t user0Cfg;			//!< user config
-#endif /* ICALL_JT */
 
 /**
  *  @addtogroup ICall_Constants
@@ -95,11 +88,7 @@ extern void startup_entry( const ICall_RemoteTaskArg *arg0, void *arg1 );
  * per the entry function defined in @ref ICALL_ADDR_MAPS
  * initializer, in the same sequence.
  */
-#ifndef CC33xx
 #define ICALL_TASK_PRIORITIES { 5 }
-#else
-#define ICALL_TASK_PRIORITIES { BLE_ICALL_TASK_PRIORITY }
-#endif //CC33xx
 
 /**
  * Initializer for an array of thread stack sizes.
@@ -107,11 +96,7 @@ extern void startup_entry( const ICall_RemoteTaskArg *arg0, void *arg1 );
  * allocated to a thread to be created per the entry function
  * defined in @ref ICALL_ADDR_MAPS initializer, in the same sequence.
  */
-#ifdef CC23X0
 #define ICALL_TASK_STACK_SIZES { 1500 }
-#else
-#define ICALL_TASK_STACK_SIZES { 4096 }
-#endif
 
 /**
  * Initializer for custom initialization parameters.

@@ -25,20 +25,7 @@
 #include "osal_timers.h"
 #include "osal_pwrmgr.h"
 
-#ifdef USE_ICALL
-  #include <icall.h>
-#endif /* USE_ICALL */
-
-#ifdef OSAL_PORT2TIRTOS
-/* Direct port to TI-RTOS API */
-#if defined(CC26X2) || defined(CC13X2) || defined(CC13X2P) || defined(CC13X4)
-#include <ti/drivers/Power.h>
-#include <ti/drivers/power/PowerCC26X2.h>
-#elif defined(CC26XX)
-#include <ti/drivers/Power.h>
-#include <ti/drivers/power/PowerCC26XX.h>
-#endif /* CC26XX */
-#endif /* OSAL_PORT2TIRTOS */
+#include <icall.h>
 
 /*********************************************************************
  * MACROS
@@ -59,9 +46,7 @@
 /* This global variable stores the power management attributes.
  */
 pwrmgr_attribute_t pwrmgr_attribute;
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
 uint8 pwrmgr_initialized = FALSE;
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
 
 /*********************************************************************
  * EXTERNAL VARIABLES
@@ -94,33 +79,9 @@ uint8 pwrmgr_initialized = FALSE;
  */
 void osal_pwrmgr_init( void )
 {
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-  pwrmgr_attribute.pwrmgr_device = PWRMGR_ALWAYS_ON; // Default to no power conservation.
-#endif /* USE_ICALL */
   pwrmgr_attribute.pwrmgr_task_state = 0;            // Cleared.  All set to conserve
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
   pwrmgr_initialized = TRUE;
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
 }
-
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-/*********************************************************************
- * @fn      osal_pwrmgr_device
- *
- * @brief   Sets the device power characteristic.
- *
- * @param   pwrmgr_device - type of power devices. With PWRMGR_ALWAYS_ON
- *          selection, there is no power savings and the device is most
- *          likely on mains power. The PWRMGR_BATTERY selection allows the
- *          HAL sleep manager to enter sleep.
- *
- * @return  none
- */
-void osal_pwrmgr_device( uint8 pwrmgr_device )
-{
-  pwrmgr_attribute.pwrmgr_device = pwrmgr_device;
-}
-#endif /* !defined USE_ICALL && !defined OSAL_PORT2TIRTOS*/
 
 /*********************************************************************
  * @fn      osal_pwrmgr_task_state
@@ -142,7 +103,6 @@ uint8 osal_pwrmgr_task_state( uint8 task_id, uint8 state )
   if ( task_id >= tasksCnt )
     return ( pwrRequired );
 
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
   if ( !pwrmgr_initialized )
   {
     /* If voting is made before this module is initialized,
@@ -151,44 +111,28 @@ uint8 osal_pwrmgr_task_state( uint8 task_id, uint8 state )
      */
     return ( pwrRequired );
   }
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
 
   HAL_ENTER_CRITICAL_SECTION( intState );
 
   if ( state == PWRMGR_CONSERVE )
   {
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
     uint16 cache = pwrmgr_attribute.pwrmgr_task_state;
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
     // Clear the task state flag
     pwrmgr_attribute.pwrmgr_task_state &= ~(1 << task_id );
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
     if (cache != 0 && pwrmgr_attribute.pwrmgr_task_state == 0)
     {
-#ifdef USE_ICALL
       /* Decrement activity counter */
       pwrRequired = ICall_pwrUpdActivityCounter(FALSE);
-#else /* USE_ICALL */
-      Power_releaseConstraint(PowerCC26XX_SD_DISALLOW);
-      Power_releaseConstraint(PowerCC26XX_SB_DISALLOW);
-#endif /* USE_ICALL */
     }
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
   }
   else
   {
-#if defined USE_ICALL || defined OSAL_PORT2TIRTOS
     if (pwrmgr_attribute.pwrmgr_task_state == 0)
     {
-#ifdef USE_ICALL
       /* Increment activity counter */
       (void)ICall_pwrUpdActivityCounter(TRUE);
-#else /* USE_ICALL */
-      Power_setConstraint(PowerCC26XX_SD_DISALLOW);
-      Power_setConstraint(PowerCC26XX_SB_DISALLOW);
-#endif /* USE_ICALL */
+
     }
-#endif /* defined USE_ICALL || defined OSAL_PORT2TIRTOS */
     // Set the task state flag
     pwrmgr_attribute.pwrmgr_task_state |= (1 << task_id);
   }
@@ -197,44 +141,6 @@ uint8 osal_pwrmgr_task_state( uint8 task_id, uint8 state )
 
   return ( pwrRequired );
 }
-
-#if defined( POWER_SAVING ) && !(defined USE_ICALL || defined OSAL_PORT2TIRTOS)
-/*********************************************************************
- * @fn      osal_pwrmgr_powerconserve
- *
- * @brief   This function is called from the main OSAL loop when there are
- *          no events scheduled and shouldn't be called from anywhere else.
- *
- * @param   none.
- *
- * @return  none.
- */
-void osal_pwrmgr_powerconserve( void )
-{
-  uint32        next;
-  halIntState_t intState;
-
-  // Should we even look into power conservation
-  if ( pwrmgr_attribute.pwrmgr_device != PWRMGR_ALWAYS_ON )
-  {
-    // Are all tasks in agreement to conserve
-    if ( pwrmgr_attribute.pwrmgr_task_state == 0 )
-    {
-      // Hold off interrupts.
-      HAL_ENTER_CRITICAL_SECTION( intState );
-
-      // Get next time-out
-      next = osal_next_timeout();
-
-      // Re-enable interrupts.
-      HAL_EXIT_CRITICAL_SECTION( intState );
-
-      // Put the processor into sleep mode
-      OSAL_SET_CPU_INTO_SLEEP( next );
-    }
-  }
-}
-#endif /* POWER_SAVING */
 
 /*********************************************************************
 *********************************************************************/

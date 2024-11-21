@@ -24,30 +24,19 @@
 #include "osal_timers.h"
 #include <string.h>
 #include "comdef.h"
-#include "hal_board.h"
 #include "osal.h"
 #include "osal_tasks.h"
 #include "osal_pwrmgr.h"
 #include "osal_clock.h"
-#include "map_direct.h"
 
 #include "onboard.h"
-
-/* HAL */
-#include "hal_drivers.h"
 
 #ifdef IAR_ARMCM3_LM
   #include "FreeRTOSConfig.h"
   #include "osal_task.h"
 #endif
 
-#ifdef USE_ICALL
-  #include <icall.h>
-#endif /* USE_ICALL */
-
-#ifdef CC33xx
-  #include "icall_porting.h"
-#endif /* CC33xx */
+#include <icall.h>
 
 /*********************************************************************
  * MACROS
@@ -56,15 +45,12 @@
 /*********************************************************************
  * CONSTANTS
  */
-#ifdef USE_ICALL
 // A bit mask to use to indicate a proxy OSAL task ID.
 #define OSAL_PROXY_ID_FLAG       0x80
 
 // Type of event OSAL will send to signal a proxy task
 #define OSAL_EVENT_SERVICE      0
 #define OSAL_EVENT_MSG          1
-
-#endif // USE_ICALL
 
 /*********************************************************************
  * TYPEDEFS
@@ -78,10 +64,8 @@ uint32 *tasksEvents;
 // Message Pool Definitions
 osal_msg_q_t osal_qHead;
 
-#ifdef USE_ICALL
 // OSAL event loop hook function pointer
 void (*osal_eventloop_hook)(void) = NULL;
-#endif /* USE_ICALL */
 
 #ifdef ICALL_LITE
 osal_icallMsg_hook_t osal_icallMsg_hook = NULL;
@@ -94,6 +78,7 @@ osal_icallMsg_hook_t osal_icallMsg_hook = NULL;
 /*********************************************************************
  * EXTERNAL FUNCTIONS
  */
+extern void MAP_llInitCompleteNotify(int status);
 
 /*********************************************************************
  * LOCAL VARIABLES
@@ -102,7 +87,6 @@ osal_icallMsg_hook_t osal_icallMsg_hook = NULL;
 // Index of active task
 static uint8 activeTaskID = TASK_NO_TASK;
 
-#ifdef USE_ICALL
 // Maximum number of proxy tasks
 #ifndef OSAL_MAX_NUM_PROXY_TASKS
 #define OSAL_MAX_NUM_PROXY_TASKS 4
@@ -141,15 +125,12 @@ static uint8 *osal_dispatch_entities;
 
 static uint8 osal_notask_entity;
 
-#endif // USE_ICALL
-
 /*********************************************************************
  * LOCAL FUNCTION PROTOTYPES
  */
 
 static uint8 osal_msg_enqueue_push( uint8 destination_task, uint8 *msg_ptr, uint8 urgent );
 
-#ifdef USE_ICALL
 static ICall_EntityID osal_proxy2alien(uint8 proxyid);
 static uint8 osal_dispatch2id(ICall_EntityID entity);
 
@@ -158,18 +139,6 @@ static uint8 osal_alien2proxy(ICall_EntityID entity);
 #endif /* ICALL_LITE */
 
 static void osal_msec_timer_cback(void *arg);
-#endif // USE_ICALL
-
-/*********************************************************************
- * HELPER FUNCTIONS
- */
-/* very ugly stub so Keil can compile */
-#ifdef __KEIL__
-char *  itoa ( int value, char * buffer, int radix )
-{
-  return(buffer);
-}
-#endif
 
 /*********************************************************************
  * @fn      osal_strlen
@@ -270,11 +239,7 @@ void *osal_memdup( const void GENERIC *src, unsigned int len )
   pDst = osal_mem_alloc( len );
   if ( pDst )
   {
-#ifndef CC33xx
     VOID osal_memcpy( pDst, src, len );
-#else
-    osal_memcpy( pDst, src, len );
-#endif // CC33xx
   }
 
   return ( (void *)pDst );
@@ -386,7 +351,6 @@ uint16 osal_rand( void )
  * API FUNCTIONS
  *********************************************************************/
 
-#ifdef USE_ICALL
 /*********************************************************************
  * @fn      osal_prepare_svc_enroll
  *
@@ -456,7 +420,6 @@ void osal_enroll_notasksender(ICall_EntityID dispatchid)
 {
   osal_notask_entity = dispatchid;
 }
-#endif /* USE_ICALL */
 
 /*********************************************************************
  * @fn      osal_msg_allocate
@@ -613,11 +576,7 @@ static int8 osal_event_send( uint8 type, uint8 destination_task, uint8 *msg_ptr 
       /* The source entity is not registered */
       /* abort */
       ICall_abort();
-#ifndef CC33xx
       return FAILURE;
-#else
-      return FAILURE_CC33XX;
-#endif // !CC33xx
     }
     dst = osal_proxy2alien(destination_task);
     hdr->dest_id = TASK_NO_TASK;
@@ -640,11 +599,7 @@ static int8 osal_event_send( uint8 type, uint8 destination_task, uint8 *msg_ptr 
     }
     osal_msg_deallocate(msg_ptr);
 
-#ifndef CC33xx
     return FAILURE;
-#else
-    return FAILURE_CC33XX;
-#endif // !CC33xx
 }
 /*********************************************************************
  * @fn      osal_msg_send
@@ -667,12 +622,10 @@ uint8 osal_msg_send( uint8 destination_task, uint8 *msg_ptr )
 {
   BLE_LOG_INT_INT(0, BLE_LOG_MODULE_OSAL_TASK, "OASL: msg send from taskId=%d, to taskId=%d\n", osal_self(), destination_task);
 
-  #ifdef USE_ICALL
   if (destination_task & OSAL_PROXY_ID_FLAG)
   {
     return( osal_event_send( OSAL_EVENT_MSG, destination_task, msg_ptr ) );
   }
-#endif /* USE_ICALL */
   return ( osal_msg_enqueue_push( destination_task, msg_ptr, FALSE ) );
 }
 
@@ -700,11 +653,7 @@ uint8 osal_service_complete( uint8 destination_task, uint8 *msg_ptr )
   {
     return( osal_event_send( OSAL_EVENT_SERVICE, destination_task, msg_ptr ) );
   }
-#ifndef CC33xx
   return FAILURE;
-#else
-  return FAILURE_CC33XX;
-#endif // !CC33xx
 }
 #endif /* ICALL_LITE */
 
@@ -756,12 +705,10 @@ static uint8 osal_msg_enqueue_push( uint8 destination_task, uint8 *msg_ptr, uint
     return ( INVALID_MSG_POINTER );
   }
 
-#ifdef USE_ICALL
   if (destination_task & OSAL_PROXY_ID_FLAG)
   {
     ICall_abort();
   }
-#endif /* USE_ICALL */
 
   if ( destination_task >= tasksCnt )
   {
@@ -1165,19 +1112,31 @@ uint8 osal_msg_enqueue_max( osal_msg_q_t *q_ptr, void *msg_ptr, uint8 max )
  *
  * @return  SUCCESS, MSG_BUFFER_NOT_AVAIL, FAILURE, INVALID_TASK
  */
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-uint8 osal_set_event_raw( uint8 task_id, uint32 event_flag )
-#else /* OSAL_PORT2TIRTOS */
 uint8 osal_set_event( uint8 task_id, uint32 event_flag )
-#endif /* OSAL_PORT2TIRTOS */
 {
-#ifdef USE_ICALL
   if (task_id & OSAL_PROXY_ID_FLAG)
   {
     /* Destination is a proxy task */
     osal_msg_hdr_t *hdr;
     ICall_EntityID src, dst;
     uint8 taskid;
+
+    taskid = osal_self();
+    if (taskid == TASK_NO_TASK)
+    {
+      /* Call must have been made from either an ISR or a user-thread */
+      src = osal_notask_entity;
+    }
+    else
+    {
+      src = (ICall_EntityID) osal_dispatch_entities[taskid + tasksCnt];
+    }
+
+    if (src == OSAL_INVALID_DISPATCH_ID)
+    {
+      ICall_abort();
+      return FAILURE;
+    }
 
     struct _osal_event_msg_t
     {
@@ -1194,28 +1153,6 @@ uint8 osal_set_event( uint8 task_id, uint32 event_flag )
     msg_ptr->event_flag = event_flag;
     hdr = (osal_msg_hdr_t *)msg_ptr - 1;
 
-    taskid = osal_self();
-    if (taskid == TASK_NO_TASK)
-    {
-      /* Call must have been made from either an ISR or a user-thread */
-      src = osal_notask_entity;
-    }
-    else
-    {
-      src = (ICall_EntityID) osal_dispatch_entities[taskid + tasksCnt];
-    }
-
-    if (src == OSAL_INVALID_DISPATCH_ID)
-    {
-      /* The source entity is not registered */
-      osal_msg_deallocate((uint8 *) msg_ptr);
-      ICall_abort();
-#ifndef CC33xx
-      return FAILURE;
-#else
-      return FAILURE_CC33XX;
-#endif // !CC33xx
-    }
     dst = osal_proxy2alien(task_id);
     hdr->dest_id = TASK_NO_TASK;
     if (ICall_send(src, dst,
@@ -1225,13 +1162,8 @@ uint8 osal_set_event( uint8 task_id, uint32 event_flag )
       return SUCCESS;
     }
     osal_msg_deallocate((uint8 *) msg_ptr);
-#ifndef CC33xx
     return FAILURE;
-#else
-    return FAILURE_CC33XX;
-#endif // !CC33xx
   }
-#endif /* USE_ICALL */
 
   if ( task_id < tasksCnt )
   {
@@ -1239,13 +1171,11 @@ uint8 osal_set_event( uint8 task_id, uint32 event_flag )
     HAL_ENTER_CRITICAL_SECTION(intState);    // Hold off interrupts
     tasksEvents[task_id] |= event_flag;  // Stuff the event bit(s)
     HAL_EXIT_CRITICAL_SECTION(intState);     // Release interrupts
-#ifdef USE_ICALL
 #ifdef ICALL_EVENTS
     ICall_signal(osal_syncHandle);
 #else /* !ICALL_EVENTS */
     ICall_signal(osal_semaphore);
 #endif /* ICALL_EVENTS */
-#endif /* USE_ICALL */
     return ( SUCCESS );
   }
    else
@@ -1283,91 +1213,6 @@ uint8 osal_clear_event( uint8 task_id, uint32 event_flag )
   }
 }
 
-/*********************************************************************
- * @fn      osal_isr_register
- *
- * @brief
- *
- *   This function is called to register a service routine with an
- *   interrupt. When the interrupt occurs, this service routine is called.
- *
- * @param   uint8 interrupt_id - Interrupt number
- * @param   void (*isr_ptr)( uint8* ) - function pointer to ISR
- *
- * @return  SUCCESS, INVALID_INTERRUPT_ID,
- */
-uint8 osal_isr_register( uint8 interrupt_id, void (*isr_ptr)( uint8* ) )
-{
-  // Remove these statements when functionality is complete
-  (void)interrupt_id;
-  (void)isr_ptr;
-  return ( SUCCESS );
-}
-
-#ifndef CC33xx
-/*********************************************************************
- * @fn      osal_int_enable
- *
- * @brief
- *
- *   This function is called to enable an interrupt. Once enabled,
- *   occurrence of the interrupt causes the service routine associated
- *   with that interrupt to be called.
- *
- *   If INTS_ALL is the interrupt_id, interrupts (in general) are enabled.
- *   If a single interrupt is passed in, then interrupts still have
- *   to be enabled with another call to INTS_ALL.
- *
- * @param   uint8 interrupt_id - Interrupt number
- *
- * @return  SUCCESS or INVALID_INTERRUPT_ID
- */
-uint8 osal_int_enable( uint8 interrupt_id )
-{
-
-  if ( interrupt_id == INTS_ALL )
-  {
-    HAL_ENABLE_INTERRUPTS();
-    return ( SUCCESS );
-  }
-  else
-  {
-    return ( INVALID_INTERRUPT_ID );
-  }
-}
-
-/*********************************************************************
- * @fn      osal_int_disable
- *
- * @brief
- *
- *   This function is called to disable an interrupt. When a disabled
- *   interrupt occurs, the service routine associated with that
- *   interrupt is not called.
- *
- *   If INTS_ALL is the interrupt_id, interrupts (in general) are disabled.
- *   If a single interrupt is passed in, then just that interrupt is disabled.
- *
- * @param   uint8 interrupt_id - Interrupt number
- *
- * @return  SUCCESS or INVALID_INTERRUPT_ID
- */
-uint8 osal_int_disable( uint8 interrupt_id )
-{
-
-  if ( interrupt_id == INTS_ALL )
-  {
-    HAL_DISABLE_INTERRUPTS();
-    return ( SUCCESS );
-  }
-  else
-  {
-    return ( INVALID_INTERRUPT_ID );
-  }
-}
-#endif // !CC33xx
-
-
 static uint8 osal_task_events_alloc( void )
 {
   tasksEvents = (uint32 *)osal_mem_alloc( (uint16)(sizeof( uint32 ) * tasksCnt));
@@ -1400,11 +1245,6 @@ uint8 osal_init_system( void )
 {
   uint8 ret = USUCCESS;
 
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-  // Initialize the Memory Allocation System
-  osal_mem_init();
-#endif /* !defined USE_ICALL && !defined OSAL_PORT2TIRTOS */
-
   ret = osal_task_events_alloc();
   if (USUCCESS == ret)
   {
@@ -1414,33 +1254,18 @@ uint8 osal_init_system( void )
   // Initialize the timers
   osalTimerInit();
 
-#ifndef CC33xx
   // different power management in Osprey
   // Initialize the Power Management System
   osal_pwrmgr_init();
-#endif // CC33xx
 
-#ifdef USE_ICALL
   /* Prepare memory space for service enrollment */
   osal_prepare_svc_enroll();
-#endif /* USE_ICALL */
 
   // Initialize the system tasks.
   osalInitTasks();
 
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-  // Setup efficient search for the first free block of heap.
-  osal_mem_kick();
-#endif /* !defined USE_ICALL && !defined OSAL_PORT2TIRTOS */
-
-#ifdef USE_ICALL
-#ifndef ICALL_JT
-  osal_tickperiod = (uint_least32_t) ICall_getTickPeriod();
-  osal_max_msecs = (uint_least32_t) ICall_getMaxMSecs();
-#endif
   /* Reduce ceiling considering potential latency */
   osal_max_msecs -= 2;
-#endif /* USE_ICALL */
   }
 
   return ( ret );
@@ -1458,22 +1283,18 @@ uint8 osal_init_system( void )
  *
  * @return  none
  */
-#ifdef USE_ICALL
-#ifdef ICALL_JT
 void osal_timer_init(uint_least32_t tickPeriod, uint_least32_t osalMaxMsecs )
 {
   osal_tickperiod = tickPeriod;
   osal_max_msecs = osalMaxMsecs;
 }
-#endif /* ICALL_JT */
-#endif /* USE_ICALL */
 /*********************************************************************
  * @fn      osal_start_system
  *
  * @brief
  *
- *   This function is the main loop function of the task system (if
- *   ZBIT and UBIT are not defined). This Function doesn't return.
+ *   This function is the main loop function of the task system.
+ *   This Function doesn't return.
  *
  * @param   void
  *
@@ -1486,7 +1307,6 @@ void osal_start_system( void )
    * Notify the Synchronous Task Create */
   MAP_llInitCompleteNotify(SUCCESS);
 
-#ifdef USE_ICALL
   /* Kick off timer service in order to allocate resources upfront.
    * The first timeout is required to schedule next OSAL timer event
    * as well. */
@@ -1497,21 +1317,15 @@ void osal_start_system( void )
   {
     ICall_abort();
   }
-#endif /* USE_ICALL */
 
-#if !defined ( ZBIT ) && !defined ( UBIT )
   for(;;)  // Forever Loop
-#endif
   {
     osal_run_system();
 
-#ifdef USE_ICALL
     ICall_wait(ICALL_TIMEOUT_FOREVER);
-#endif /* USE_ICALL */
   }
 }
 
-#ifdef USE_ICALL
 /*********************************************************************
  * @fn      osal_alien2proxy
  *
@@ -1654,7 +1468,6 @@ ICall_Errno osal_service_entry(ICall_FuncArgsHdr *args)
   }
   return ICALL_ERRNO_SUCCESS;
 }
-#endif /* USE_ICALL */
 
 #ifdef ICALL_LITE
 /*********************************************************************
@@ -1693,17 +1506,8 @@ void osal_run_system( void )
 {
   uint8 idx = 0;
 
-#ifdef USE_ICALL
   uint32 next_timeout_prior = osal_next_timeout();
-#else /* USE_ICALL */
-#ifndef HAL_BOARD_CC2538
-  osalTimeUpdate();
-#endif
 
-  Hal_ProcessPoll();
-#endif /* USE_ICALL */
-
-#ifdef USE_ICALL
   if (next_timeout_prior)
   {
     osal_timer_refTimeUpdate();
@@ -1771,7 +1575,6 @@ void osal_run_system( void )
       }
     }
   }
-#endif /* USE_ICALL */
 
   do {
     if (tasksEvents[idx] != 0U)  // Task is highest priority that is ready.
@@ -1798,12 +1601,6 @@ void osal_run_system( void )
     tasksEvents[idx] |= events;  // Add back unprocessed events to the current task.
     HAL_EXIT_CRITICAL_SECTION(intState);
   }
-#if defined( POWER_SAVING ) && !defined(USE_ICALL)
-  else  // Complete pass through all task events with no activity?
-  {
-    osal_pwrmgr_powerconserve();  // Put the processor/system into sleep
-  }
-#endif
 
   /* Yield in case cooperative scheduling is being used. */
 #if defined (configUSE_PREEMPTION) && (configUSE_PREEMPTION == 0)
@@ -1812,7 +1609,6 @@ void osal_run_system( void )
   }
 #endif
 
-#if defined USE_ICALL
   /* Note that scheduling wakeup at this point instead of
    * scheduling it upon ever OSAL start timer request,
    * would only work if OSAL start timer call is made
@@ -1843,21 +1639,10 @@ void osal_run_system( void )
         next_timeout_post = osal_max_msecs;
       }
       /* Restart timer */
-#ifndef CC23X0
-      halIntState_t intState;
-      // Do not enter and exit the critical section because it stuck in for loop
-      // in vListInsert function under the freertos list.c file
-      // according to the freertos note in vListInsert function -
-      // we cannot call an API function from within a critical section
-      HAL_ENTER_CRITICAL_SECTION(intState);
-#endif
       ICall_stopTimer(osal_timerid_msec_timer);
       ICall_setTimerMSecs(next_timeout_post, osal_msec_timer_cback,
                           (void *) (++osal_msec_timer_seq),
                           &osal_timerid_msec_timer);
-#ifndef CC23X0
-      HAL_EXIT_CRITICAL_SECTION(intState);
-#endif
     }
 
 #ifdef ICALL_EVENTS
@@ -1884,7 +1669,6 @@ void osal_run_system( void )
     }
 #endif /* ICALL_EVENTS */
   }
-#endif /* USE_ICALL */
 }
 
 /*********************************************************************
@@ -1905,28 +1689,6 @@ uint8* osal_buffer_uint32( uint8 *buf, uint32 val )
   *buf++ = BREAK_UINT32( val, 1 );
   *buf++ = BREAK_UINT32( val, 2 );
   *buf++ = BREAK_UINT32( val, 3 );
-
-  return buf;
-}
-
-/*********************************************************************
- * @fn      osal_buffer_uint24
- *
- * @brief
- *
- *   Buffer an uint24 value - LSB first. Note that type uint24 is
- *   typedef to uint32 in comdef.h
- *
- * @param   buf - buffer
- * @param   val - uint24 value
- *
- * @return  pointer to end of destination buffer
- */
-uint8* osal_buffer_uint24( uint8 *buf, uint24 val )
-{
-  *buf++ = BREAK_UINT32( val, 0 );
-  *buf++ = BREAK_UINT32( val, 1 );
-  *buf++ = BREAK_UINT32( val, 2 );
 
   return buf;
 }
@@ -1980,70 +1742,6 @@ uint8 osal_self( void )
 {
   return ( activeTaskID );
 }
-
-/*-------------------------------------------------------------------
- * BLE_LOG FUNCTIONS
- */
-#ifdef BLE_LOG
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <ti/sysbios/knl/Clock.h>
-
-#define LOG_BUF_SIZE    0x8000
-
-uint8 gBleLogBuffer[LOG_BUF_SIZE+0x100]; // 256 bytes spare for overflow
-uint32 gBleLogIndex = 0;
-uint32 gBleLogWrapCount = 0;
-uint32 gBleLogMask = BLE_LOG_MODULE_CTRL | BLE_LOG_MODULE_HOST | BLE_LOG_MODULE_APP /* | BLE_LOG_MODULE_OSAL_TASK*/ /* | BLE_LOG_MODULE_RF_CMD*/;
-void bleLog_handleCyclicBuf(uint32_t len);
-
-void bleLog_int_int(void *handle, uint32_t type, uint8_t *format, uint32_t param1, uint32_t param2)
-{
-  uint32_t len;
-
-  if ((type & gBleLogMask) == 0)
-    return;
-
-  len = sprintf((char *)&gBleLogBuffer[gBleLogIndex], (const char *)format, param1, param2);
-  bleLog_handleCyclicBuf(len);
-}
-
-void bleLog_int_str(void *handle, uint32_t type, uint8_t *format, uint32_t param1, char *param2)
-{
-  uint32_t len;
-
-  if ((type & gBleLogMask) == 0)
-    return;
-
-  len = sprintf((char *)&gBleLogBuffer[gBleLogIndex], (const char *)format, param1, param2);
-  bleLog_handleCyclicBuf(len);
-}
-
-void bleLog_int_time(void *handle, uint32_t type, uint8_t *start_str, uint32_t param1)
-{
-  uint32_t len;
-  uint32_t timemsec = Clock_getTicks()/100;
-
-  if ((type & gBleLogMask) == 0)
-    return;
-
-  len = sprintf((char *)&gBleLogBuffer[gBleLogIndex], (const char *)"%s %d, ---- time[msec]=%d\n", start_str, param1, timemsec);
-  bleLog_handleCyclicBuf(len);
-}
-
-void bleLog_handleCyclicBuf(uint32_t len)
-{
-  gBleLogIndex += len;
-  sprintf((char *)&gBleLogBuffer[gBleLogIndex], "----- last\n");
-  if (gBleLogIndex >= LOG_BUF_SIZE)
-  {
-    len = sprintf((char *)&gBleLogBuffer[0], "----- gBleLogWrapCount=%d\n", ++gBleLogWrapCount);
-    gBleLogIndex = len;
-  }
-}
-
-#endif //BLE_LOG
 
 /*-------------------------------------------------------------------
  */

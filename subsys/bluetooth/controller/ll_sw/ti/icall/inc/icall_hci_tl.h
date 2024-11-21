@@ -193,18 +193,6 @@ extern void HCI_TL_Init(HCI_TL_ParameterOverwriteCB_t overwriteCB,
 void HCI_TL_sendSystemReport(uint8_t id, uint8_t status, uint16_t info);
 
 /*********************************************************************
- * @fn      HCI_TL_compareAppLastOpcodeSent
- *
- * @brief   check if the opcode of an event received matches the last
- *          opcode of an HCI command called from the embedded application.
- *
- * @param   opcode - opcode of the received Stack event.
- *
- * @return  TRUE if opcode matches, FALSE otherwise.
- */
-extern uint8_t HCI_TL_compareAppLastOpcodeSent(uint16_t opcode);
-
-/*********************************************************************
  * @fn      HCI_TL_SendToStack
  *
  * @brief   Translate seriall buffer into it's corresponding function and
@@ -215,19 +203,6 @@ extern uint8_t HCI_TL_compareAppLastOpcodeSent(uint16_t opcode);
  * @return  none.
  */
 extern void HCI_TL_SendToStack(uint8_t *pHciMsg);
-
-/*********************************************************************
- * @fn      HCI_HostToController
- *
- * @brief   Translate HCI raw packet buffer into it's corresponding function and
- *          parameterize the arguments to send to the controller only.
- *
- * @param   pHciPkt - pointer to a raw buffer of HCI command or data packet.
- * @param   pktLen - the hci packet length
- *
- * @return  0 for success, negative number for error.
- */
-extern int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen);
 
 /*********************************************************************
  * @fn      HCI_TL_processStructuredEvent

@@ -26,12 +26,13 @@
 #include "hci_event_internal.h"
 #include "ble.h"
 #include "icall_hci_tl.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 #include "cs/ll_cs_mgr.h"
 #include "cs/ll_cs_db.h"
 #include "cs/ll_cs_common.h"
+
+#include <ti/drivers/utils/Math.h>
 
 /*******************************************************************************
  * MACROS
@@ -71,7 +72,7 @@ uint8* hciAllocAndPrepHciEvtPkt( uint8 **pData, uint8 hciEvtType,
 uint8* hciAllocAndPrepHciLeEvtPkt( uint8 **pData, uint8 hciLeEvtType,
                                    uint8 hciPktLen );
 
-uint16 hciGetPacketLen( hciPacket_t *pEvt );
+uint16 HCI_getPacketLen( hciPacket_t *pEvt );
 
 void hciCreateEventExtAdvSetTerminated( aeAdvSetTerm_t *pEvtData );
 void hciCreateEventExtScanReqReceived( aeScanReqReceived_t *extAdvRpt );
@@ -83,6 +84,17 @@ void hciCreateEventExtScan( uint8 event );
 
 uint8 hciCheckEventMask( uint8 eventBit, uint8 eventMaskTableIndex );
 uint8 hciSetEventMask( uint8 *pEventMask, uint8 eventMaskTableIndex );
+
+/*******************************************************************************
+ * LOCAL VARIABLES
+ */
+static const hciControllerToHostCallbacks_t *pHciC2HCbs = NULL;
+
+/*******************************************************************************
+ * EXTERNAL FUNCTIONS
+ */
+extern void osal_bm_free( void *payload_ptr );
+
 /*******************************************************************************
  * GLOBAL VARIABLES
  */
@@ -98,8 +110,6 @@ uint8 *hciEvtMask[HCI_EVENT_MASK_NUM_OF_TABLES] =
  hciEvtMaskPage2,
 };
 
-static const hciController2HostCallbacks_t *pHciC2HCbs = NULL;
-
 /*********************************************************************
  * @fn      HCI_ControllerToHostSendCallbackEvent
  *
@@ -111,13 +121,13 @@ static const hciController2HostCallbacks_t *pHciC2HCbs = NULL;
  *          callbackFctPtr - function pointer that will parse the message.
  *
  * @return  status:
- *            true: always return true
+ *            true: always return TRUE
  */
 static uint8_t HCI_ControllerToHostSendCallbackEvent(void *pData, void* callbackFctPtr)
 {
   ((void (*)(void*))(callbackFctPtr))(pData);
 
-  return true;
+  return TRUE;
 }
 
 /*******************************************************************************
@@ -138,7 +148,7 @@ static uint8_t HCI_ControllerToHostSendCallbackEvent(void *pData, void* callback
  *
  * @return      void
  */
-void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
+static void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
 {
   if (( NULL != pHciC2HCbs ) && ( NULL != pHciC2HCbs->send ))
   {
@@ -155,24 +165,24 @@ void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len)
  * input parameters
  *
  * @param         pController2HostCallbacks - pointer to Controller-to-Host
- * 											  callbacks interface
+ *                callbacks interface
  *
  * output parameters
  *
  * @return        SUCCESS - in case pServiceParams initialization succeed
  *                FAILURE in case of
  *                   - Compatibility/versions mismatch (the check is done based
- *                     on size of the hciController2HostCallbacks_t).
+ *                     on size of the hciControllerToHostCallbacks_t).
  *                   - Parameters validation
  *
  * */
-uint32 HCI_Controller2HostCallbacksInit(hciController2HostCallbacks_t *pController2HostCallbacks)
+uint32_t HCI_ControllerToHostCallbacksInit(hciControllerToHostCallbacks_t *pController2HostCallbacks)
 {
-  uint32 status = FAILURE;
+  uint32_t status = FAILURE;
 
   if ( NULL != pController2HostCallbacks )
   {
-    memset(pController2HostCallbacks, 0, sizeof(hciController2HostCallbacks_t));
+    (void) memset(pController2HostCallbacks, 0, sizeof(hciControllerToHostCallbacks_t));
 
     status = SUCCESS;
   }
@@ -187,7 +197,7 @@ uint32 HCI_Controller2HostCallbacksInit(hciController2HostCallbacks_t *pControll
  *
  * input parameters
  *
- * @param       hciController2HostCallbacks_t cbs - pointer to the callbacks structure.
+ * @param       hciControllerToHostCallbacks_t cbs - pointer to the callbacks structure.
  *
  * output parameters
  *
@@ -195,9 +205,9 @@ uint32 HCI_Controller2HostCallbacksInit(hciController2HostCallbacks_t *pControll
  *
  * @return      SUCCESS / FAILURE.
  */
-uint32 HCI_ControllerToHostRegisterCb( const hciController2HostCallbacks_t *pCbs )
+uint32_t HCI_ControllerToHostRegisterCb( const hciControllerToHostCallbacks_t *pCbs )
 {
-  uint32 status = FAILURE;
+  uint32_t status = FAILURE;
 
   if ( NULL != pCbs )
   {
@@ -235,12 +245,12 @@ void HCI_SendEventToHost( uint8 *pEvt )
   {
     if (( NULL != pHciC2HCbs ) && ( NULL != pHciC2HCbs->send ))
     {
-        hciPacket_t *pMsg = (hciPacket_t *)(pEvt);
-        uint16 pktLen = hciGetPacketLen( pMsg );
+        hciPacket_t *pMsg = (hciPacket_t *)( pEvt );
+        uint16 pktLen = HCI_getPacketLen( pMsg );
 
         (void) pHciC2HCbs->send( pMsg->pData, pktLen );
 
-        if(pMsg->pData[0] == HCI_ACL_DATA_PACKET)
+        if( pMsg->pData[0] == (uint8) HCI_ACL_DATA_PACKET )
         {
           MAP_osal_bm_free( pMsg->pData );
           pMsg->pData = NULL;
@@ -942,9 +952,9 @@ void HCI_CS_ReadRemoteSupportedCapabilitiesCback(
     *pData++ = LO_UINT16(peerCapabilities->nadmRandomSeq);
     *pData++ = HI_UINT16(peerCapabilities->nadmRandomSeq);
     *pData++ = peerCapabilities->optionalCsSyncPhy;
-    *pData++ = LO_UINT16(
-      peerCapabilities->companionSignal | peerCapabilities->noFAE << 1 |
-      peerCapabilities->chSel3c << 2 | peerCapabilities->csBasedRanging << 3);
+    *pData++ = LO_UINT16( peerCapabilities->noFAE   << 1 |
+                          peerCapabilities->chSel3c << 2 |
+                          peerCapabilities->csBasedRanging << 3);
     *pData++ = HI_UINT16(0);
     *pData++ = LO_UINT16(peerCapabilities->tIp1Cap);
     *pData++ = HI_UINT16(peerCapabilities->tIp1Cap);
@@ -954,7 +964,8 @@ void HCI_CS_ReadRemoteSupportedCapabilitiesCback(
     *pData++ = HI_UINT16(peerCapabilities->tFcsCap);
     *pData++ = LO_UINT16(peerCapabilities->tPmCsap);
     *pData++ = HI_UINT16(peerCapabilities->tPmCsap);
-    *pData = peerCapabilities->tSwCap;
+    *pData++ = peerCapabilities->tSwCap;
+    *pData   = peerCapabilities->snrTxCap;
 
     // Send message
     HCI_SendEventToHost(pEvt);
@@ -1009,7 +1020,7 @@ void HCI_CS_ConfigCompleteCback(uint8 status, uint16 connHandle,
     *pData++ = csConfig->chSel;
     *pData++ = csConfig->ch3cShape;
     *pData++ = csConfig->ch3CJump;
-    *pData++ = csConfig->companionSignal;
+    *pData++ = CS_RFU;
     *pData++ = csConfig->tIP1;
     *pData++ = csConfig->tIP2;
     *pData++ = csConfig->tFCs;
@@ -1185,15 +1196,14 @@ void HCI_CS_SubeventResultCback(void* pRes, uint16 dataLength)
     // Pointer to data inside pEvt, that pointer point next slot to be filled
     uint8* pData;
 
-    pEvt =
-      hciAllocAndPrepHciLeEvtPkt(&pData, HCI_LE_CS_SUBEVENT_RESULT, dataLength);
+    pEvt = hciAllocAndPrepHciEvtPkt(&pData, HCI_LE_EVENT_CODE, dataLength);
 
     if (pEvt)
     {
       if (pData)
       {
         // Copy results into pData
-        MAP_osal_memcpy(pData--, pRes, dataLength);
+        MAP_osal_memcpy(pData, pRes, dataLength);
       }
 
       // send the message
@@ -1202,39 +1212,82 @@ void HCI_CS_SubeventResultCback(void* pRes, uint16 dataLength)
   }
 }
 
-extern void HCI_CS_SubeventResultContinueCback(void* hdr, void* data,
-                                               uint16 dataLength)
+/*******************************************************************************
+ * @fn          HCI_CS_SubeventResultContinueCback
+ *
+ * @brief       Subevent results continue callback
+ *
+ * input parameters
+ *
+ * @param       pHdr - pointer to hdr
+ * @param       pData - pointer to data
+ * @param       dataLength - length of data
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_SubeventResultContinueCback(void* pHdr, const void* pRes, uint16 dataLength)
 {
-  if (hdr && data)
+  if (pHdr && pRes)
   {
     uint8* pEvt;
-    // Pointer to data inside pEvt, that pointer point next slot to be filled
+    // Pointer to pRes inside pEvt, that pointer point next slot to be filled
     uint8* pData;
-    uint8* pHdr = (uint8*)hdr;
+    uint8* pHdr1 = (uint8*)pHdr;
 
-    pEvt = hciAllocAndPrepHciLeEvtPkt(
-      &pData, HCI_LE_CS_SUBEVENT_CONTINUE_RESULT, dataLength);
+    pEvt = hciAllocAndPrepHciEvtPkt(&pData, HCI_LE_EVENT_CODE, dataLength);
 
     // go a step back in pData
-    pData--;
     if (pEvt)
     {
-      if (pHdr)
-      {
-        /* Copy the header */
-        pData = MAP_osal_memcpy(pData, pHdr, CS_SUBEVENT_HDR_LEN);
-        /* Skip the irrelevant info and copy the relevant stuff */
-        pHdr += CS_SUBEVENT_HDR_LEN + CS_SUBEVENT_PROC_INFO_LEN;
-        pData = MAP_osal_memcpy(pData, pHdr, CS_SUBEVENT_CONT_IRR_INFO);
-        /* Copy the step results */
-        MAP_osal_memcpy(pData, data,
-                        dataLength - CS_SUBEVENT_HDR_LEN -
-                          CS_SUBEVENT_CONT_IRR_INFO);
-      }
+      /* Copy the header */
+      pData = MAP_osal_memcpy(pData, pHdr1, CS_SUBEVENT_HDR_LEN);
+      /* Skip the irrelevant info and copy the relevant stuff */
+      pHdr1 += CS_SUBEVENT_HDR_LEN + CS_SUBEVENT_PROC_INFO_LEN;
+      pData = MAP_osal_memcpy(pData, pHdr1, CS_SUBEVENT_CONT_IRR_INFO);
+      /* Copy the step results */
+      MAP_osal_memcpy(pData, pRes, (dataLength - CS_SUBEVENT_HDR_LEN - CS_SUBEVENT_CONT_IRR_INFO));
 
-      // send the message
+      // Send the message
       HCI_SendEventToHost(pEvt);
     }
+  }
+}
+
+/*******************************************************************************
+ * @fn          HCI_CS_TestEndCompleteCback
+ *
+ * @brief       CS Test Command Complete Callback
+ *
+ * input parameters
+ *
+ * @param       status - Test Command Status
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void HCI_CS_TestEndCompleteCback(uint8 status)
+{
+  uint8* pEvt;
+  // Pointer to data inside pEvt, that pointer point next slot to be filled
+  uint8* pData;
+
+  pEvt = hciAllocAndPrepHciLeEvtPkt( &pData,
+                                     HCI_LE_CS_TEST_END_COMPLETE_EVENT,
+                                     HCI_LE_CS_TEST_END_COMPLETE_EVENT_LEN);
+
+  if (pEvt)
+  {
+    *pData++ = status;
+
+    // Send the message
+    HCI_SendEventToHost(pEvt);
   }
 }
 // In the hci_event.c, there are additional implementations for the following functions.
@@ -2515,7 +2568,7 @@ void HCI_PeriodicAdvReportEvent( uint16 syncHandle, int8 txPower, int8 rssi,
     do
     {
       // Data length
-      dataLength = MIN( dataLen, HCI_PERIODIC_ADV_REPORT_MAX_DATA );
+      dataLength = Math_MIN( dataLen, HCI_PERIODIC_ADV_REPORT_MAX_DATA );
       dataLen -= dataLength;
       eventLength = HCI_PERIODIC_ADV_REPORT_EVENT_LEN + dataLength;
 
@@ -2587,1075 +2640,6 @@ void HCI_PeriodicAdvSyncLostEvent( uint16 syncHandle )
 }
 #endif // USE_PERIODIC_SCAN
 #endif //HOST_CONFIG
-
-#ifdef RTLS_CTE // Note: the follow events have duplicate implementation with/without host when CTE migrate to F3 needs to split it
-/*******************************************************************************
- * @fn          LL_SetCteSamples
- *
- * @brief       This function is used to truncate and copy CTE samples
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       sampleCount - number of samples
- * @param       sampleSlot - 1 us or 2 us
- * @param       sampleRate - 1Mhz to 4Mhz
- * @param       sampleSize - 8 bits or 16 bits
- * @param       sampleCtrl - default filtering or RAW_RF(no_filtering)
- * @param       samplesOffset - samples offset in source buffer
- * @param       src - source which keep the samples in 16 bits per I sample and
- *                    16 bits per Q sample (32 bits per sample)
- * @param       iqSamples - destination buffer which will keep the IQ samples
- *
- *              each destination buffer size should be (sizeof (int8) * sampleCount)
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      updated samples offset
- */
-uint16 LL_SetCteSamples( uint16 sampleCount, uint8 sampleSlot, uint8 sampleRate,
-                         uint8 sampleSize, uint8 sampleCtrl,
-                         uint16 samplesOffset, uint32 *src, int8 *iqSamples )
-{
-  int16 sample[2];  //divide the sample for I sample and Q sample
-  uint16 maxVal = 0;
-  int32 absValQ = 0;
-  int32 absValI = 0;
-  uint16 sampleNum;  // antenna sample number
-  uint16 sampleIdx;  // sample index in the src buffer
-  uint8 shift = 0;
-  uint8 firstSampleIndex;
-  uint8 firstRefSampleIndex;
-  uint8 iterate, j;
-
-  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  ///// RAW_RF mode - copy samples without filtering, sampleRate/sampleSize/slotDuration are forced to 4/2/1  /////
-  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  // handle RF_RAW mode
-  if ( sampleCtrl & CTE_SAMPLING_CONTROL_RF_RAW_NO_FILTERING )
-  {
-    int16 *pIQ = (int16*) iqSamples;
-
-    // go over the antenna samples (divide count by 2 to compensate for 16bit size)
-    for ( sampleNum = 0; sampleNum < sampleCount / 2; sampleNum++ )
-    {
-      // find sample index in src buffer according to the samples offset without skipping
-      sampleIdx = sampleNum + samplesOffset;
-
-      // find in which RAM the sample located and get it in 16 bits
-      *(uint32*) sample = src[sampleIdx];
-
-      pIQ[sampleNum * 2] = sample[1];
-      pIQ[sampleNum * 2 + 1] = sample[0];
-    }
-    // return updated samples offset
-    return (samplesOffset + sampleCount / 2);
-  }
-
-  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  ///// Not RAW mode - switching period/idle period samples are filtered out according to the BT5.1 Spec /////
-  ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  // normalize the number of samples
-  // each sample can consist of up to 4 samples and 2 byes size
-  // sample count should be aligned to sample rate and sample size
-  sampleCount /= (sampleRate * sampleSize);
-
-  //find the first sample index
-  if ( sampleRate == HCI_CTE_SAMPLE_RATE_4MHZ )
-  {
-    firstRefSampleIndex = HCI_CTE_FIRST_SAMPLE_IDX_REF_PERIOD_4MHZ;
-    firstSampleIndex =
-        (sampleSlot == LL_CTE_SAMPLE_SLOT_1US) ?
-        HCI_CTE_FIRST_SAMPLE_IDX_SLOT_1US_4MHZ :
-                                                 HCI_CTE_FIRST_SAMPLE_IDX_SLOT_2US_4MHZ;
-  }
-  else
-  {
-    firstRefSampleIndex = HCI_CTE_FIRST_SAMPLE_IDX_REF_PERIOD;
-    firstSampleIndex =
-        (sampleSlot == LL_CTE_SAMPLE_SLOT_1US) ?
-        HCI_CTE_FIRST_SAMPLE_IDX_SLOT_1US :
-                                                 HCI_CTE_FIRST_SAMPLE_IDX_SLOT_2US;
-  }
-
-  // in case sample size is 8 bits - execute the loop twice:
-  // 1) find the max value
-  // 2) normalize the samples and copy
-  // in case the sample size is 16 bits - run only the second iteration, no need to normalize (RF samples are represented as 16 bits)
-  for ( iterate = (sampleSize - 1); iterate < 2; iterate++ )
-  {
-    // go over the antenna samples
-    for ( sampleNum = 0; sampleNum < sampleCount; sampleNum++ )
-    {
-      // find sample index in src buffer according to the samples offset
-      if ( (sampleNum + samplesOffset) < HCI_CTE_SAMPLES_COUNT_REF_PERIOD )
-      {
-        sampleIdx = ((sampleNum + samplesOffset)
-            * HCI_CTE_SAMPLE_JUMP_REF_PERIOD) + firstRefSampleIndex;
-      }
-      else
-      {
-        if ( sampleSlot == LL_CTE_SAMPLE_SLOT_1US )
-        {
-          sampleIdx =
-              (((sampleNum + samplesOffset) - HCI_CTE_SAMPLES_COUNT_REF_PERIOD)
-                  * HCI_CTE_SAMPLE_JUMP_SLOT_1US) + firstSampleIndex;
-        }
-        else
-        {
-          sampleIdx =
-              (((sampleNum + samplesOffset) - HCI_CTE_SAMPLES_COUNT_REF_PERIOD)
-                  * HCI_CTE_SAMPLE_JUMP_SLOT_2US) + firstSampleIndex;
-        }
-      }
-
-      // each antenna sample can consist of up to 4 samples - depend on the sample rate
-      for ( j = 0; j < sampleRate; j++ )
-      {
-        // find in which RAM the sample located and get it in 16 bits
-        *(uint32*) sample = src[sampleIdx + j];
-
-        // first iteration - find the max value
-        // relevant only when sample size is 8 bits
-        if ( iterate == 0 )
-        {
-          // Get abs of Q
-          absValQ = sample[0];
-
-          if ( absValQ < 0 )
-          {
-            absValQ = (-1) * absValQ;
-          }
-
-          // Get abs of I
-          absValI = sample[1];
-
-          if ( absValI < 0 )
-          {
-            absValI = (-1) * absValI;
-          }
-
-          // Check if abs of I is bigger than the max value we found
-          if ( absValI > maxVal )
-          {
-            maxVal = absValI;
-          }
-
-          // Check if abs of Q is bigger than the max value we found
-          if ( absValQ > maxVal )
-          {
-            maxVal = absValQ;
-          }
-        }
-        else // normalize the sample and copy it
-        {
-          // case of 8 bits sample size as 5.1 spec definition
-          if ( sampleSize == LL_CTE_SAMPLE_SIZE_8BITS )
-          {
-            // copy the Q sample
-            iqSamples[(sampleNum * sampleRate * 2) + j + 1] = (int8) (sample[0]
-                / (1 << shift));
-
-            // copy the I sample
-            iqSamples[(sampleNum * sampleRate * 2) + j] = (int8) (sample[1]
-                / (1 << shift));
-          }
-          else // case of 16 bits sample size as defined by VS command
-          {
-            int16 *pIQ = (int16*) iqSamples;
-
-            // copy Q sample
-            pIQ[(sampleNum * sampleRate * 2) + (2 * j) + 1] = sample[0];
-
-            // copy I sample
-            pIQ[(sampleNum * sampleRate * 2) + (2 * j)] = sample[1];
-          }
-        }
-      }
-    }
-
-    // first iteration - find the shift value
-    // relevant only when sample size is 8 bits
-    if ( iterate == 0 )
-    {
-      // find shifting value according to the max value sample
-      if ( maxVal < 0x80 )
-      {
-        shift = 0;
-      }
-      else
-      {
-        shift = 8;
-        maxVal >>= 8;
-        if ( maxVal < 0x08 )
-        {
-          shift -= 4;
-        }
-        else
-        {
-          maxVal >>= 4;
-        }
-        if ( maxVal < 0x02 )
-        {
-          shift -= 2;
-        }
-        else
-        {
-          maxVal >>= 2;
-        }
-        if ( maxVal < 0x01 )
-        {
-          shift -= 1;
-        }
-      }
-    }
-  }
-  // return updated samples offset
-  return (samplesOffset + sampleCount);
-}
-
-/*******************************************************************************
- * @fn          HCI_ConnectionIqReportEvent Callback
- *
- * @brief       This function is used to generate a I/Q CTE report event
- *              after receiving a CTE response control packet with CTE.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle    - Connection handle.
- * @param       phy           - current phy 1M or 2M
- * @param       dataChIndex   - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       connEvent     - current connection event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void HCI_ConnectionIqReportEvent( uint16 connHandle, uint8 phy,
-                                  uint8 dataChIndex, uint16 rssi,
-                                  uint8 rssiAntenna, uint8 cteType,
-                                  uint8 slotDuration, uint8 status,
-                                  uint16 connEvent, uint8 sampleCount,
-                                  uint32 *cteData )
-{
-  // check if LE Meta-Events are enabled and this event is enabled
-  if ( HCI_CheckEventMaskLe( LE_EVT_CONNECTION_IQ_REPORT_BIT ) )
-  {
-    // case the source buffers are NULLs - set the samples count to proper value
-    if ( cteData == NULL )
-    {
-      sampleCount = 0;
-    }
-
-    // check if this is for the Host
-    if ( hciGapTaskID != 0 )
-    {
-      hciEvt_BLECteConnectionIqReport_t *msg;
-
-      msg = (hciEvt_BLECteConnectionIqReport_t*) MAP_osal_msg_allocate(
-          sizeof(hciEvt_BLECteConnectionIqReport_t) + (2 * sampleCount) );
-
-      if ( msg )
-      {
-        // message header
-        msg->hdr.event = HCI_GAP_EVENT_EVENT;
-        msg->hdr.status = HCI_LE_EVENT_CODE; // use status field to pass the HCI Event code
-
-        // event packet
-        msg->BLEEventCode = HCI_BLE_CONNECTION_IQ_REPORT_EVENT;
-        msg->connHandle = connHandle;
-        msg->phy = phy;
-        msg->dataChIndex = dataChIndex;
-        msg->rssi = rssi;
-        msg->rssiAntenna = rssiAntenna;
-        msg->cteType = cteType;
-        msg->slotDuration = slotDuration;
-        msg->status = status;
-        msg->connEvent = connEvent;
-        msg->sampleCount = sampleCount;
-        msg->iqSamples = (int8*) ((uint8*) msg
-            + sizeof(hciEvt_BLECteConnectionIqReport_t));
-
-        // copy IQ samples
-        LL_SetCteSamples( sampleCount, slotDuration,
-        HCI_CTE_SAMPLE_RATE_1MHZ,
-                          LL_CTE_SAMPLE_SIZE_8BITS, 0, 0, cteData,
-                          msg->iqSamples );
-
-        // send the message
-        (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-      }
-    }
-    else
-    {
-      hciPacket_t *msg;
-      uint8 dataLength;
-      uint8 totalLength;
-
-      // data length includes I samples and Q samples
-      dataLength = HCI_CONNECTION_IQ_REPORT_EVENT_LEN + (sampleCount * 2);
-
-      // OSAL message header + HCI event header + data
-      totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-      msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-      if ( msg )
-      {
-        // message type, length
-        msg->hdr.event = HCI_CTRL_TO_HOST_EVENT;
-        msg->hdr.status = 0xFF;
-
-        // create message
-        msg->pData = (uint8*) (msg + 1);
-        msg->pData[0] = HCI_EVENT_PACKET;
-        msg->pData[1] = HCI_LE_EVENT_CODE;
-        msg->pData[2] = dataLength;
-
-        // populate event
-        msg->pData[3] = HCI_BLE_CONNECTION_IQ_REPORT_EVENT;        // event code
-        msg->pData[4] = LO_UINT16( connHandle );      // connection handle (LSB)
-        msg->pData[5] = HI_UINT16( connHandle );      // connection handle (MSB)
-        msg->pData[6] = phy;                                      // current phy
-        msg->pData[7] = dataChIndex;                    // index of data channel
-        msg->pData[8] = LO_UINT16( rssi );                         // rssi (LSB)
-        msg->pData[9] = HI_UINT16( rssi );                         // rssi (MSB)
-        msg->pData[10] = rssiAntenna;                              // antenna ID
-        msg->pData[11] = cteType;                                   // cte type
-        msg->pData[12] = slotDuration;               // sampling slot 1us or 2us
-        msg->pData[13] = status;                                // packet status
-        msg->pData[14] = LO_UINT16( connEvent );       // connection event (LSB)
-        msg->pData[15] = HI_UINT16( connEvent );       // connection event (MSB)
-        msg->pData[16] = sampleCount;                       // number of samples
-
-        // copy IQ samples
-        LL_SetCteSamples(
-            sampleCount,
-            slotDuration,
-            HCI_CTE_SAMPLE_RATE_1MHZ,
-            LL_CTE_SAMPLE_SIZE_8BITS,
-            0,
-            0,
-            cteData,
-            (int8*) &(msg->pData[HCI_EVENT_MIN_LENGTH
-                + HCI_CONNECTION_IQ_REPORT_EVENT_LEN]) );
-
-        // send the message
-        (void) MAP_osal_msg_send( hciTaskID, (uint8*) msg );
-      }
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          HCI_CteRequestFailedEvent Callback
- *
- * @brief       This function is used to generate a I/Q CTE report event
- *              after receiving a CTE response control packet with CTE data.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       status        - Status of IQ report.
- * @param       connHandle    - Connection handle.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void HCI_CteRequestFailedEvent( uint8 status, uint16 connHandle )
-{
-  // check if LE Meta-Events are enabled and this event is enabled
-  if ( HCI_CheckEventMaskLe( LE_EVT_CTE_REQUEST_FAILED_BIT ) )
-  {
-    // check if this is for the Host
-    if ( hciGapTaskID != 0 )
-    {
-      hciEvt_BLECteRequestFailed_t *msg =
-          (hciEvt_BLECteRequestFailed_t*) MAP_osal_msg_allocate(
-              sizeof(hciEvt_BLECteRequestFailed_t) );
-
-      if ( msg )
-      {
-        // message header
-        msg->hdr.event = HCI_GAP_EVENT_EVENT;
-        msg->hdr.status = HCI_LE_EVENT_CODE; // use status field to pass the HCI Event code
-
-        // event packet
-        msg->BLEEventCode = HCI_BLE_CTE_REQUEST_FAILED_EVENT;
-        msg->status = status;
-        msg->connHandle = connHandle;
-
-        // send the message
-        (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-      }
-    }
-    else
-    {
-      hciPacket_t *msg;
-      uint8 dataLength;
-      uint8 totalLength;
-
-      // data length
-      dataLength = HCI_CTE_REQUEST_FAILED_EVENT_LEN;
-
-      // OSAL message header + HCI event header + data
-      totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-      msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-      if ( msg )
-      {
-        uint8 *pBuf;
-
-        // message type
-        msg->hdr.event = HCI_CTRL_TO_HOST_EVENT;
-        msg->hdr.status = 0xFF;
-
-        // point to the byte following the hciPacket_t structure
-        msg->pData = (uint8*) (msg + 1);
-        pBuf = msg->pData;
-
-        *pBuf++ = HCI_EVENT_PACKET;
-        *pBuf++ = HCI_LE_EVENT_CODE;
-        *pBuf++ = dataLength;
-
-        // populate event
-        *pBuf++ = HCI_BLE_CTE_REQUEST_FAILED_EVENT;   // event code
-        *pBuf++ = status;
-        *pBuf++ = LO_UINT16( connHandle );            // connection handle (LSB)
-        *pBuf++ = HI_UINT16( connHandle );            // connection handle (MSB)
-
-        // send the message
-        (void) MAP_osal_msg_send( hciTaskID, (uint8*) msg );
-      }
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          HCI_ExtConnectionIqReportEvent Callback
- *
- * @brief       This function is used to generate an Extended I/Q CTE (Oversampling)
- *              report event after receiving packet with CTE.
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connHandle    - Connection handle.
- * @param       phy           - current phy 1M or 2M
- * @param       dataChIndex   - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       connEvent     - current connection event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       sampleRate    - number of samples per 1us represent CTE accuracy
- *                              range : 1 - least accuracy (as in 5.1 spec) to 4 - most accuracy
- * @param       sampleSize    - sample size represent CTE accuracy
- *                              range : 1 - 8 bit (as in 5.1 spec) or 2 - 16 bits (most accurate)
- * @param       sampleCtrl    - 1 : RF RAW mode 2: Filtered mode (switching period omitted)
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void HCI_ExtConnectionIqReportEvent( uint16 connHandle, uint8 phy,
-                                     uint8 dataChIndex, uint16 rssi,
-                                     uint8 rssiAntenna, uint8 cteType,
-                                     uint8 slotDuration, uint8 status,
-                                     uint16 connEvent, uint16 sampleCount,
-                                     uint8 sampleRate, uint8 sampleSize,
-                                     uint8 sampleCtrl, uint32 *cteData )
-{
-  uint8 numEvents = 0;
-  uint8 samplesPerEvent;
-  uint16 samplesOffset = 0;
-  uint8 i;
-  uint16 totalDataLen;
-
-  // check if LE Meta-Events are enabled and this event is enabled
-  if ( HCI_CheckEventMaskLe( LE_EVT_CONNECTION_IQ_REPORT_BIT ) )
-  {
-    // case the source buffers are NULLs - set the samples count to proper value
-    if ( cteData == NULL )
-    {
-      sampleCount = 0;
-    }
-
-    // set the total samples includes over sampling (in case the host enable it by VS command)
-    sampleCount *= (sampleRate * sampleSize);
-
-    // set the number of host event to send
-    numEvents += ((sampleCount / HCI_CTE_MAX_SAMPLES_PER_EVENT)
-        + (((sampleCount % HCI_CTE_MAX_SAMPLES_PER_EVENT) != 0) ? 1 : 0));
-    totalDataLen = sampleCount;
-
-    // check if this is for the Host
-    if ( hciGapTaskID != 0 )
-    {
-      hciEvt_BLEExtCteConnectionIqReport_t *msg;
-
-      // compose each event
-      for ( i = 0; i < numEvents; i++ )
-      {
-        // set number of sample in current event
-        // should be aligned to sample rate and size
-        samplesPerEvent =
-            (sampleCount < HCI_CTE_MAX_SAMPLES_PER_EVENT) ? sampleCount :
-                                                            HCI_CTE_MAX_SAMPLES_PER_EVENT;
-
-        // update the total samples value
-        sampleCount -= samplesPerEvent;
-
-        msg = (hciEvt_BLEExtCteConnectionIqReport_t*) MAP_osal_msg_allocate(
-            sizeof(hciEvt_BLEExtCteConnectionIqReport_t)
-                + (2 * samplesPerEvent) );
-
-        if ( msg )
-        {
-          // message header
-          msg->hdr.event = HCI_GAP_EVENT_EVENT;
-          msg->hdr.status = HCI_LE_EVENT_CODE; // use status field to pass the HCI Event code
-
-          // event packet
-          msg->BLEEventCode = HCI_BLE_EXT_CONNECTION_IQ_REPORT_EVENT;
-          msg->totalDataLen = totalDataLen;
-          msg->eventIndex = i;
-          msg->connHandle = connHandle;
-          msg->phy = phy;
-          msg->dataChIndex = dataChIndex;
-          msg->rssi = rssi;
-          msg->rssiAntenna = rssiAntenna;
-          msg->cteType = cteType;
-          msg->slotDuration = slotDuration;
-          msg->status = status;
-          msg->connEvent = connEvent;
-          msg->dataLen = samplesPerEvent;
-          msg->sampleRate = sampleRate;
-          msg->sampleSize = sampleSize;
-          msg->sampleCtrl = sampleCtrl;
-          msg->iqSamples = (int8*) ((uint8*) msg
-              + sizeof(hciEvt_BLEExtCteConnectionIqReport_t));
-
-          // copy IQ samples
-          samplesOffset = LL_SetCteSamples( samplesPerEvent, slotDuration,
-                                            sampleRate, sampleSize, sampleCtrl,
-                                            samplesOffset, cteData,
-                                            msg->iqSamples );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-        }
-      }
-    }
-    else
-    {
-      hciPacket_t *msg;
-      uint8 dataLength;
-      uint8 totalLength;
-
-      // compose each event
-      for ( i = 0; i < numEvents; i++ )
-      {
-        // set number of sample in current event
-        // should be aligned to sample rate
-        samplesPerEvent =
-            (sampleCount < HCI_CTE_MAX_SAMPLES_PER_EVENT) ? sampleCount :
-                                                            HCI_CTE_MAX_SAMPLES_PER_EVENT;
-
-        // update the total samples value
-        sampleCount -= samplesPerEvent;
-
-        // data length includes I samples and Q samples
-        dataLength = HCI_EXT_CONNECTION_IQ_REPORT_EVENT_LEN
-            + (samplesPerEvent * 2);
-
-        // OSAL message header + HCI event header + data
-        totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-        msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-        if ( msg )
-        {
-          // message type, length
-          msg->hdr.event = HCI_CTRL_TO_HOST_EVENT;
-          msg->hdr.status = 0xFF;
-
-          // create message
-          msg->pData = (uint8*) (msg + 1);
-          msg->pData[0] = HCI_EVENT_PACKET;
-          msg->pData[1] = HCI_LE_EVENT_CODE;
-          msg->pData[2] = dataLength;
-
-          // populate event
-          msg->pData[3] = HCI_BLE_EXT_CONNECTION_IQ_REPORT_EVENT;  // event code
-          msg->pData[4] = LO_UINT16( totalDataLen ); // total samples data length (LSB)
-          msg->pData[5] = HI_UINT16( totalDataLen ); // total samples data length (MSB)
-          msg->pData[6] = i;                                     // event number
-          msg->pData[7] = LO_UINT16( connHandle );    // connection handle (LSB)
-          msg->pData[8] = HI_UINT16( connHandle );    // connection handle (MSB)
-          msg->pData[9] = phy;                                    // current phy
-          msg->pData[10] = dataChIndex;                 // index of data channel
-          msg->pData[11] = LO_UINT16( rssi );                      // rssi (LSB)
-          msg->pData[12] = HI_UINT16( rssi );                      // rssi (MSB)
-          msg->pData[13] = rssiAntenna;                            // antenna ID
-          msg->pData[14] = cteType;                                  // cte type
-          msg->pData[15] = slotDuration;             // sampling slot 1us or 2us
-          msg->pData[16] = status;                              // packet status
-          msg->pData[17] = LO_UINT16( connEvent );     // connection event (LSB)
-          msg->pData[18] = HI_UINT16( connEvent );     // connection event (MSB)
-          msg->pData[19] = samplesPerEvent;                 // number of samples
-          msg->pData[20] = sampleRate;                            // sample rate
-          msg->pData[21] = sampleSize;                            // sample size
-          msg->pData[22] = sampleCtrl;                   // sample control flags
-
-          // copy IQ samples
-          samplesOffset = LL_SetCteSamples(
-              samplesPerEvent,
-              slotDuration,
-              sampleRate,
-              sampleSize,
-              sampleCtrl,
-              samplesOffset,
-              cteData,
-              (int8*) &(msg->pData[HCI_EVENT_MIN_LENGTH
-                  + HCI_EXT_CONNECTION_IQ_REPORT_EVENT_LEN]) );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciTaskID, (uint8*) msg );
-        }
-      }
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          HCI_ConnectionlessIqReportEvent Callback
- *
- * @brief       This function is used to generate a I/Q CTE report event
- *              after receiving advertise or generic rx packet with CTE.
- *
- * input parameters
- *
- * @param       syncHandle    - periodic advertisment sync handle.
- * @param       channelIndex  - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       eventCounter  - current periodic adv event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- *                              range : bit0=0 - Default filtering, bit0=1 - RAW_RF(no filtering), , bit1..7=0 - spare
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void HCI_ConnectionlessIqReportEvent( uint16 syncHandle, uint8 channelIndex,
-                                      uint16 rssi, uint8 rssiAntenna,
-                                      uint8 cteType, uint8 slotDuration,
-                                      uint8 status, uint16 eventCounter,
-                                      uint8 sampleCount, uint32 *cteData )
-{
-  // check if LE Meta-Events are enabled and this event is enabled
-  if ( HCI_CheckEventMaskLe( LE_EVT_CONNECTIONLESS_IQ_REPORT_BIT ) )
-  {
-    // case the main source buffer is NULL - do not send the report
-    if ( cteData == NULL )
-    {
-      return;
-    }
-
-    // check if this is for the Host
-    if ( hciGapTaskID != 0 )
-    {
-      if ( llCteTest.testMode == TRUE )
-      {
-        // this section need to be used when the event destination is host_test
-        hciPacket_t *msg;
-        uint8 dataLength;
-        uint8 totalLength;
-
-        // data length includes I samples and Q samples
-        dataLength = HCI_CONNECTIONLESS_IQ_REPORT_EVENT_LEN + (sampleCount * 2);
-
-        // OSAL message header + HCI event header + data
-        totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-        msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-        if ( msg )
-        {
-          // message type, length
-          msg->hdr.event = HCI_GAP_EVENT_EVENT;
-          msg->hdr.status = HCI_TEST_EVENT_CODE;
-
-          // create message
-          msg->pData = (uint8*) (msg + 1);
-
-          // populate event
-          msg->pData[0] = HCI_BLE_CONNECTIONLESS_IQ_REPORT_EVENT;  // event code
-          msg->pData[1] = LO_UINT16( syncHandle ); // periodic adv sync handle (LSB)
-          msg->pData[2] = HI_UINT16( syncHandle ); // periodic adv sync handle (MSB)
-          msg->pData[3] = channelIndex;                 // index of data channel
-          msg->pData[4] = LO_UINT16( rssi );                       // rssi (LSB)
-          msg->pData[5] = HI_UINT16( rssi );                       // rssi (MSB)
-          msg->pData[6] = rssiAntenna;                             // antenna ID
-          msg->pData[7] = cteType;                                  // cte type
-          msg->pData[8] = slotDuration;              // sampling slot 1us or 2us
-          msg->pData[9] = status;                               // packet status
-          msg->pData[10] = LO_UINT16( eventCounter ); // periodic adv event (LSB)
-          msg->pData[11] = HI_UINT16( eventCounter ); // periodic adv event (MSB)
-          msg->pData[12] = sampleCount;                     // number of samples
-
-          // copy IQ samples
-          LL_SetCteSamples(
-              sampleCount, slotDuration,
-              HCI_CTE_SAMPLE_RATE_1MHZ,
-              LL_CTE_SAMPLE_SIZE_8BITS, 0, 0, cteData,
-              (int8*) &(msg->pData[HCI_CONNECTIONLESS_IQ_REPORT_EVENT_LEN]) );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-        }
-      }
-      else
-      {                        // this section is used to send event to gap_task
-
-        hciEvt_BLECteConnectionlessIqReport_t *msg;
-
-        msg = (hciEvt_BLECteConnectionlessIqReport_t*) MAP_osal_msg_allocate(
-            sizeof(hciEvt_BLECteConnectionlessIqReport_t) + (2 * sampleCount) );
-
-        if ( msg )
-        {
-          // message header
-          msg->hdr.event = HCI_GAP_EVENT_EVENT;
-          msg->hdr.status = HCI_LE_EVENT_CODE; // use status field to pass the HCI Event code
-
-          // event packet
-          msg->BLEEventCode = HCI_BLE_CONNECTIONLESS_IQ_REPORT_EVENT;
-          msg->syncHandle = syncHandle;
-          msg->channelIndex = channelIndex;
-          msg->rssi = rssi;
-          msg->rssiAntenna = rssiAntenna;
-          msg->cteType = cteType;
-          msg->slotDuration = slotDuration;
-          msg->status = status;
-          msg->eventCounter = eventCounter;
-          msg->sampleCount = sampleCount;
-          msg->iqSamples = (int8*) ((uint8*) msg
-              + sizeof(hciEvt_BLECteConnectionlessIqReport_t));
-
-          // copy IQ samples
-          LL_SetCteSamples( sampleCount, slotDuration,
-          HCI_CTE_SAMPLE_RATE_1MHZ,
-                            LL_CTE_SAMPLE_SIZE_8BITS, 0, 0, cteData,
-                            msg->iqSamples );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-
-        }
-      }
-    }
-    else
-    {
-      hciPacket_t *msg;
-      uint8 dataLength;
-      uint8 totalLength;
-
-      // data length includes I samples and Q samples
-      dataLength = HCI_CONNECTIONLESS_IQ_REPORT_EVENT_LEN + (sampleCount * 2);
-
-      // OSAL message header + HCI event header + data
-      totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-      msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-      if ( msg )
-      {
-        // message type, length
-        msg->hdr.event = HCI_CTRL_TO_HOST_EVENT;
-        msg->hdr.status = 0xFF;
-
-        // create message
-        msg->pData = (uint8*) (msg + 1);
-        msg->pData[0] = HCI_EVENT_PACKET;
-        msg->pData[1] = HCI_LE_EVENT_CODE;
-        msg->pData[2] = dataLength;
-
-        // populate event
-        msg->pData[3] = HCI_BLE_CONNECTIONLESS_IQ_REPORT_EVENT;    // event code
-        msg->pData[4] = LO_UINT16( syncHandle ); // periodic adv sync handle (LSB)
-        msg->pData[5] = HI_UINT16( syncHandle ); // periodic adv sync handle (MSB)
-        msg->pData[6] = channelIndex;                   // index of data channel
-        msg->pData[7] = LO_UINT16( rssi );                         // rssi (LSB)
-        msg->pData[8] = HI_UINT16( rssi );                         // rssi (MSB)
-        msg->pData[9] = rssiAntenna;                               // antenna ID
-        msg->pData[10] = cteType;                                   // cte type
-        msg->pData[11] = slotDuration;               // sampling slot 1us or 2us
-        msg->pData[12] = status;                                // packet status
-        msg->pData[13] = LO_UINT16( eventCounter );  // periodic adv event (LSB)
-        msg->pData[14] = HI_UINT16( eventCounter );  // periodic adv event (MSB)
-        msg->pData[15] = sampleCount;                       // number of samples
-
-        // copy IQ samples
-        LL_SetCteSamples(
-            sampleCount,
-            slotDuration,
-            HCI_CTE_SAMPLE_RATE_1MHZ,
-            LL_CTE_SAMPLE_SIZE_8BITS,
-            0,
-            0,
-            cteData,
-            (int8*) &(msg->pData[HCI_EVENT_MIN_LENGTH
-                + HCI_CONNECTIONLESS_IQ_REPORT_EVENT_LEN]) );
-
-        // send the message
-        (void) MAP_osal_msg_send( hciTaskID, (uint8*) msg );
-      }
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          HCI_ExtConnectionlessIqReportEvent Callback
- *
- * @brief       This function is used to generate an Extended I/Q CTE (Oversampling)
- *              report event after receiving periodic advertise packet with CTE.
- *
- * input parameters
- *
- * @param       syncHandle    - periodic advertisment sync handle.
- * @param       channelIndex  - index of the data channel
- * @param       rssi          - RSSI value of the packet
- * @param       rssiAntenna   - ID of the antenna on which the RSSI was measured
- * @param       cteType       - CTE type (0-AoA, 1-AoD with 1us, 2-AoD with 2us)
- * @param       slotDuration  - Switching and sampling slots (1 - 1us, 2 - 2us)
- * @param       status        - packet status:
- *                              0 - CRC was correct
- *                              1 - CRC was incorrect
- * @param       eventCounter  - current periodic adv event counter
- * @param       sampleCount   - number of samples including the 8 reference period
- * @param       sampleRate    - number of samples per 1us represent CTE accuracy
- *                              range : 1 - least accuracy (as in 5.1 spec) to 4 - most accuracy
- * @param       sampleSize    - sample size represent CTE accuracy
- *                              range : 1 - 8 bit (as in 5.1 spec) or 2 - 16 bits (most accurate)
- * @param       sampleCtrl    - sample control flags
- *                              range : bit0=0 - Default filtering, bit0=1 - RAW_RF(no filtering), , bit1..7=0 - spare
- * @param       cteData       - RF buffer which hold the samples
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void HCI_ExtConnectionlessIqReportEvent( uint16 syncHandle, uint8 channelIndex,
-                                         uint16 rssi, uint8 rssiAntenna,
-                                         uint8 cteType, uint8 slotDuration,
-                                         uint8 status, uint16 eventCounter,
-                                         uint16 sampleCount, uint8 sampleRate,
-                                         uint8 sampleSize, uint8 sampleCtrl,
-                                         uint32 *cteData )
-{
-  uint8 numEvents = 0;
-  uint8 samplesPerEvent;
-  uint16 samplesOffset = 0;
-  uint8 i;
-  uint16 totalDataLen;
-
-  // check if LE Meta-Events are enabled and this event is enabled
-  // Note: the bit number is the same as Connectionless Iq Report Event bit
-  if ( HCI_CheckEventMaskLe( LE_EVT_CONNECTIONLESS_IQ_REPORT_BIT ) )
-  {
-    // case the main source buffer is NULL - do not send the report
-    if ( cteData == NULL )
-    {
-      return;
-    }
-    // set the total samples includes over sampling (in case the host enable it by VS command)
-    sampleCount *= (sampleRate * sampleSize);
-
-    // set the number of host event to send
-    numEvents += ((sampleCount / HCI_CTE_MAX_SAMPLES_PER_EVENT)
-        + (((sampleCount % HCI_CTE_MAX_SAMPLES_PER_EVENT) != 0) ? 1 : 0));
-    totalDataLen = sampleCount;
-
-    // check if this is for the Host
-    if ( hciGapTaskID != 0 )
-    {
-      hciEvt_BLEExtCteConnectionlessIqReport_t *msg;
-
-      // compose each event
-      for ( i = 0; i < numEvents; i++ )
-      {
-        // set number of sample in current event
-        // should be aligned to sample rate and size
-        samplesPerEvent =
-            (sampleCount < HCI_CTE_MAX_SAMPLES_PER_EVENT) ? sampleCount :
-                                                            HCI_CTE_MAX_SAMPLES_PER_EVENT;
-
-        // update the total samples value
-        sampleCount -= samplesPerEvent;
-
-        msg = (hciEvt_BLEExtCteConnectionlessIqReport_t*) MAP_osal_msg_allocate(
-            sizeof(hciEvt_BLEExtCteConnectionlessIqReport_t)
-                + (2 * samplesPerEvent) );
-
-        if ( msg )
-        {
-          // message header
-          msg->hdr.event = HCI_GAP_EVENT_EVENT;
-          msg->hdr.status = HCI_LE_EVENT_CODE; // use status field to pass the HCI Event code
-
-          // event packet
-          msg->BLEEventCode = HCI_BLE_EXT_CONNECTIONLESS_IQ_REPORT_EVENT;
-          msg->totalDataLen = totalDataLen;
-          msg->eventIndex = i;
-          msg->syncHandle = syncHandle;
-          msg->channelIndex = channelIndex;
-          msg->rssi = rssi;
-          msg->rssiAntenna = rssiAntenna;
-          msg->cteType = cteType;
-          msg->slotDuration = slotDuration;
-          msg->status = status;
-          msg->eventCounter = eventCounter;
-          msg->dataLen = samplesPerEvent;
-          msg->sampleRate = sampleRate;
-          msg->sampleSize = sampleSize;
-          msg->sampleCtrl = sampleCtrl;
-          msg->iqSamples = (int8*) ((uint8*) msg
-              + sizeof(hciEvt_BLEExtCteConnectionlessIqReport_t));
-
-          // copy IQ samples
-          samplesOffset = LL_SetCteSamples( samplesPerEvent, slotDuration,
-                                            sampleRate, sampleSize, sampleCtrl,
-                                            samplesOffset, cteData,
-                                            msg->iqSamples );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciGapTaskID, (uint8*) msg );
-        }
-      }
-    }
-    else
-    {
-      hciPacket_t *msg;
-      uint8 dataLength;
-      uint8 totalLength;
-
-      // compose each event
-      for ( i = 0; i < numEvents; i++ )
-      {
-        // set number of sample in current event
-        // should be aligned to sample rate
-        samplesPerEvent =
-            (sampleCount < HCI_CTE_MAX_SAMPLES_PER_EVENT) ? sampleCount :
-                                                            HCI_CTE_MAX_SAMPLES_PER_EVENT;
-
-        // update the total samples value
-        sampleCount -= samplesPerEvent;
-
-        // data length includes I samples and Q samples
-        dataLength = HCI_EXT_CONNECTIONLESS_IQ_REPORT_EVENT_LEN
-            + (samplesPerEvent * 2);
-
-        // OSAL message header + HCI event header + data
-        totalLength = sizeof(hciPacket_t) + HCI_EVENT_MIN_LENGTH + dataLength;
-
-        msg = (hciPacket_t*) MAP_osal_msg_allocate( totalLength );
-
-        if ( msg )
-        {
-          // message type, length
-          msg->hdr.event = HCI_CTRL_TO_HOST_EVENT;
-          msg->hdr.status = 0xFF;
-
-          // create message
-          msg->pData = (uint8*) (msg + 1);
-          msg->pData[0] = HCI_EVENT_PACKET;
-          msg->pData[1] = HCI_LE_EVENT_CODE;
-          msg->pData[2] = dataLength;
-
-          // populate event
-          msg->pData[3] = HCI_BLE_EXT_CONNECTIONLESS_IQ_REPORT_EVENT; // event code
-          msg->pData[4] = LO_UINT16( totalDataLen ); // total samples data length (LSB)
-          msg->pData[5] = HI_UINT16( totalDataLen ); // total samples data length (MSB)
-          msg->pData[6] = i;                                     // event number
-          msg->pData[7] = LO_UINT16( syncHandle );      // periodic handle (LSB)
-          msg->pData[8] = HI_UINT16( syncHandle );      // periodic handle (MSB)
-          msg->pData[9] = channelIndex;                 // index of data channel
-          msg->pData[10] = LO_UINT16( rssi );                      // rssi (LSB)
-          msg->pData[11] = HI_UINT16( rssi );                      // rssi (MSB)
-          msg->pData[12] = rssiAntenna;                            // antenna ID
-          msg->pData[13] = cteType;                                  // cte type
-          msg->pData[14] = slotDuration;             // sampling slot 1us or 2us
-          msg->pData[15] = status;                              // packet status
-          msg->pData[16] = LO_UINT16( eventCounter ); // periodic adv event counter (LSB)
-          msg->pData[17] = HI_UINT16( eventCounter ); // periodic adv event counter (MSB)
-          msg->pData[18] = samplesPerEvent;                 // number of samples
-          msg->pData[19] = sampleRate;                            // sample rate
-          msg->pData[20] = sampleSize;                            // sample size
-          msg->pData[21] = sampleCtrl;                   // sample control flags
-
-          // copy IQ samples
-          samplesOffset = LL_SetCteSamples(
-              samplesPerEvent,
-              slotDuration,
-              sampleRate,
-              sampleSize,
-              sampleCtrl,
-              samplesOffset,
-              cteData,
-              (int8*) &(msg->pData[HCI_EVENT_MIN_LENGTH
-                  + HCI_EXT_CONNECTIONLESS_IQ_REPORT_EVENT_LEN]) );
-
-          // send the message
-          (void) MAP_osal_msg_send( hciTaskID, (uint8*) msg );
-        }
-      }
-    }
-  }
-}
-#endif // RTLS_CTE
 
 /*
 ** Internal Functions
@@ -3913,7 +2897,7 @@ uint8* hciAllocAndPrepHciLeEvtPkt( uint8 **pData, uint8 hciLeEvtType,
 }
 
 /*******************************************************************************
- * @fn          hciGetPacketLen
+ * @fn          HCI_getPacketLen
  *
  * @brief       This function calculates and returns the length of the
  *              input HCI packet.
@@ -3929,7 +2913,7 @@ uint8* hciAllocAndPrepHciLeEvtPkt( uint8 **pData, uint8 hciLeEvtType,
  *
  * @return      pktLen - length of input packet or zero for invalid input.
  */
-uint16 hciGetPacketLen( hciPacket_t *pEvt )
+uint16 HCI_getPacketLen( hciPacket_t *pEvt )
 {
   uint16 pktLen = 0;
 
@@ -3940,6 +2924,16 @@ uint16 hciGetPacketLen( hciPacket_t *pEvt )
       case HCI_EVENT_PACKET:
       {
         pktLen = HCI_EVENT_MIN_LENGTH + pEvt->pData[2];
+        break;
+      }
+      case HCI_CMD_PACKET:
+      {
+        pktLen = HCI_CMD_MIN_LENGTH + pEvt->pData[3];
+        break;
+      }
+      case HCI_EXTENDED_CMD_PACKET:
+      {
+        pktLen = HCI_EXT_CMD_MIN_LENGTH + BUILD_UINT16( pEvt->pData[3], pEvt->pData[4] );
         break;
       }
       case HCI_EXTENDED_EVENT_PACKET:
@@ -4373,7 +3367,7 @@ uint8 hciCheckEventMask( uint8 eventBit, uint8 eventMaskTableIndex )
  */
 uint8 hciSetEventMask( uint8 *pEventMask, uint8 eventMaskTableIndex )
 {
-  uint8 status = FAILURE;
+  uint8 status = HCI_ERROR_CODE_INVALID_HCI_CMD_PARAMS;
 
   if ( pEventMask != NULL )
   {

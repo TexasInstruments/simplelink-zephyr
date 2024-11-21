@@ -52,6 +52,8 @@ struct csReq_t
     uint8   preferredPeerAntenna;
     uint8   phy;
     uint8   pwrDelta;
+    uint8   txSnrI:4;
+    uint8   txSnrR:4;
  } __attribute__((packed));
  // Typedef separated from packed struct due to MisraC
  typedef struct csReq_t csReq_t;
@@ -545,14 +547,14 @@ void llCsSetupCsRsp(uint8* data, uint16 connId);
 void llCsSetupCsInd(uint8* data, uint16 connId);
 
 /*******************************************************************************
- * @fn          llCsSetupTerminateInd
+ * @fn          llCsSetupTerminateReqOrRsp
  *
- * @brief       Setup the data for the LL_CS_TERMINATE_IND PKT
+ * @brief       Setup the data for the LL_CS_TERMINATE_REQ/RSP PKT
  *
  * input parameters
  *
- * @param       data - data pointer
  * @param       connId - connection identifier
+ * @param       data - data pointer
  *
  * @design      BLE_LOKI-506
  *
@@ -562,10 +564,10 @@ void llCsSetupCsInd(uint8* data, uint16 connId);
  *
  * @return      None
  */
-void llCsSetupTerminateInd(uint8* data, uint16 connId);
+void llCsSetupTerminateReqOrRsp(uint16 connId, uint8* data);
 
 /*******************************************************************************
- * @fn          llCsSetupTerminateInd
+ * @fn          llCsSetupChmInd
  *
  * @brief       Setup the data for the LL_CS_CHANNEL_IND PKT
  *
@@ -603,3 +605,39 @@ void llCsSetupChmInd(uint8* data, uint16 connId);
  */
 uint8 llCsSubeventsPerEvent(uint16 procedureLen, uint16 connInterval,
                             uint16 subEventInterval);
+
+/*******************************************************************************
+ * @fn          llCsCtrlProcessTerminateReq
+ *
+ * @brief       Process received LL_CTRL_CS_TERMINATE_REQ
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Identifier
+ * @param       pBuf   - Pointer to data buffer
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Status
+ */
+csStatus_e llCsCtrlProcessTerminateReq(uint16 connId, const uint8* pBuf);
+
+/*******************************************************************************
+ * @fn          llCsCtrlProcessTerminateRsp
+ *
+ * @brief       Process received LL_CTRL_CS_TERMINATE_RSP
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Id
+ * @param       pBuf   - Pointer to data buffer
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Status
+ */
+csStatus_e llCsCtrlProcessTerminateRsp(uint16 connId, const uint8* pBuf);

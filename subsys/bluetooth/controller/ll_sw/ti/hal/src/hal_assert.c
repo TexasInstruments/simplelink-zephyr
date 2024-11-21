@@ -22,17 +22,8 @@
 
 #include "hal_assert.h"
 #include "hal_types.h"
-#include "hal_board.h"
 #include "hal_defs.h"
 #include "onboard.h"
-
-#if (defined HAL_MCU_AVR)    || (defined HAL_MCU_CC2430) || \
-    (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533) || \
-    (defined HAL_MCU_MSP430)
-  /* for access to debug data */
-#include "mac_rx.h"
-#include "mac_tx.h"
-#endif
 
 /*******************************************************************************
  * MACROS
@@ -121,7 +112,6 @@ void halAssertInit( assertCback_t initAssertCback, uint8 initLegacyMode )
  *              depends on the defines:
  *
  *              HAL_ASSERT_RESET  - Reset the device.
- *              HAL_ASSERT_LIGHTS - Flash the LEDs.
  *              HAL_ASSERT_SPIN   - Spinlock.
  *              Otherwise:        - Just return.
  *
@@ -139,8 +129,6 @@ void halAssertHandler( void )
 {
 #if defined( HAL_ASSERT_RESET )
   SystemReset();
-#elif defined ( HAL_ASSERT_LIGHTS )
-  halAssertHazardLights();
 #elif defined( HAL_ASSERT_SPIN )
   halAssertSpinlock();
 #endif
@@ -223,222 +211,6 @@ void halAssertSpinlock( void )
 
   return;
 }
-
-#if !defined ASSERT_WHILE
-/*******************************************************************************
- * @fn          halAssertHazardLights API
- *
- * @brief       Blink LEDs to indicate an error.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void halAssertHazardLights(void)
-{
-  enum
-  {
-    DEBUG_DATA_RSTACK_HIGH_OFS,
-    DEBUG_DATA_RSTACK_LOW_OFS,
-    DEBUG_DATA_TX_ACTIVE_OFS,
-    DEBUG_DATA_RX_ACTIVE_OFS,
-
-#if (defined HAL_MCU_AVR) || (defined HAL_MCU_CC2430)
-    DEBUG_DATA_INT_MASK_OFS,
-#elif (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533)
-    DEBUG_DATA_INT_MASK0_OFS,
-    DEBUG_DATA_INT_MASK1_OFS,
-#endif
-
-    DEBUG_DATA_SIZE
-  };
-
-  uint8 buttonHeld;
-  uint8 debugData[DEBUG_DATA_SIZE];
-
-  /* disable all interrupts before anything else */
-  /*----------------------------------------------------------------------------
-   *  Initialize LEDs and turn them off.
-   */
-  HAL_BOARD_INIT();
-
-  HAL_TURN_OFF_LED1();
-  HAL_TURN_OFF_LED2();
-  HAL_TURN_OFF_LED3();
-  HAL_TURN_OFF_LED4();
-
-  /*----------------------------------------------------------------------------
-   *  Central infinite loop.
-   */
-  for (;;)
-  {
-    buttonHeld = 0;
-
-    /*--------------------------------------------------------------------------
-     *  "Hazard lights" loop.  A held keypress will exit this loop.
-     */
-    do
-    {
-      HAL_LED_BLINK_DELAY();
-
-      /* toggle LEDS, the #ifdefs are in case HAL has logically remapped
-         non-existent LEDs */
-#if (HAL_NUM_LEDS >= 1)
-      HAL_TOGGLE_LED1();
-#if (HAL_NUM_LEDS >= 2)
-      HAL_TOGGLE_LED2();
-#if (HAL_NUM_LEDS >= 3)
-      HAL_TOGGLE_LED3();
-#if (HAL_NUM_LEDS >= 4)
-      HAL_TOGGLE_LED4();
-#endif
-#endif
-#endif
-#endif
-
-      /* escape hatch to continue execution, set escape to '1' to
-         continue execution */
-      {
-        static uint8 escape = 0;
-        if (escape)
-        {
-          escape = 0;
-          return;
-        }
-      }
-
-      /* break out of loop if button is held long enough */
-      if (HAL_PUSH_BUTTON1())
-      {
-        buttonHeld++;
-      }
-      else
-      {
-        buttonHeld = 0;
-      }
-    }
-    while (buttonHeld != 10); /* loop until button is held specified # times */
-
-    /*--------------------------------------------------------------------------
-     *  Just exited from "hazard lights" loop.
-     */
-
-    /* turn off all LEDs */
-    HAL_TURN_OFF_LED1();
-    HAL_TURN_OFF_LED2();
-    HAL_TURN_OFF_LED3();
-    HAL_TURN_OFF_LED4();
-
-    /* wait for button release */
-    HAL_DEBOUNCE(!HAL_PUSH_BUTTON1());
-
-    /*--------------------------------------------------------------------------
-     *  Load debug data into memory.
-     */
-#ifdef HAL_MCU_AVR
-    {
-      uint8 * pStack;
-      pStack = (uint8 *) SP;
-      pStack++; /* point to return address on stack */
-      debugData[DEBUG_DATA_RSTACK_HIGH_OFS] = *pStack;
-      pStack++;
-      debugData[DEBUG_DATA_RSTACK_LOW_OFS] = *pStack;
-    }
-    debugData[DEBUG_DATA_INT_MASK_OFS] = EIMSK;
-#endif
-
-#if (defined HAL_MCU_CC2430)
-    debugData[DEBUG_DATA_INT_MASK_OFS] = RFIM;
-#elif (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533)
-    debugData[DEBUG_DATA_INT_MASK0_OFS] = RFIRQM0;
-    debugData[DEBUG_DATA_INT_MASK1_OFS] = RFIRQM1;
-#endif
-
-
-#if (defined HAL_MCU_AVR)    || (defined HAL_MCU_CC2430) || \
-    (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533) || \
-    (defined HAL_MCU_MSP430)
-    debugData[DEBUG_DATA_TX_ACTIVE_OFS] = macTxActive;
-    debugData[DEBUG_DATA_RX_ACTIVE_OFS] = macRxActive;
-#endif
-
-   /* initialize for data dump loop */
-    {
-      uint8 iBit;
-      uint8 iByte;
-
-      iBit  = 0;
-      iByte = 0;
-
-      /*------------------------------------------------------------------------
-       *  Data dump loop.  A button press cycles data bits to an LED.
-       */
-      while (iByte < DEBUG_DATA_SIZE)
-      {
-        while(!HAL_PUSH_BUTTON1())
-        {
-            // wait for key press
-        };
-
-        /* turn on all LEDs for first bit of byte, turn on three LEDs if
-          not first bit */
-        HAL_TURN_ON_LED1();
-        HAL_TURN_ON_LED2();
-        HAL_TURN_ON_LED3();
-        if (iBit == 0)
-        {
-          HAL_TURN_ON_LED4();
-        }
-        else
-        {
-          HAL_TURN_OFF_LED4();
-        }
-
-        /* wait for debounced key release */
-        HAL_DEBOUNCE(!HAL_PUSH_BUTTON1());
-
-        /* turn off all LEDs */
-        HAL_TURN_OFF_LED1();
-        HAL_TURN_OFF_LED2();
-        HAL_TURN_OFF_LED3();
-        HAL_TURN_OFF_LED4();
-
-        /* output value of data bit to LED1 */
-        if (debugData[iByte] & (1 << (7 - iBit)))
-        {
-          HAL_TURN_ON_LED1();
-        }
-        else
-        {
-          HAL_TURN_OFF_LED1();
-        }
-
-        /* advance to next bit */
-        iBit++;
-        if (iBit == 8)
-        {
-          iBit = 0;
-          iByte++;
-        }
-      }
-    }
-
-    /*
-     *  About to enter "hazard lights" loop again.  Turn off LED1 in case the
-     *  last bit displayed happened to be one.  This guarantees all LEDs are
-     *  off at the start of the flashing loop which uses a toggle operation to
-     *  change LED states.
-     */
-    HAL_TURN_OFF_LED1();
-  }
-}
-#endif // !ASSERT_WHILE
 
 /*******************************************************************************
 */

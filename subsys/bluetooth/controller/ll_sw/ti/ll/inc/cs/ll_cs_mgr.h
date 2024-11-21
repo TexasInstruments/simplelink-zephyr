@@ -24,6 +24,7 @@
  * INCLUDES
  */
 #include "ll_cs_common.h"
+#include "cs/ll_cs_test.h"
 
 /*******************************************************************************
  * MACROS
@@ -350,10 +351,14 @@ csStatus_e LL_CS_SetChannelClassification(uint8* pChannelClassification);
  *
  * @brief       Set CS Procedure Parameters
  * Set the parameters for the scheduling of one or more CS
- *procedures by the local Controller with the remote device for
- *the CS Config_ID and the Connection_Handle parameters
- *This API sets the provided CS Parameters using
- *llCsDbSetProcedureParams.
+ * procedures by the local Controller with the remote device for
+ * the CS Config_ID and the Connection_Handle parameters
+ * This API sets the provided CS Parameters using llCsDbSetProcedureParams.
+ *
+ * @note the procedure parameter: maxProcedureCount can be set to 0
+ * (indefinite), in this case the procedure will run indefinitely and since
+ * CS is a higher priority than BLE task, this means that other BLE connections
+ * may be starved and lost.
  *
  * @design      BLE_LOKI-506
  *
@@ -411,6 +416,27 @@ csStatus_e LL_CS_SetProcedureParameters(uint16 connId, uint8 configId,
  *              LL_STATUS_SUCCESS when command is successful
  */
 csStatus_e LL_CS_ProcedureEnable(uint16 connId, uint8 configId, uint8 enable);
+
+/*******************************************************************************
+ * @fn          LL_CS_Test
+ *
+ * @brief       Start a CS Test
+ *
+ * @design      BLE_LOKI-506
+ *
+ * input parameters
+ *
+ * @param       pParams - Pointer CS Test Params
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      Status
+ *              LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED if CS is not supported
+ *              LL_STATUS_SUCCESS when command is successful
+ */
+csStatus_e LL_CS_Test(csTestParams_t* pParams);
 
 /*******************************************************************************
  * @fn          LL_CS_TestEnd
@@ -579,8 +605,26 @@ extern void HCI_CS_SubeventResultCback(void* pRes, uint16 dataLength);
  *
  * @return      None.
  */
-extern void HCI_CS_SubeventResultContinueCback(void* hdr, void* data,
-                                               uint16 dataLength);
+void HCI_CS_SubeventResultContinueCback(void* hdr, const void* data, uint16 dataLength);
+
+/*******************************************************************************
+ * @fn          HCI_CS_TestEndCompleteCback
+ *
+ * @brief       CS Test End Complete callback
+ *
+ * @design      BLE_LOKI-506
+ *
+ * input parameters
+ *
+ * @param       status - command status
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_CS_TestEndCompleteCback(uint8 status);
 
 /*******************************************************************************
  */

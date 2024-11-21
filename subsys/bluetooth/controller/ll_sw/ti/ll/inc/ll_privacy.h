@@ -50,54 +50,12 @@
           (ownPublicAddr)                                           :          \
           (ownRandomAddr) )
 
-// Privacy policy flags - set, clear, and test.
-// Clear all flags
-#define CLEAR_ALL_TESTS( privPolicyFlags )                                     \
-  (privPolicyFlags) = 0
-
-
-// Address resolution enable flag - set, clear and test
-#define CLEAR_ADDRESS_RESOLUTION_TEST( privPolicyFlags )                       \
-  (privPolicyFlags) &= ~BV(0)
-#define SET_ADDRESS_RESOLUTION_TEST( privPolicyFlags )                         \
-  (privPolicyFlags) |= BV(0)
-#define IS_ADDRESS_RESOLUTION_TEST_REQUIRED( privPolicyFlags )                 \
-  ((privPolicyFlags) & BV(0)) != 0
-
-// RPA resolvable flag - set, clear and test
-#define CLEAR_RESOLVABLE_RPA_TEST( privPolicyFlags )                          \
-  (privPolicyFlags) &= ~BV(1)
-#define SET_RESOLVABLE_RPA_TEST( privPolicyFlags )                             \
-  (privPolicyFlags) |= BV(1)
-#define IS_RESOLVABLE_RPA_TEST_TEST_REQUIRED( privPolicyFlags )                \
-  (((privPolicyFlags) & BV(1)) != 0)
-
-// Address is in accept list flag - set, clear and test
-#define CLEAR_ADDRESS_IN_ACCEPT_LIST_TEST( privPolicyFlags )                   \
-  (privPolicyFlags) &= ~BV(2)
-#define SET_ADDRESS_IN_ACCEPT_LIST_TEST( privPolicyFlags )                     \
-  (privPolicyFlags) |= BV(2)
-#define IS_ADDRESS_IN_ACCEPT_LIST_TEST_REQUIRED( privPolicyFlags )             \
-  (((privPolicyFlags) & BV(2)) != 0)
-
-// Device privacy mode or valid IRK flag - set, clear and test
-#define CLEAR_DPM_OR_INVALID_IRK_TEST( privPolicyFlags )                       \
-  (privPolicyFlags) &= ~BV(3)
-#define SET_DPM_OR_INVALID_IRK_TEST( privPolicyFlags )                         \
-  (privPolicyFlags) |= BV(3)
-#define IS_DPM_OR_INVALID_IRK_TEST_REQUIRED( privPolicyFlags )                 \
-  (((privPolicyFlags) & BV(3)) != 0)
-
 /*******************************************************************************
  * CONSTANTS
  */
 
 #define BLE_RESOLVING_LIST_SIZE      (rlSize) // Resolving List Size For Peer + Local IRK/RP/IdAddr
-#ifdef USE_DFL
-#define EXT_ACCEPT_LIST_SIZE         0
-#else
-#define EXT_ACCEPT_LIST_SIZE         (2 * BLE_RESOLVING_LIST_SIZE)
-#endif
+#define EXT_ACCEPT_LIST_SIZE         (extALSize)
 #define LOCAL_RL_INDEX               0
 #define EMPTY_RESOLVE_LIST_ENTRY     0xFF
 #define INVALID_RESOLVE_LIST_INDEX   0xFFU
@@ -134,12 +92,21 @@
  * TYPEDEFS
  */
 
-
 // Optional required tests Flags for privacy policys
-// | 8..5  |         4          |             3             |             2             |        1        |             0             |
-// |  N/A  | DPM or Invalid IRK | Address is in Accept List | Address in Resolving List | Resolveable RPA | Enable Address Resolution |
-//
-typedef uint8_t privTestflags_t;
+union privTestflags_u {
+  struct
+  {
+    uint8 resolveRPA            :   1;  // RPA is resolvable
+    uint8 addressIsInAL         :   1;  // Device found in Accept List
+    uint8 privacyMode           :   1;  // Whenever the peer address type is public, It required to
+                                        // verify the the peer privacy mode is Device Privacy Mode
+                                        // or IRK is zero.
+    uint8 reserved              :   5;
+  };
+  uint8 flags;
+};
+
+typedef union privTestflags_u privTestflags_t;
 
 // RPA TargetA Entry Configuration
 // |   7..2   |    1     |    0    |
@@ -227,9 +194,11 @@ extern void             LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *resolvingList, al
 
 extern rlEntry_t        *LL_PRIV_GetResolvingList( void );
 
-extern privTestflags_t  LL_PRIV_PrivacyPolicyTests( uint8 *peerAddr, uint8 peeraddrType, uint8 rlIndex, privTestflags_t requiredTests );
+privTestflags_t         LL_PRIV_ValidatePrivacyCompliance( uint8* const peerAddr, uint8 peeraddrType, uint8 *pRLIndex, privTestflags_t requiredTests );
 
-extern llStatus_t       LL_PRIV_RemoveInvalidPeerId( rlEntry_t *pResolvingListEntry, dynamicFL_t *pDynamicFL, rankDynamicFL_t *prankFLTable );
+privTestflags_t         LL_PRIV_SetPrivacyTests(uint8* const peerAddr, uint8 rpaTypeAddr, uint8 usingAcceptListFilter);
+
+extern llStatus_t       LL_PRIV_RemoveInvalidPeerId( rlEntry_t *pResolvingListEntry, RCL_FilterList *pDynamicFL, rankDynamicFL_t *prankFLTable );
 
 // Extended (i.e. Private) Accept List
 

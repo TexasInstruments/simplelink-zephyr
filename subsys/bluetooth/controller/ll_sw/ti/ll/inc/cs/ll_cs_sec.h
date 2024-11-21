@@ -147,9 +147,9 @@ uint8 llCsSecGenRandomBits(uint8 transactionId, uint8* rndBits);
  *
  * @param       rndBits.
  *
- * @return      None
+ * @return      status
  */
-uint8 llCsProcedureInitDrbg(uint16 connId, uint8 configId);
+csStatus_e llCsProcedureInitDrbg(uint16 connId, uint8 configId);
 
 /*******************************************************************************
  * @fn          llCsSecIncreaseStepCount
@@ -186,6 +186,44 @@ void llCsSecIncreaseStepCount(void);
  * @return      DRBG num steps
  */
 uint16 llCsSecGetStepCount(void);
+
+/*******************************************************************************
+ * @fn          llCsSecGetProcedureCount
+ *
+ * @brief       Get DRBG param procedure count
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      DRBG num procedures
+ */
+uint16 llCsSecGetProcedureCount(void);
+
+/*******************************************************************************
+ * @fn          llCsSecSetProcedureCount
+ *
+ * @brief       Set DRBG param procedure count
+ * This API shall be used only in case of CS Procedure Termination when CS
+ * Procedure Count in the CS_TERMINATE_RSP is larger than that of the
+ * CS_TERMINATE_REQ. In these case we must use the larger value to keep the
+ * Link Layers sychronized.
+ *
+ * input parameters
+ *
+ * @param       procCnt - Procedure Count
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void llCsSecSetProcedureCount(uint16 procCnt);
 
 /*******************************************************************************
  * @fn          llCsSecResetStepCount
@@ -262,12 +300,11 @@ uint8 hr1(uint8 r, csTransactionId_e tId);
  *
  * output parameters
  *
- * @param       pRndBits.
+ * @param       pRndBits - pointer to random bits
  *
- * @return      Rout - random number
+ * @return      None
  */
-uint32 csDrbg(uint8 randomBitsRequired, uint8* pRndBits,
-              csTransactionId_e transactionId);
+void csDrbg(uint8 randomBitsRequired, uint8* pRndBits, csTransactionId_e transactionId);
 
 /*******************************************************************************
  * @fn          cr1
@@ -295,3 +332,21 @@ uint32 csDrbg(uint8 randomBitsRequired, uint8* pRndBits,
  */
 void cr1(uint8* pChannelArray, uint8* filterdArr, uint8 nChannels,
          csTransactionId_e trId);
+
+/*******************************************************************************
+ * @fn          llCsSecIsTestMode
+ *
+ * @brief       Check if Test Mode is enabled and overrdie the DRBG Nonce
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      TRUE - if CS Test mode is ON
+ *              FALSE - otherwise
+ */
+uint8 llCsSecIsTestMode(void);

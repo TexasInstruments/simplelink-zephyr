@@ -35,17 +35,10 @@
 #include "ll_enc.h"
 #include "ll_rat.h"
 #include "ll_config.h"
-#include "hal_gpio_wrapper.h"
 #include "ll_ae.h"
 #include "cs/ll_cs_ctrl_pkt_mgr.h"
 #include "cs/ll_cs_procedure.h"
-#include "rom_jt.h"
-
-// SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_mst.h"
-#endif // DEBUG_SW_TRACE
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -108,18 +101,6 @@ void llCentral_TaskEnd( void )
   uint8          connEvtStatus;
   uint8          channel;
 
-#ifdef DEBUG_GPIO_CONN
-  GPIO_writeDio(HAL_GPIO_3, 0);
-#endif // DEBUG_GPIO_CONN
-
-#if DEBUG
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "CENTRAL END RAT = 0x%08X", MAP_llGetCurrentTime() );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-#endif // DEBUG
-
   // check if the connection is still valid
   if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
   {
@@ -130,6 +111,8 @@ void llCentral_TaskEnd( void )
   // get connection information
   connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
 
+if ( connPtr != NULL )
+{
   // check if the connection has already been terminated
   // ALT: Halt the radio, then issue terminate immediately.
   if ( connPtr->termInfo.termIndRcvd == TRUE )
@@ -214,6 +197,13 @@ void llCentral_TaskEnd( void )
   {
     // updated channel now ratified
     connPtr->pendingChanUpdate = FALSE;
+
+    // Check if vendor specific events are enabled
+    if ( MAP_checkVsEventsStatus() == UTRUE )
+    {
+      // Notify that channel map has changed
+      MAP_LL_EXT_ChanMapUpdateCback(connPtr->connId, connPtr->curChanMap.chanMap, connPtr->currentMappedChan);
+    }
   }
 
   // get the total number of received packets
@@ -305,21 +295,9 @@ void llCentral_TaskEnd( void )
 
     // Update the supervision expiration count.
     connPtr->expirationEvent = connPtr->currentEvent + connPtr->expirationValue;
-
-    // clear flag that indicates we received first packet
-    // Note: The first packet only really needs to be signalled when a new
-    //       connection is formed. However, there's no harm in resetting it
-    //       every time in order to simplify the control logic.
-    // Note: True-Low logic is used here to be consistent with nR's language.
-    connPtr->firstPacket = FALSE;
-
-    // Reset DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_CONN_CENTRAL,connPtr->connId,TRUE);
   }
   else // no data received, or packet received with CRC error
   {
-    // Set DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_CONN_CENTRAL,connPtr->connId,FALSE);
     // In case the Connection Starvation Mechanism is ON:
     // - Reset the numLSTORetries and starvation mode bit.
     if ((connPtr->numLSTORetries > 0) || (connPtr->StarvationMode == TRUE))
@@ -343,8 +321,6 @@ void llCentral_TaskEnd( void )
       {
         connPtr->expirationEvent = connPtr->expirationValue;
       }
-      // Connection established, so clear the flag that indicates that we have received first packet in this connection
-      connPtr->firstPacket = FALSE;
     }
     else // no packet was received
     {
@@ -352,11 +328,6 @@ void llCentral_TaskEnd( void )
 
       // collect packet error information
       connPtr->perInfo.numMissedEvts++;
-
-      //HAL_GPIO_SET( HAL_GPIO_6 );
-      //HAL_GPIO_CLR( HAL_GPIO_6 );
-      //HAL_GPIO_SET( HAL_GPIO_6 );
-      //HAL_GPIO_CLR( HAL_GPIO_6 );
     }
 
     // check if we have a Supervision Timeout
@@ -390,93 +361,8 @@ void llCentral_TaskEnd( void )
     }
   }
 
-#ifdef LL_TEST_MODE
-#ifndef CC23X0
-  if ( llTestMode.testCase == LL_TEST_MODE_TP_TIM_SLA_BV_05 )
-  {
-    // use the first Tx packet to start the test
-    if ( connOutput.nTxEntryDone != 0 )
-    {
-      firstTx = TRUE;
-    }
-
-    // check if the test is done
-    if ( (timSlvBv05Done == FALSE) && (firstTx == TRUE) )
-    {
-      // yep, so count event and Tx, but only if it wasn't a retransmission or control packet
-      if ( (connOutput.nTxEntryDone != 0) &&
-           (connOutput.nTxRetrans == 0)   &&
-           (connOutput.nTxCtrl == 0) )
-      {
-        //numTxPkts += connOutput.nTxEntryDone;
-        numTxPkts++;
-        numTxEvts++;
-
-        // check if the Peripheral ACK'ed with an empty packet and no CRC error
-        if ( (connOutput.nRxEmpty == 0) && (connOutput.nRxNok) )
-        {
-          // it didn't, so take this as a missed event; the set of 10 tx packets
-          // is considered failed, and the nominal CI should be used when setting
-          // up the next event
-          setFailed = TRUE;
-          nomCI = TRUE;
-        }
-        else // Peripheral empty packet ACK received
-        {
-          // so don't use the nominal CI
-          nomCI = FALSE;
-        }
-
-        // check if the set if finished
-        if ( (numTxEvts % 10) == 0 )
-        {
-          // bump the number of sets and reset event count
-          numSets++;
-
-          // wait for next set and return to nominal CI
-          firstTx = FALSE;
-          nomCI = TRUE;
-
-          // check if the set failed
-          if ( setFailed == TRUE )
-          {
-            // yep, so count it
-            numFailedSets++;
-            setFailed = FALSE;
-          }
-
-          // check if the test is finished
-          if ( numSets == 5 )
-          {
-            // yep, so end the test tracking
-            timSlvBv05Done = TRUE;
-          }
-        }
-      }
-      else // we didn't transmit a packet during this event
-      {
-        numFailedTx++;
-        nomCI = TRUE;
-      }
-    }
-  }
-#endif
-#endif // LL_TEST_MODE
-
-#ifndef CC23X0
-  // obtain the RSSI, if present
-  connPtr->lastRssi = (RSSI_SUFFIX_PRESENT() && (connOutput.lastRssi != LL_RF_RSSI_UNDEFINED))?connOutput.lastRssi:LL_RF_RSSI_INVALID;
-#else
   connPtr->lastRssi = (LRF_RSSI_INVALID == connOutput.lastRssi) ? LL_RF_RSSI_INVALID : connOutput.lastRssi;
-#endif
 
-#ifdef RTLS_CTE
-  // get the CTE information in case received CTE response packet
-  if (llCteSamples.autoCopyCompleted > 0)
-  {
-    MAP_llGetCteInfo( CTE_TASK_ID_CONNECTION, connPtr );
-  }
-#endif // RTLS_CTE
 
   // check Control Procedure Processing
   if ( MAP_llProcessCentralControlProcedures( connPtr ) == LL_CTRL_PROC_STATUS_TERMINATE )
@@ -486,18 +372,24 @@ void llCentral_TaskEnd( void )
   }
 
   // Check if it's time to build the CS StepList
-  MAP_llCsStartStepListGen(connPtr);
+  MAP_llCsStartStepListGen(connPtr->connId);
   // Check if it's time to begin the CS procedure
   MAP_llCsStartProcedure(connPtr);
 
   // procoessing Tx data (if any)
-  MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_POST_PROCESSING );
+  MAP_llProcessTxData();
 
   //align the RX buffers head and tail pointers with all other active connections
   llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
 
   // Send the callback before calculating the next channel
   llSendConnEvtCallback(connEvtStatus, numPkts, connPtr);
+
+  if(connEvtStatus != LL_CONN_EVT_STAT_MISSED)
+  {
+    // First Packet was received, reset flag
+    connPtr->firstPacket = FALSE;
+  }
 
   // update next event, calculate time to next event, calculate timer drift,
   // update anchor points, setup NR T2E1 and T2E2 events
@@ -506,12 +398,7 @@ void llCentral_TaskEnd( void )
     // this connection is terminated, so nothing to schedule
     return;
   }
-
-#ifdef RTLS_CTE
-  // update CTE state
-  MAP_llUpdateCteState( connPtr );
-#endif // RTLS_CTE
-
+}
   // determine next task (if any) and schedule it
   MAP_llScheduler();
 
@@ -596,12 +483,6 @@ uint8 llSetupNextCentralEvent( void )
   if ( (connPtr->pendingParamUpdate == PARAM_UPDATE_PENDING) &&
        (connPtr->nextEvent == connPtr->paramUpdateEvent) )
   {
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINT0(DBGSYS, "CENTRAL UPDATE INSTANT!" );
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
     // find the number of events between this event and the update parameter
     // event, based on the original connection interval
     // Note: The old connection interval must be used!
@@ -629,8 +510,6 @@ uint8 llSetupNextCentralEvent( void )
     // check if CI is nominal
     if ( nomCI == FALSE )
     {
-      //HAL_GPIO_SET( HAL_GPIO_2 );
-
       // it isn't, so add 15.5us to start time
       connPtr->llTask->anchorPoint += RAT_TICKS_IN_15_5US;
     }
@@ -714,7 +593,7 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
     // processing based on control packet type at the head of the queue
     // first, check if it's a CS packet
     if ((connPtr->ctrlPktInfo.ctrlPkts[0] >= LL_CTRL_CS_SEC_RSP) &&
-        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_SEC_REQ) )
+        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_TERMINATE_RSP) )
     {
         return MAP_llCsProcessCsCtrlProcedures(connPtr, connPtr->ctrlPktInfo.ctrlPkts[0]);
     }
@@ -1938,7 +1817,6 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
                                                     connPtr->phyInfo.curPhy );
               }
               connPtr->pendingPhyUpdate =  PHY_UPDATE_APPLIED;
-              connPtr->phyUpdatedNoChange = TRUE;
             }
             else // a PHY change will take place at instant
             {
@@ -1948,6 +1826,9 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
               // indicate a pending update
               connPtr->pendingPhyUpdate = TRUE;
             }
+
+            // Indicate that a PHY update is received
+            connPtr->phyUpdateSentOrReceivedInd = TRUE;
 
             // done with control packet, so remove from the processing queue
             MAP_llDequeueCtrlPkt( connPtr );
@@ -2135,67 +2016,6 @@ uint8 llProcessCentralControlProcedures( llConnState_t *connPtr )
         }
         break;
 
-      /*
-      ** Constant Tone Extension Request
-      */
-#ifdef RTLS_CTE
-      case LL_CTRL_CTE_REQ:
-        // check if the control packet procedure is active
-        if ( connPtr->ctrlPktInfo.ctrlPktActive == TRUE )
-        {
-          // check that the CTE request or response procedure was done
-          if ( llCte[connPtr->connId].initiator.sendRequest == FALSE )
-          {
-            // remove control packet from processing queue and drop through
-            MAP_llDequeueCtrlPkt( connPtr );
-          }
-          else // no done yet
-          {
-            // check if control procedure timeout has occurred
-            // Note: No need to cleanup control packet info as we are done.
-            if ( --connPtr->ctrlPktInfo.ctrlTimeout == 0 )
-            {
-              // CPTO timeout, so end it all
-              // Note: No need to cleanup control packet info as we are done.
-              MAP_llConnTerminate( connPtr, LL_CTRL_PKT_TIMEOUT_HOST_TERM );
-
-              return( LL_CTRL_PROC_STATUS_TERMINATE );
-            }
-            else
-            {
-              //  control packet stays at head of queue, so exit here
-              return( LL_CTRL_PROC_STATUS_SUCCESS );
-            }
-          }
-        }
-        else // control packet has not been put on the TX FIFO yet
-        {
-          // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCte( connPtr,TRUE );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-          // Note: Two cases are possible:
-          //       a) We successfully placed the packet in the TX FIFO.
-          //       b) We did not.
-          //
-          //       In case (a), it may be possible that a previously just
-          //       completed control packet happened to complete based on
-          //       rfCounters.numTxCtrlAck. Since the current control
-          //       procedure is now active, it could falsely detect
-          //       rfCounters.numTxCtrlAck, when in fact this was from the
-          //       previous control procedure. Consequently, return.
-          //
-          //       In case (b), the control packet stays at the head of the
-          //       queue, and there's nothing more to do. Consequently, return.
-          //
-          //       So, in either case, return.
-          return( LL_CTRL_PROC_STATUS_SUCCESS );
-        }
-        break;
-#endif // RTLS_CTE
       /*
       ** Unknown Control Type Received Response
       */

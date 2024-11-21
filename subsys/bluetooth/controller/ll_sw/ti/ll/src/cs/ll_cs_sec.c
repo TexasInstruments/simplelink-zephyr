@@ -22,8 +22,7 @@
 #include "cs/ll_cs_db.h"
 #include "cs/ll_cs_sec.h"
 #include "ll_csdrbg.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "ll_common.h"
 
 /*******************************************************************************
@@ -107,8 +106,9 @@ uint8 llCsSecGeneratePV(uint8* csPV)
 /*******************************************************************************
  * Public function defined in ll_cs_sec.h
  */
-uint8 llCsProcedureInitDrbg(uint16 connId, uint8 configId)
+csStatus_e llCsProcedureInitDrbg(uint16 connId, uint8 configId)
 {
+    csStatus_e status = CS_STATUS_SUCCESS;
     csSecVectors_t secVecs;
 
     MAP_osal_memset(csDrbgParams.kDrbg, 0, 16);
@@ -118,8 +118,15 @@ uint8 llCsProcedureInitDrbg(uint16 connId, uint8 configId)
     csDrbgParams.csProcedureCounter = 0;
     csDrbgParams.CSStepCounter = 0;
     csDrbgParams.TransactionCounter = 0;
-    return LL_CSDRBG_Init(secVecs.CSIV, secVecs.CSIN, secVecs.CSPV,
-                          &csDrbgParams);
+
+    if (!llCsSecIsTestMode())
+    {
+        status = (csStatus_e)LL_CSDRBG_Init(secVecs.CSIV,
+                                            secVecs.CSIN,
+                                            secVecs.CSPV,
+                                            &csDrbgParams);
+    }
+    return status;
 }
 
 /*******************************************************************************
@@ -134,7 +141,26 @@ void llCsSecIncreaseStepCount(void)
 /*******************************************************************************
  * Public function defined in ll_cs_sec.h
  */
-uint16 llCsSecGetStepCount(void) { return csDrbgParams.CSStepCounter; }
+uint16 llCsSecGetStepCount(void)
+{
+    return csDrbgParams.CSStepCounter;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_sec.h
+ */
+uint16 llCsSecGetProcedureCount(void)
+{
+    return csDrbgParams.csProcedureCounter;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_sec.h
+ */
+void llCsSecSetProcedureCount(uint16 procCnt)
+{
+    csDrbgParams.csProcedureCounter = procCnt;
+}
 
 /*******************************************************************************
  * Public function defined in ll_cs_sec.h
@@ -175,18 +201,17 @@ uint8 hr1(uint8 r, csTransactionId_e tId)
         return 0;
     }
 
-    tRand = r * csDrbg(N_CS_RANGE_GEN_RANDOMIZED_BITS, &rndBits, tId);
+    csDrbg(N_CS_RANGE_GEN_RANDOMIZED_BITS, &rndBits, tId);
+    tRand = r * rndBits;
 
-    if ((tRand & 0xFF) < (256 % r))
+    if ((tRand & CS_1_BYTE_MASK) < (CS_MAX_STEPS_PER_PROCEDURE % r))
     {
-        rOut = (((csDrbg(N_CS_RANGE_GEN_RANDOMIZED_BITS, &rndBits, tId) << 8) *
-                 r) +
-                tRand) >>
-               16;
+        csDrbg(N_CS_RANGE_GEN_RANDOMIZED_BITS, &rndBits, tId);
+        rOut = (((rndBits << CS_8_BITS_SIZE) * r) + tRand) >> CS_RNDM_SIZE;
     }
     else
     {
-        rOut = tRand >> 8;
+        rOut = tRand >> CS_8_BITS_SIZE;
     }
     return rOut;
 }
@@ -194,60 +219,67 @@ uint8 hr1(uint8 r, csTransactionId_e tId)
 /*******************************************************************************
  * Public function defined in ll_cs_sec.h
  */
-void cr1(uint8* pChannelArray, uint8* filterdArr, uint8 nChannels,
-         csTransactionId_e trId)
+void cr1(uint8* pChannelArray, uint8* filterdArr, uint8 nChannels, csTransactionId_e trId)
 {
     uint8* shuffledChannelArray = pChannelArray;
     uint8 i, j;
     uint8 tempVal;
 
-    MAP_osal_memcpy(shuffledChannelArray, filterdArr, nChannels);
-
-    for (i = 0; i < nChannels; i++)
+    if (pChannelArray && filterdArr)
     {
-        j = hr1(i + 1, trId);
-        tempVal = shuffledChannelArray[i];
-        if (i != j)
+        MAP_osal_memcpy(shuffledChannelArray, filterdArr, nChannels);
+
+        for (i = 0; i < nChannels; i++)
         {
-            shuffledChannelArray[i] = shuffledChannelArray[j];
+            j = hr1(i + 1, trId);
+            tempVal = shuffledChannelArray[i];
+            if (i != j)
+            {
+                shuffledChannelArray[i] = shuffledChannelArray[j];
+            }
+            shuffledChannelArray[j] = tempVal;
         }
-        shuffledChannelArray[j] = tempVal;
     }
 }
 
 /*******************************************************************************
  * Public function defined in ll_cs_sec.h
  */
-uint32 csDrbg(uint8 numBitsRequired, uint8* pRndBits,
-              csTransactionId_e transactionId)
+void csDrbg(uint8 numBitsRequired, uint8* pRndBits, csTransactionId_e transactionId)
 {
-    /* calc byte size from bits */
-    uint8 size = numBitsRequired >> 3;
-
-    if (llCsDbRandomBitsAvailable(transactionId, numBitsRequired))
+    if (llCsDbRandomBitsAvailable(transactionId, numBitsRequired) == FALSE)
     {
-        llCsDbGetRandomBitsFromCache(transactionId, numBitsRequired, pRndBits);
-    }
-    else
-    {
-        uint8 randomBits[16];
-        csDrbgParams.TransactionID = transactionId;
+        uint8 randomBits[CS_RNDM_SIZE] ALIGNED = {0};
+        if (transactionId != csDrbgParams.TransactionID)
+        {
+            csDrbgParams.TransactionID = transactionId;
+            csDrbgParams.TransactionCounter = 0U;
+        }
 
         /* Get Random Bits from DRBG */
-        LL_CSDRBG_GetDrbg(randomBits, &csDrbgParams);
+        VOID LL_CSDRBG_GetDrbg(randomBits, &csDrbgParams);
         csDrbgParams.TransactionCounter++;
 
         /* Set Random Bits in DB */
         llCsDbSetRandomBitsCache(transactionId, randomBits);
-
-        /* Get only the number of bits that is required */
-        llCsDbGetRandomBitsFromCache(transactionId, numBitsRequired, pRndBits);
     }
 
-    if (size <= 8)
+    llCsDbGetRandomBitsFromCache(transactionId, numBitsRequired, pRndBits);
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_sec.h
+ */
+uint8 llCsSecIsTestMode(void)
+{
+    if(llCsDbGetTestMode() == CS_TEST_MODE_ENABLE)
     {
-        /* in this scenario, we can return int instead of using a pointer */
-        return *pRndBits;
+        csTestOverrideData_t pCsTestOverrideData;
+
+        llCsDbGetTestOverrideData(&pCsTestOverrideData);
+        csDrbgParams.vDrbg[14] = LO_UINT16(pCsTestOverrideData.drbgNonce);
+        csDrbgParams.vDrbg[15] = HI_UINT16(pCsTestOverrideData.drbgNonce);
+        return TRUE;
     }
-    return 0;
+    return FALSE;
 }

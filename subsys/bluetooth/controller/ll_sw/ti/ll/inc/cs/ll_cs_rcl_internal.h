@@ -50,15 +50,52 @@
  * @fn          llCsSetupCmdStartTime
  *
  * @brief       Setup the CS Command start time
- * The selected start time depends on the CS Roke and whether the
+ * The selected start time depends on the CS Role and whether the
  * SubeventCount is 0 or more.
  *
  * input parameters
  *
- * @param       rclCmd - cs RCL command
- * @param       connPtr - pointer to connection Info
+ * @param       connId - Connection Id
  * @param       role - CS Role, initiator or reflector
  * @param       subeventCount - CS subevent counter
+ * @param       rclCmd - CS RCL command
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return     cmdStartTime
+ */
+uint32_t llCsSetupCmdStartTime( uint16 connId, uint8 role, uint8 subEventCount,
+                                RCL_CmdBleCs rclCmd );
+
+/*******************************************************************************
+ * @fn          llCsGetRxWidening
+ *
+ * @brief       Get RCL Rx Window Widening
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      Window Widening
+ *                  * 0 (wait forever) if Test Mode is enabled
+ *                  * 250us otherwise
+ */
+uint16_t llCsGetRxWidening(void);
+
+/*******************************************************************************
+ * @fn          llCsRclScheduleNextSubevent
+ *
+ * @brief       Schedule Next Subevent
+ *
+ * input parameters
+ *
+ * @param       None
  *
  * output parameters
  *
@@ -66,8 +103,24 @@
  *
  * @return      None
  */
-void llCsSetupCmdStartTime(RCL_CmdBleCs rclCmd, llConnState_t* connPtr,
-                           uint8 role, uint8 subEventCount);
+void llCsRclScheduleNextSubevent(void);
+
+/*******************************************************************************
+ * @fn          llCsRclGetTxPower
+ *
+ * @brief       Get Tx Power for the RCL command
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      txPower
+ */
+RCL_Command_TxPower llCsRclGetTxPower(int8 maxTxPower);
 
 /*******************************************************************************
  * @fn          llCsRClBufferSetup
@@ -79,7 +132,6 @@ void llCsSetupCmdStartTime(RCL_CmdBleCs rclCmd, llConnState_t* connPtr,
  * input parameters
  *
  * @param       csRclDataInt - RCL command data
- * @param       init - flag, whether to init the buffers
  *
  * output parameters
  *
@@ -87,7 +139,7 @@ void llCsSetupCmdStartTime(RCL_CmdBleCs rclCmd, llConnState_t* connPtr,
  *
  * @return      None
  */
-void llCsRClBufferSetup(csRclCmdData_t csRclDataInt, bool init);
+void llCsRClBufferSetup(csRclCmdData_t csRclDataInt);
 
 /*******************************************************************************
  * @fn          llCsClearRclBuffers
@@ -104,4 +156,4 @@ void llCsRClBufferSetup(csRclCmdData_t csRclDataInt, bool init);
  *
  * @return      None
  */
-void llCsClearRclBuffers();
+void llCsClearRclBuffers( void );

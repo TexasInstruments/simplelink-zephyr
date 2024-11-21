@@ -26,8 +26,7 @@
 #include DeviceFamily_constructPath(inc/hw_memmap.h)
 #include "hal_mcu.h"
 #include "ll_rat.h"
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS

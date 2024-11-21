@@ -48,30 +48,6 @@
  */
 
 /*******************************************************************************
- * @fn          llCsInitChanIdxArr
- *
- * @brief       Initialize Channel Index array
- * This function turns the filtered channel map to a channel index
- * array. It sets the initial channel index info in the struct.
- * It shuffles the mode 0 channel index array which will be used
- * immediately.
- *
- * input parameters
- *
- * @param       configId - CS config ID
- * @param       connId - connection ID
- * @param       csConfig - pointer to CS config
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      status
- */
-csStatus_e llCsInitChanIdxArr(uint8 configId, uint16 connId,
-                            csConfigurationSet_t* csConfig);
-
-/*******************************************************************************
  * @fn          llCsShuffleMainModeChannelIndexArray
  *
  * @brief       This function shuffles the main mode channel index array
@@ -145,40 +121,15 @@ uint8 llCsNumStepsPerSubEvent(csConfigurationSet_t* config,
  * input parameters
  *
  * @param       mode - step mode
- * @param       config - pointer to CS config
+ * @param       pConfig - pointer to CS config
  *
  * output parameters
  *
  * @param       None.
  *
- * @return      None
+ * @return      Main Mode Step Duration in microseconds
  */
-uint16 llCsMainModeDur(uint8 mode, csConfigurationSet_t* config);
-
-/*******************************************************************************
- * @fn          llCsSetupStepBuffers
- *
- * @brief       Setup Step Buffers
- * Setup the step buffer by building each step in a loop.
- * Starting with mode 0 steps, moving on to the main mode steps.
- * Decides whether a single buffer is enough or not
- *
- * input parameters
- *
- * @param       connId - connection Id
- * @param       config - pointer to CS config
- * @param       nSubeventSteps - numver of steps in a subevent
- * @param       isFistSE - flag indicates if this is thfirst subevent
- *
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llCsSetupStepBuffers(uint16 connId, csConfigurationSet_t* config,
-                          uint8 nSubeventSteps, uint8 isFirstSE);
+uint16 llCsMainModeDur(uint8 mode, csConfigurationSet_t* pConfig);
 
 /*******************************************************************************
  * @fn          llCsSetupStep
@@ -204,9 +155,9 @@ void llCsSetupStepBuffers(uint16 connId, csConfigurationSet_t* config,
  * @return      Status
  *
  */
-csStatus_e llCsSetupStep(uint8 stepMode, uint16 connId, uint8 isRepetition,
-                       RCL_CmdBleCs_Step* stepData,
-                       csConfigurationSet_t* csConfig);
+csStatus_e llCsSetupStep(uint8 stepMode, uint16 connId,
+                         RCL_CmdBleCs_Step* stepData,
+                         csConfigurationSet_t* csConfig);
 
 /*******************************************************************************
  * @fn          llCsSetupStep0
@@ -255,6 +206,7 @@ void llCsSetupStep1(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType);
  *
  * @param       role - CS initiator or reflector
  * @param       stepData - pointer to step data
+ * @param       rttType - RTT type
  *
  * output parameters
  *
@@ -262,7 +214,7 @@ void llCsSetupStep1(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType);
  *
  * @return      None
  */
-void llCsSetupStep2(uint8 role, RCL_CmdBleCs_Step* stepData);
+void llCsSetupStep2(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType);
 
 /*******************************************************************************
  * @fn          llCsSetupStep3
@@ -300,26 +252,6 @@ void llCsSetupStep3(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType);
  */
 uint16 llCsConvertRttType(uint8 rttType);
 
-#ifdef CS_TEST
-/*******************************************************************************
- * @fn          llCsTestStepList
- *
- * @brief       This function copies the test step list into the step buffers.
- *              It should only be used for testing purposes.
- *
- * input parameters
- *
- * @param       None
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llCsTestStepList(void);
-#endif // CS TEST
-
 /*******************************************************************************
  * @fn          llCsAASelectionRules
  *
@@ -356,44 +288,6 @@ uint32_t llCsAASelectionRules(uint32_t si, uint32_t sj);
  * @return      Auto Correlation Score of s
  */
 uint8 llCsAutoCorrelation(uint32_t s);
-
-/*******************************************************************************
- * @fn          llCsGetRandomSequence
- *
- * @brief       Get Random Sequence from DRBG
- *
- * input parameters
- *
- * @param       csRole - CS role
- * @param       pTx - pointer to transmitted Random Sequence
- * @param       pRx - pointer to the recvd Random Sequence
- * @param       payloadLen - payload length
- * output parameters
- *
- * @param       pTx
- * @param       pTx
- *
- * @return      Status
- */
-uint8 llCsGetRandomSequence(uint8 csRole, uint32_t* pTx, uint32_t* pRx,
-                            uint8 payloadLen);
-
-/*******************************************************************************
- * @fn          llCsGetToneExtention
- *
- * @brief       Get Tone Extension bit from DRBG
- *
- * input parameters
- *
- * @param       None
- *
- * output parameters
- *
- * @param       None
- *
- * @return      Tone extension bit
- */
-uint8 llCsGetToneExtention(void);
 
 /*******************************************************************************
  * @fn          llCsGetNumMainModeSteps
@@ -441,3 +335,28 @@ uint8 llCsGetNumMainModeSteps(uint8 mainModeMaxSteps, uint8 mainModeMinSteps);
  */
 uint8 llCsChm2FilteredChanArr(uint8* pDecimalArray, uint8* pBitMapArray,
                           uint8 mapSize);
+
+/*******************************************************************************
+ * @fn          llCsReversePayload
+ *
+ * @brief       Reverse the Random Payload for RTT
+ * The final bit received from the DRBG is the LSB of the Random Sequence, and
+ * it is transmitted first.
+ * The first bit received from the DRBG is the MSB of the Random Sequence, and
+ * it is transmitted last.
+ * To Achieve this bytes from the DRBG should be reversed.
+ *
+ * input parameters
+ *
+ * @param       pl1 - the first payload to reverse
+ * @param       pl2 - the second paylaod to reverse
+ * @param       size - the size of the payload
+ *
+ * output parameters
+ *
+ * @param       pl1 - reversed
+ * @param       pl2 - reversed
+ *
+ * @return      None
+ */
+void llCsReversePayload(uint8* pl1, uint8* pl2, uint8 size);

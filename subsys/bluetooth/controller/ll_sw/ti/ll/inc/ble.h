@@ -167,11 +167,13 @@
 #define RAT_TICKS_IN_2MS               8000      // Max time in 1M phy for fragments periodic adv
 #define RAT_TICKS_IN_2_5MS             10000     // DTM Packet Interval
 #define RAT_TICKS_IN_2_896MS           11584     // AUX_CONNECT_REQ in Coded S8
+#define RAT_TICKS_IN_5MS               20000
+#define RAT_TICKS_IN_3MS               12000     // Handover connection earlier start time
 #define RAT_TICKS_IN_10MS              40000     // General Purpose Delay
 #define RAT_TICKS_IN_12_5MS            50000     // DTM T(l) Compare
 #define RAT_TICKS_IN_16MS              64000     // Max time in Coded phy for fragments periodic adv
 #define RAT_TICKS_IN_20MS              80000
-#define RAT_TICKS_IN_100MS             400000    // Refers to the minimum observation period used by the SDAA module
+#define RAT_TICKS_IN_100MS             400000    // Refers to the minimum observation period
 #define RAT_TICKS_IN_1S                4000000
 #define RAT_TICKS_IN_1_28S             5120000   // Directed Advertising Timeout
 #define RAT_TICKS_IN_32S               128000000 // Max LSTO

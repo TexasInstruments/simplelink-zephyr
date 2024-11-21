@@ -22,8 +22,7 @@
 #include "hci_event.h"
 #include "hci_event_internal.h"
 #include "ble.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 extern uint8 hciPTMenabled;
 

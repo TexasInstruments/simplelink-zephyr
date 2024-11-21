@@ -40,11 +40,6 @@ extern "C"
 typedef struct
 {
   uint16 pwrmgr_task_state;
-#if !defined USE_ICALL && !defined OSAL_PORT2TIRTOS
-  uint16 pwrmgr_next_timeout;
-  uint16 accumulated_sleep_time;
-  uint8  pwrmgr_device;
-#endif /* !defined USE_ICALL && !defined OSAL_PORT2TIRTOS */
 } pwrmgr_attribute_t;
 
 /* With PWRMGR_ALWAYS_ON selection, there is no power savings and the
@@ -93,20 +88,6 @@ extern pwrmgr_attribute_t pwrmgr_attribute;
    */
   extern uint8 osal_pwrmgr_task_state( uint8 task_id, uint8 state );
 
-  /*
-   * This function is called on power-up, whenever the device characteristic
-   * change (ex. Battery backed coordinator). This function works with the timer
-   * to set HAL's power manager sleep state when power saving is entered.
-   * This function should be called form HAL initialization. After power up
-   * initialization, it should only be called from NWK or ZDO.
-   */
-  extern void osal_pwrmgr_device( uint8 pwrmgr_device );
-
-  /*
-   * This function is called from the main OSAL loop when there are
-   * no events scheduled and shouldn't be called from anywhere else.
-   */
-  extern void osal_pwrmgr_powerconserve( void );
 
 /*********************************************************************
 *********************************************************************/

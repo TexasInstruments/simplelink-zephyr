@@ -34,9 +34,9 @@
 #define CS_IN_C_LEN                            CS_CSIN_LEN/2
 #define CS_IV_C_LEN                            CS_CSIV_LEN/2
 #define CS_FAE_TBL_LEN                         72 // octets
-#define CS_CHM_SIZE                            10 // octets
+#define CS_CHM_SIZE                            10U // octets
 #define CS_FILTERED_CHAN_MAX_SIZE              72
-#define CS_RNDM_SIZE                           16
+#define CS_RNDM_SIZE                           16U
 #define CS_MAX_NUM_CONFIG_IDS                  4
 #define CS_DRBG_NUM_BITS                       128
 #define CS_MAX_TRANSACTION_IDS                 10
@@ -47,11 +47,11 @@
 #define CS_MAX_SUBEVENT_LEN                    4000000 // us
 #define CS_RESULT_EVENT_HEADER_LEN             16      // The fields of the subevent results event
 #define CS_CONTINUE_RESULT_EVENT_HEADER_LEN    9
-#define CS_STEP_BUFF_MAX_SIZE                  30
+#define CS_STEP_BUFF_MAX_SIZE                  30U
 #define CS_MAX_RESULT_DATA_LEN                 15
 #define CS_MIN_STEPS_PER_SUBEVENT              2   // SPEC definition
 #define CS_MAX_STEPS_PER_SUBEVENT              160 // SPEC definition
-#define CS_MAX_STEPS_PER_PROCEDURE             256 // SPEC definition
+#define CS_MAX_STEPS_PER_PROCEDURE             256U // SPEC definition
 #define CS_RES_BUFF_MAX_SIZE                   CS_MAX_STEPS_PER_SUBEVENT // number of step results in the buffer.
 #define CS_SUBEVENT_RESULTS_LEN                sizeof(RCL_CmdBleCs_SubeventResults)
 #define CS_SUBEVENT_RESULTS_CONT_LEN           sizeof(RCL_CmdBleCs_SubeventResults) - 7
@@ -59,15 +59,11 @@
 #define CS_SUBEVENT_PROC_INFO_LEN              7   // ConnEvt, ProcCount,FreqComp, PwrLevel
 #define CS_SUBEVENT_CONT_IRR_INFO              5   // exlude this size from the subevent continue
 #define CS_STEP_RES_HEADER_LEN                 3   // mode, channel, dataLen
-#define HCI_LE_CS_SUBEVENT_RESULT_LEN          17  // HCI CS SUBEVENT minimal len (excluding steps)
 #define HCI_STEP_DESCRIPTORS_SIZE              3   // the 3 bytes describing the steps: mode, channel, size
 #define CS_RESULT_DATA_SIZE                    CS_SUBEVENT_RESULTS_LEN +\
                                                (CS_MAX_RESULT_DATA_LEN+3)*CS_RES_BUFF_MAX_SIZE
 #define CS_RESULT_BUFF_SIZE                    sizeof(RCL_MultiBuffer) +\
                                                CS_RESULT_DATA_SIZE
-#ifdef CS_TEST
-#define BLE_CS_NUM_STEPS    10
-#endif
 #define CS_MIN_EVENT_INTERVAL                  3
 #define CS_MIN_PROCEDURE_INTERVAL              3
 #define CS_MAX_PROCEDURE_INTERVAL              0xFFFF
@@ -80,6 +76,7 @@
 #define CS_MAX_ANT_PATH_SUPPORTED              0x01
 #define CS_MODE_3_SUPPORTED                    0x01
 #define CS_NUM_CS_SYNC_EXCHANGES_SUPPORTED     0xFF // number of CS sync exchanges required to satisfy the percision requirements
+#define CS_OPTIONAL_PHY_SUPPORTED              0x03 // 2M PHY and 2M BT PHY
 #define CS_RTT_CAPABILITY_NOT_SUPPORTED        0x00
 #define CS_CAPABILITY_NOT_SUPPORTED            0
 
@@ -99,9 +96,9 @@
 // Each bit that is on, means that the time requirement is supported
 // The mandatoy requirements are taken by default and are not part
 // of this bitwise number.
-#define CS_T_IP1_IP2_CAP          0x0040 // supported: 80us, (145us)
-#define CS_T_FCS_CAP              0x0180 // supported: 100, 120, (150 M)
-#define CS_T_PM_CAP               0x02   // supported: 20 , (40 M)
+#define CS_T_IP1_IP2_CAP          0x0040 // supported: 80us, (145us Mandatory)
+#define CS_T_FCS_CAP              0x0180 // supported: 100us, 120us, (150us Mandatory)
+#define CS_T_PM_CAP               0x03   // supported: 10us, 20us , (40us Mandatory)
 #define CS_T_SW_CAP               0x04   // antenna switch period
 
 // Mandatory Values bit index
@@ -117,6 +114,24 @@
 #define CS_ANTENNA_SW_PERIOD_2                0x04
 #define CS_ANTENNA_SW_PERIOD_3                0x0A
 
+// Possible Values for Timing Capability
+#define CS_T_0US                              0x00
+#define CS_T_1US                              0x01
+#define CS_T_2US                              0x02
+#define CS_T_4US                              0x04
+#define CS_T_10US                             0x0A
+#define CS_T_15US                             0x0F
+#define CS_T_20US                             0x14
+#define CS_T_30US                             0x1E
+#define CS_T_40US                             0x28
+#define CS_T_50US                             0x32
+#define CS_T_60US                             0x3C
+#define CS_T_80US                             0x50
+#define CS_T_100US                            0x64
+#define CS_T_120US                            0x78
+#define CS_T_145US                            0x91
+#define CS_T_150US                            0x96
+
 /* CS Event Offset
  * The time from the ACl anchor point to
  * The start of the first CS subevent
@@ -131,7 +146,7 @@
 #define CS_CONFIG_REMOVED                      1
 #define CHM_NO_CHANGE                          0
 #define CHM_CHANGE                             1
-#define INVALID_CONFIG_ID                      0x3F
+#define INVALID_CONFIG_ID                      0x3FU
 #define INVALID_CS_CHANNEL_IDX                 0
 #define MAX_ANTENNA_PATHS                      4
 #define CS_TRANSACTION_NUM                     10
@@ -139,8 +154,16 @@
 #define CS_FC_UNAVAILABLE                      0xC000
 #define CS_NUM_ACI                             8
 #define CS_NUM_ROLES                           2
-
-#define MAX_ANTENNA_PATHS                      4
+#define CS_NUM_TIP_OPTIONS                     8
+#define CS_NUM_TFCS_OPTIONS                    10
+#define CS_NUM_TPM_OPTIONS                     4
+#define CS_USE_MIN_TX_POWER                    0x7F
+#define CS_USE_MAX_TX_POWER                    0x7E
+#define CS_3_OCTETS_MASK                       0x00FFFFFF
+#define CS_RFU                                 0x0U
+#define CS_CTRL_PKT_OFFSET                     17U
+#define CS_8_BITS_SIZE                         8U
+#define CS_1_BYTE_MASK                         0xFFU
 
 // Procedure complete flag reset mask
 #define CS_RESET_START_PROCEDURE_FLAG          0x1F
@@ -152,8 +175,8 @@
 #define CS_DEFAULT_MIN_PROC_INTERVAL           1
 #define CS_DEFAULT_MAX_PROC_INTERVAL           3
 #define CS_DEFAULT_MAX_PROC_COUNT              0xFFFF
-#define CS_DEFAULT_MIN_SUBEVENT_LEN            1250 // us
-#define CS_DEFAULT_MAX_SUBEVENT_LEN            62500 //us NOTE: this value gives us 160 steps which is the max.
+#define CS_DEFAULT_MIN_SUBEVENT_LEN            0x4E2U    // 1250 us
+#define CS_DEFAULT_MAX_SUBEVENT_LEN            0x3D0900U //us = 4s
 #define CS_DEFAULT_TONE_ANTENNA_CFG            1
 #define CS_DEFAULT_PHY                         1
 #define CS_DEFAULT_TX_PWR_DELTA                0
@@ -165,6 +188,10 @@
 // CS tx_power range
 #define CS_MAX_TX_POWER_VALUE                  20
 #define CS_MIN_TX_POWER_VALUE                  -127
+
+/* Max Steps Per HCI event */
+#define MAX_STEPS_PER_HCI_EVENT 9
+#define MAX_RESULT_SIZE         245
 
 /*******************************************************************************
  * ENUMS
@@ -191,8 +218,8 @@ typedef enum csEnable_e
 // updated to CS_DISABLE at the end of the current procedure
 typedef enum csTerminateState_e
 {
-    CS_TERMINATE_DISABLE = 0,       /* Indicate that the enable field shuldn't be changed*/
-    CS_TERMINATE_RECEIVED = 1
+    CS_TERMINATE_DISABLE = 0U,       /* Indicate that the enable field shouldn't be changed*/
+    CS_TERMINATE_RECEIVED = 1U
 } csTerminateState_e;
 
 // CS Role Mask
@@ -230,7 +257,8 @@ typedef enum csProcedures_e
     CS_FAE_TABLE_UPDATE_PROCEDURE      = 0x08,
     CS_CHM_UPDATE_PROCEDURE            = 0x10,
     CS_START_PROCEDURE                 = 0x20,
-    CS_IND                             = 0x40
+    CS_IND                             = 0x40,
+    CS_TERMINATE_PROCEDURE             = 0x80
 } csProcedures_e;
 
 // CS Sub Features
@@ -299,7 +327,7 @@ typedef enum csStatus_e {
     CS_STATUS_UNEXPECTED_PARAMETER  = 0x12, /* SPEC defined error code, unexpected parameter */
     CS_STATUS_FEATURE_NOT_SUPPORTED = 0x11, /* SPEC defined error code, feature not supproted */
     CS_STATUS_INVALID_LL_PARAM      = 0x1E, /* SPEC defined error code, invalid LL parameter */
-    CS_STATUS_INVALID_CONN_PTR,
+    CS_STATUS_INVALID_CONN_PTR      = 0xA0, /* Custom CS error codes */
     CS_STATUS_INVALID_BUFFER,
     CS_STATUS_CONNECTION_TERMINATED,
     CS_STATUS_INVALID_PKT_LEN,
@@ -319,7 +347,8 @@ typedef enum csStatus_e {
     CS_STATUS_SUBEVENT_SETUP_ERROR,
     CS_STATUS_DRBG_INIT_FAIL,
     CS_STATUS_CONFIG_ENABLED,
-    CS_STATUS_INVALID_CHAN_IDX
+    CS_STATUS_INVALID_CHAN_IDX,
+    CS_STATUS_INVALID_STEP_MODE
 } csStatus_e;
 
 typedef enum csProcDoneStat_e
@@ -331,11 +360,11 @@ typedef enum csProcDoneStat_e
 
 typedef enum csAbortReason_e
 {
-    CS_NO_ABORT          = 0x0,
-    CS_ABORT_REQUEST     = 0x1,
-    CS_ABORT_CHM         = 0x2,
-    CS_ABORT_CHM_UPDATE  = 0x3,
-    CS_ABORT_UNSPECIFIED = 0xF
+    CS_NO_ABORT              = 0x0,
+    CS_ABORT_REQUEST         = 0x1,
+    CS_ABORT_CHM             = 0x2,
+    CS_ABORT_INSTANT_PASSED  = 0x3,
+    CS_ABORT_UNSPECIFIED     = 0xF
 } csAbortReason_e;
 
 typedef enum csBleRole_e
@@ -372,6 +401,18 @@ typedef enum csACI_e
     ACI_A2_B2 = 7
 } csACI_e;
 
+typedef enum csNewSubevent_e
+{
+    CS_NEW_SUBEVENT,
+    CS_CONTINUE_SUBEVENT
+} csNewSubevent_e;
+
+typedef enum csNextSubevent_e
+{
+    CS_PREP_CURR_SUBEVENT,
+    CS_PREP_NEXT_SUBEVENT,
+} csNextSubevent_e;
+
 /*******************************************************************************
  * MACROS
  */
@@ -388,34 +429,16 @@ typedef enum csACI_e
     (channelMap[0] & 0x03 || channelMap[2] & 0x80 || channelMap[3] & 0x03 ||   \
      channelMap[9] & 0xE0)
 
-#define GET_TFCS(tFcsIdx)                                                      \
-    ((tFcsIdx == CS_MANDATORY_TFCS_IDX)         ? 150                          \
-     : (tFcsIdx == (CS_MANDATORY_TFCS_IDX - 1)) ? 120                          \
-     : (tFcsIdx == (CS_MANDATORY_TFCS_IDX - 2)) ? 100                          \
-                                                : 0)
-
-#define GET_TPM(tPmIdx)                                                        \
-    ((tPmIdx == CS_MANDATORY_TPM_IDX)         ? 40                             \
-     : (tPmIdx == (CS_MANDATORY_TPM_IDX - 1)) ? 20                             \
-                                              : 0)
-
-#define GET_TIP(tIpIdx)                                                        \
-    ((tIpIdx == CS_MANDATORY_TIP_IDX)         ? 145                            \
-     : (tIpIdx == (CS_MANDATORY_TIP_IDX - 1)) ? 80                             \
-                                              : 0)
-
-#define GET_TSW(tSwIdx)                                                        \
-    ((tSwIdx == CS_MANDATORY_TSW)         ? 40                                 \
-     : (tSwIdx == (CS_MANDATORY_TSW - 1)) ? 20                                 \
-     : (tSwIdx == (CS_MANDATORY_TSW - 2)) ? 10                                 \
-                                          : 0)
-
 #define GET_MAX_STEP_DATA_LEN(numAntPaths)                                     \
     (SIZE_MODE_3_INIT_REFL + (numAntPaths + 1) * 4)
 
-/* Max Steps Per HCI event */
-#define MAX_STEPS_PER_HCI_EVENT 9
-#define MAX_RESULT_SIZE         245
+/* Tone Extension Bits are used in their reversed order */
+#define CS_REVERSE_TONE_EXTENSION_BITS(bits)                                   \
+    ((((bits & 0x01U) << 1U) | ((bits & 0x02U) >> 1U)) & 0x3U)
+
+/* Determine Number of steps in buffer */
+#define CS_NUM_BUFF_STEPS(nSteps) ((nSteps > CS_STEP_BUFF_MAX_SIZE) ?            \
+                                                CS_STEP_BUFF_MAX_SIZE : nSteps)
 
 /*******************************************************************************
  * EXTERNS
@@ -469,19 +492,19 @@ struct csCapabilities_t
     uint8 numAntennas:4;      /* the number of antenna elements that are available for CS tone exchanges */
     uint8 maxAntPath:4;       /* max number of antenna paths that are supported */
     uint8 role:2;             /* initiator or reflector or both */
-    uint8 companionSignal:1;
+    uint8 rfu0:1;
     uint8 noFAE:1;
     uint8 chSel3c:1;          /* channel selection 3c support */
     uint8 csBasedRanging:1;
-    uint8 rfu:2;
+    uint8 rfu1:2;
     uint8 numConfig;          /* Number of CS configurations supported per conn */
     uint16 maxProcedures;     /* Max num of CS procedures supported */
     uint8  tSwCap;            /* Antenna switch time capability */
     uint16 tIp1Cap;           /* tIP1 Capability */
     uint16 tIp2Cap;           /* tTP2 Capability */
     uint16 tFcsCap;           /* tFCS Capability */
-    uint16 tPmCsap;           /* tPM Capability */
-    uint8  rfu2;              /* Spec defines an additional byte for RFU */
+    uint16 tPmCsap;           /* tPM Capability  */
+    uint8  snrTxCap;          /* Spec defines an additional byte for RFU */
 } __attribute__((packed));
 // Typedef separated from packed struct due to MisraC
 typedef struct csCapabilities_t csCapabilities_t;
@@ -503,15 +526,14 @@ struct csConfig_t
     uint8 csSyncPhy;          /* transmit and receive PHY to be used */
     uint8 rttType:4;          /* which RTT variant is to be used */
     uint8 role:2;
-    uint8 companionSignal:1;
-    uint8 rfu0:1;
+    uint8 rfu0:2;
     uint8 chSel:4;            /* channel selection algorithm to be used */
-    uint8 ch3cShape:4;        /*  selected shape to be rendered */
+    uint8 ch3cShape:4;        /* selected shape to be rendered */
     uint8 ch3CJump;           /* one of the valid CSChannelJump values defined in table 32? */
-    uint8 tIP1;               /* duration of the interlude period used between RTT packets */
-    uint8 tIP2;               /* duration of the interlude period used between CS tones */
-    uint8 tFCs;               /* duration used for frequency changes */
-    uint8 tPM;                /*  phase measurement period of CS tones */
+    uint8 tIP1;               /* Index of the period used between RTT packets */
+    uint8 tIP2;               /* Index of the interlude period used between CS tones */
+    uint8 tFCs;               /* Index used for frequency changes */
+    uint8 tPM;                /* Index for the measurement period of CS tones */
     uint8 rfu1;
 } __attribute__((packed));
 // Typedef separated from packed struct due to MisraC
@@ -530,15 +552,15 @@ typedef struct
     uint16 minProcedureInterval;      /* min num of conn events between consecutive CS procedures */
     uint16 maxProcedureInterval;      /* max num of conn events between consecutive CS procedures */
     uint16 maxProcedureCount;         /* max num of CS procedures to be scheduled (0 - indefinite) */
-    uint32 minSubEventLen;            /* Min SubEvent Len in 1.25 miliseconds */
-    uint32 maxSubEventLen;            /* Max SubEvent Len in 1.25 miliseconds */
+    uint32 minSubEventLen;            /* Min SubEvent Len in microseconds, range 1250us to 4s */
+    uint32 maxSubEventLen;            /* Max SubEvent Len in microseconds, range 1250us to 4s */
     csACI_e toneAntennaConfigSelection; /* Antenna Config Index */
     uint8 phy;                        /* PHY */
     uint8 txPwrDelta;                 /* Tx Power Delta, in signed dB */
     uint8 preferredPeerAntenna;       /* Preferred peer Antenna */
+    uint8 snrCtrlI;                   /* SNR Control Initiator */
+    uint8 snrCtrlR;                   /* SNR Control Reflector */
     uint8 enable:1;                   /* is Procedure Enabled */
-    uint8 terminateState;             /* Flag that indicate that the CS_DISABLE field
-                                         should be updated at the end of the current procedure */
 } csProcedureParams_t;
 
 struct csProcedureEnable_t
@@ -553,13 +575,15 @@ struct csProcedureEnable_t
     uint16  eventInterval;           /* REQ | RSP | IND */ /* units of connInt */
     uint8   subEventsPerEvent;       /* REQ | RSP | IND */ /* num of CS SubEvents in a CS Event */
     uint16  subEventInterval;        /* REQ | RSP | IND */ /* units 625 us*/
-    uint32  subEventLen;             /* REQ | RSP | IND */ /* tune ub 1250 ms */
+    uint32  subEventLen;             /* REQ | RSP | IND */ /* units microseconds, range 1250us to 4s */
     uint16  procedureInterval;       /* REQ |  X  |  X  */
     uint16  procedureCount;          /* REQ |  X  |  X  */
     csACI_e ACI;                     /* REQ | RSP | IND */
     uint8   preferredPeerAntenna;    /* REQ |  X  |  X  */
     uint8   phy;                     /* REQ | RSP | IND */
     uint8   pwrDelta;                /* REQ | RSP | IND */
+    uint8   txSnrI:4;                /* REQ |  X  |  X  */
+    uint8   txSnrR:4;                /* REQ |  X  |  X  */
 } __attribute__((packed));
 // Typedef separated from packed struct due to MisraC
 typedef struct csProcedureEnable_t csProcedureEnable_t;
@@ -617,7 +641,15 @@ typedef struct
     uint16      eventsPerProcedure; /* MAX_PROC_LEN / (EVENT_INTERVAL) * connEvent */
     uint32_t    eventAnchorPoint;   /* The time from which consecutive subevents are anchored. */
     uint8       nextProcedure;      /* Marks if a procedure is done and we need to prepare another */
+    csNextSubevent_e nextSubevent;  /* Marks if a subevent is submitted and we need to prepare another. */
 } csProcedureInfo_t;
+
+typedef struct csTerminateInfo
+{
+    csTerminateState_e terminateState; /* Flag indicating whether to terminate the upcoming CS Procedure */
+    uint16 procedureCnt;   /* CS Procedure Count by the time this is executed */
+    uint8 errorCode;       /* The reason the CS procedure will be terminated */
+} csTerminateInfo_t;
 
 typedef struct
 {
@@ -635,6 +667,7 @@ typedef struct
     csChanInfo_t filteredChanIdx[CS_MAX_NUM_CONFIG_IDS];            /* Channel Index Array */
     csSubeventInfo_t subEventInfo;                                  /* Subevent Info */
     csProcedureInfo_t procedureInfo;                                /* Procedure Info */
+    csTerminateInfo_t terminateInfo;                                /* Procedure Termination Info */
 } llCs_t;
 
 typedef struct csSubeventRes
@@ -824,5 +857,63 @@ csStatus_e llCsConfigIdCheck(uint16 connId, uint8 configId);
  * @return      chCount                 - amount of valid channels
  */
 uint8 llCsNumOnBit(uint8* pBitMapArray, uint8 amountOfBytesInMapArray);
+
+/*******************************************************************************
+ * @fn          llCsGetAbortReason
+ *
+ * @brief       Get CS Abort Reason
+ * This function returns the abort reason based on the CS Terminate error code
+ *
+ * @design      BLE_LOKI-506
+ *
+ * input parameters
+ *
+ * @param       connId - Connection ID
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      abortReason
+ */
+uint8 llCsGetAbortReason(uint8 connId);
+
+/*******************************************************************************
+ * @fn          llCsGetProcDoneStatus
+ *
+ * @brief       Get ProcedureDoneStatus
+ * This function checks if a CS procedure repetition was aborted and updates the
+ * ProcedureDoneStatus.
+ * Otherwise, the current status remains the same
+ *
+ * input parameters
+ *
+ * @param       isProcedureDone - Original Procedure Done Status
+ * @param       abortReason - CS Procedure Abort Reason
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      ProcedureDoneStatus
+ */
+uint8 llCsGetProcDoneStatus(uint8 isProcedureDone, uint8 abortReason);
+
+/*******************************************************************************
+ * @fn          llCsDbGetNumStepsInBuffer
+ *
+ * @brief       llCsDbGetNumStepsInBuffer
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Identifier
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Num Steps in Buffer
+ */
+uint8 llCsGetNumStepsInBuffer(uint16 connId);
 
 #endif // LL_CS_COMMON_H

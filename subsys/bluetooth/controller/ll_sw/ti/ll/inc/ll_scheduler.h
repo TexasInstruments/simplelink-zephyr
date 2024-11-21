@@ -52,8 +52,7 @@ extern "C"
 #define LL_SCHED_START_IMMED        0
 #define LL_SCHED_START_EVENT        1
 #define LL_SCHED_START_PRIMARY      2
-#define LL_SDAA_SCHED_HANDLED       3
-#define LL_SCHED_START_CS           4
+#define LL_SCHED_START_CS           3
 //
 #define LL_SCHED_START_IMMED_PAD    (3 *  RAT_TICKS_IN_625US)
 #define LL_SCHED_PRE_CUTOFF         (10 * RAT_TICKS_IN_625US)
@@ -183,7 +182,6 @@ typedef struct rclHandleList
  */
 
 extern taskList_t  llTaskList;
-extern taskInfo_t *pRXWindowTask;
 //
 extern void        llSchedulerInit( void );
 extern void        llScheduler( void );

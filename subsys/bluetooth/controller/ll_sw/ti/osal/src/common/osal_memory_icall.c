@@ -24,9 +24,7 @@
 #include "osal.h"
 #include "osal_memory.h"
 
-#ifdef USE_ICALL
-  #include <icall.h>
-#endif /* USE_ICALL */
+#include <icall.h>
 
 /**************************************************************************************************
  * @fn          osal_mem_alloc

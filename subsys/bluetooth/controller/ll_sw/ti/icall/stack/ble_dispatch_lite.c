@@ -24,8 +24,7 @@
 
 #include "ble_dispatch.h"
 #include "ble_dispatch_lite.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 #include <icall_lite_translation.h>
 
@@ -185,10 +184,6 @@ uint8 buildRevision(ICall_BuildRevision *pBuildRev)
 #if defined(__TI_COMPILER_VERSION__)
       BLDREV_STK_CCS_PROJ |
 #endif // __TI_COMPILER_VERSION__
-#if defined(FLASH_ROM_BUILD)
-      BLDREV_STK_IAR_LIB  |
-      BLDREV_STK_ROM_BLD  |
-#endif // FLASH_ROM_BUILD
       0;
 
     // Controller info - part 1 (Byte 6)
@@ -271,11 +266,7 @@ void icall_liteMsgParser(void * msg)
 uint32 ble_dispatch_liteProcess(uint8_t  taskId, uint32 events)
 {
   uint8 *pMsg;
-#ifdef CC33xx // Changed due to VOID redefinition
-  (VOID) taskId;
-#else
   VOID taskId;
-#endif // CC33xx
 
   if ( events & SYS_EVENT_MSG )
   {

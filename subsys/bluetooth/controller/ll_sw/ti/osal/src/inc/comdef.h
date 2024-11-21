@@ -37,23 +37,7 @@ extern "C"
 /*********************************************************************
  * Lint Keywords
  */
-#ifdef CC33xx
-#define VOID void
-#else
 #define VOID (void)
-#endif // CC33xx
-
-#define NULL_OK
-#define INP
-#define OUTP
-#define ONLY
-#define READONLY
-#define SHARED
-#define KEEP
-#define RELAX
-#ifndef UNUSED
-  #define UNUSED
-#endif
 
 /*********************************************************************
  * CONSTANTS
@@ -76,12 +60,8 @@ extern "C"
 /*** Generic Status Return Values ***/
 #define SUCCESS                   0x00 //!< SUCCESS
 #define USUCCESS                  0U   //!< SUCCESS
-#ifndef CC33xx
 #define FAILURE                   0x01 //!< Failure
 #define UFAILURE                  1U   //!< Failure
-#else
-#define FAILURE_CC33XX            0x01 //!< Failure CC33xx to avoid redefinition with Osprey
-#endif // CC33xx
 #define INVALIDPARAMETER          0x02 //!< Invalid Parameter
 #define UINVALIDPARAMETER         2U   //!< Invalid Parameter
 #define INVALID_TASK              0x03 //!< Invalid Task
@@ -104,26 +84,7 @@ extern "C"
 // Generic Status return
 typedef uint8 Status_t;
 
-// Data types
-typedef int32   int24;
-typedef uint32  uint24;
-
 /// @endcond // NODOC
-
-/*********************************************************************
- * Global System Events
- */
-
-#define SYS_EVENT_MSG               0x10000  //!< A message is waiting event
-
-/*********************************************************************
- * Global Generic System Messages
- */
-
-#define KEY_CHANGE                0xC0    //!< Key Events
-
-// OSAL System Message IDs/Events Reserved for applications (user applications)
-// 0xE0 - 0xFC
 
 /*********************************************************************
  * MACROS

@@ -113,21 +113,6 @@
 #define IDX_GAP_Bond                                  GAP_Bond
 #define IDX_Gap_ReplyToLTKReq                         Gap_ReplyToLTKReq
 
-/* RTLS Services API */
-/*********************/
-#define IDX_RTLSSrv_init                               RTLSSrv_init
-#define IDX_RTLSSrv_register                           RTLSSrv_registers
-#define IDX_RTLSSrv_setConnCteReceiveParams            RTLSSrv_setConnCteReceiveParams
-#define IDX_RTLSSrv_setConnCteTransmitParams           RTLSSrv_setConnCteTransmitParams
-#define IDX_RTLSSrv_setConnCteRequestEnableCmd         RTLSSrv_setConnCteRequestEnableCmd
-#define IDX_RTLSSrv_setConnCteResponseEnableCmd        RTLSSrv_setConnCteResponseEnableCmd
-#define IDX_RTLSSrv_readAntennaInformationCmd          RTLSSrv_readAntennaInformationCmd
-#define IDX_RTLSSrv_setCteSampleAccuracy               RTLSSrv_setCteSampleAccuracy
-#define IDX_RTLSSrv_setPinOutput                       RTLSSrv_setPinOutput
-#define IDX_RTLSSrv_SetCLCteTransmitParams             RTLSSrv_SetCLCteTransmitParams
-#define IDX_RTLSSrv_CLCteTransmitEnable                RTLSSrv_CLCteTransmitEnable
-#define IDX_RTLSSrv_setCLCteSamplingEnableCmd          RTLSSrv_setCLCteSamplingEnableCmd
-
 /* HCI API */
 /***********/
 #define IDX_HCI_ReadRemoteVersionInfoCmd              HCI_ReadRemoteVersionInfoCmd
@@ -182,7 +167,6 @@
 #define IDX_HCI_LE_SetPeriodicAdvReceiveEnableCmd     HCI_LE_SetPeriodicAdvReceiveEnableCmd
 #define IDX_HCI_LE_SetConnectionlessCteTransmitParamsCmd HCI_LE_SetConnectionlessCteTransmitParamsCmd
 #define IDX_HCI_LE_SetConnectionlessCteTransmitEnableCmd HCI_LE_SetConnectionlessCteTransmitEnableCmd
-#define IDX_HCI_LE_SetConnectionlessIqSamplingEnableCmd HCI_LE_SetConnectionlessIqSamplingEnableCmd
 #define IDX_HCI_LE_SetExtScanRspData                    HCI_LE_SetExtScanRspData
 #define IDX_HCI_LE_SetExtAdvData                        HCI_LE_SetExtAdvData
 #define IDX_HCI_LE_SetAdvStatus                         HCI_LE_SetAdvStatus
@@ -258,8 +242,6 @@
 #define IDX_HCI_LE_LtkReqReplyCmd                        HCI_LE_LtkReqReplyCmd
 #define IDX_HCI_LE_LtkReqNegReplyCmd                     HCI_LE_LtkReqNegReplyCmd
 #define IDX_HCI_EXT_SetRxGainCmd                         HCI_EXT_SetRxGainCmd
-#define IDX_HCI_EXT_ExtendRfRangeCmd                     HCI_EXT_ExtendRfRangeCmd
-#define IDX_HCI_EXT_HaltDuringRfCmd                      HCI_EXT_HaltDuringRfCmd
 #define IDX_HCI_EXT_ClkDivOnHaltCmd                      HCI_EXT_ClkDivOnHaltCmd
 #define IDX_HCI_EXT_DeclareNvUsageCmd                    HCI_EXT_DeclareNvUsageCmd
 #define IDX_HCI_EXT_MapPmIoPortCmd                       HCI_EXT_MapPmIoPortCmd
@@ -271,6 +253,7 @@
 #define IDX_HCI_SendDataPkt                              HCI_SendDataPkt
 #define IDX_HCI_CommandStatusEvent                       HCI_CommandStatusEvent
 #define IDX_HCI_CommandCompleteEvent                     HCI_CommandCompleteEvent
+#define IDX_HCI_VendorSpecifcCommandCompleteEvent        HCI_VendorSpecifcCommandCompleteEvent
 #define IDX_HCI_bm_alloc                                 HCI_bm_alloc
 #define IDX_HCI_bm_free                                  HCI_bm_free
 #define IDX_HCI_LE_ReadPhyCmd                            HCI_LE_ReadPhyCmd
@@ -293,6 +276,12 @@
 #define IDX_LE_ReadNumSupportedAdvSets                   LE_ReadNumSupportedAdvSets
 #define IDX_LL_AE_RegCBack                               LL_AE_RegCBack
 #define IDX_LE_ExtCreateConn                             LE_ExtCreateConn
+#define IDX_LL_Handover_StartSN                          LL_Handover_StartSN
+#define IDX_LL_Handover_CloseSN                          LL_Handover_CloseSN
+#define IDX_LL_Handover_RegisterSNCb                     LL_Handover_RegisterSNCb
+#define IDX_LL_Handover_GetSNDataSize                    LL_Handover_GetSNDataSize
+#define IDX_LL_Handover_StartCN                          LL_Handover_StartCN
+#define IDX_LL_Handover_RegisterCNCb                     LL_Handover_RegisterCNCb
 #define IDX_HCI_EXT_SetPinOutputCmd                      HCI_EXT_SetPinOutputCmd
 #define IDX_HCI_EXT_SetLocationingAccuracyCmd            HCI_EXT_SetLocationingAccuracyCmd
 #define IDX_HCI_EXT_SetAdvSetRandAddrCmd                 HCI_EXT_SetAdvSetRandAddrCmd
@@ -321,7 +310,6 @@
 #define IDX_L2CAP_GetParamValue                       L2CAP_GetParamValue
 #define IDX_L2CAP_RegisterFlowCtrlTask                L2CAP_RegisterFlowCtrlTask
 #define IDX_L2CAP_InfoReq                             L2CAP_InfoReq
-#define IDX_L2CAP_RegisterFlowCtrlTask                L2CAP_RegisterFlowCtrlTask
 
 /* GATT API */
 /************/
@@ -333,8 +321,6 @@
 #define IDX_GATT_InitServer                           GATT_InitServer
 #define IDX_GATT_SendRsp                              GATT_SendRsp
 #define IDX_GATT_GetNextHandle                        GATT_GetNextHandle
-#define IDX_GATT_PrepareWriteReq                      GATT_PrepareWriteReq
-#define IDX_GATT_ExecuteWriteReq                      GATT_ExecuteWriteReq
 #define IDX_GATT_FindUUIDRec                          GATT_FindUUIDRec
 #define IDX_GATT_RegisterService                      GATT_RegisterService
 #define IDX_GATT_DeregisterService                    GATT_DeregisterService
@@ -370,7 +356,6 @@
 /*******************************/
 #define IDX_GATTServApp_SendServiceChangedInd         GATTServApp_SendServiceChangedInd
 #define IDX_GATTServApp_RegisterService               GATTServApp_RegisterService
-#define IDX_GATTServApp_AddService                    GATTServApp_AddService
 #define IDX_GATTServApp_AddService                    GATTServApp_AddService
 #define IDX_GATTServApp_DeregisterService             GATTServApp_DeregisterService
 #define IDX_GATTServApp_SetParameter                  GATTServApp_SetParameter
@@ -439,7 +424,6 @@
 #define IDX_HCI_LE_CS_CreateConfig                          HCI_LE_CS_CreateConfig
 #define IDX_HCI_LE_CS_SecurityEnable                        HCI_LE_CS_SecurityEnable
 #define IDX_HCI_LE_CS_SetDefaultSettings                    HCI_LE_CS_SetDefaultSettings
-#define IDX_HCI_LE_CS_ReadLocalFAETable                     HCI_LE_CS_ReadLocalFAETable
 #define IDX_HCI_LE_CS_ReadRemoteFAETable                    HCI_LE_CS_ReadRemoteFAETable
 #define IDX_HCI_LE_CS_WriteRemoteFAETable                   HCI_LE_CS_WriteRemoteFAETable
 #define IDX_HCI_LE_CS_RemoveConfig                          HCI_LE_CS_RemoveConfig
@@ -448,6 +432,16 @@
 #define IDX_HCI_LE_CS_ProcedureEnable                       HCI_LE_CS_ProcedureEnable
 #define IDX_HCI_LE_CS_Test                                  HCI_LE_CS_Test
 #define IDX_HCI_LE_CS_TestEnd                               HCI_LE_CS_TestEnd
+/* Host Handover APIs */
+/**********************/
+#define IDX_Handover_RegisterSNCBs                    Handover_RegisterSNCBs
+#define IDX_Handover_InitSNParams                     Handover_InitSNParams
+#define IDX_Handover_GetSNDataSize                    Handover_GetSNDataSize
+#define IDX_Handover_StartSN                          Handover_StartSN
+#define IDX_Handover_RegisterCNCBs                    Handover_RegisterCNCBs
+#define IDX_Handover_InitCNParams                     Handover_InitCNParams
+#define IDX_Handover_StartCN                          Handover_StartCN
+#define IDX_Handover_CloseSN                          Handover_CloseSN
 
 #endif /* !STACK_LIBRARY */
 

@@ -22,7 +22,8 @@
 #include "osal.h"
 #include "onboard.h"
 #include "osal_bufmgr.h"
-#include "rom_jt.h"
+#include "map_direct.h"
+
 /*********************************************************************
  * MACROS
  */
@@ -96,10 +97,20 @@ void *osal_bm_alloc( uint16 size )
 {
   halIntState_t  cs;
   bm_desc_t     *bd_ptr;
+  uint16 allocSize;
+
+  allocSize = sizeof( bm_desc_t ) + size;
+
+  // If 'size' is very large and 'allocSize' overflows, the result will be
+  // smaller than size. In this case, don't try to allocate.
+  if ( allocSize < size )
+  {
+    return ((void *)NULL);
+  }
 
   HAL_ENTER_CRITICAL_SECTION(cs);
 
-  bd_ptr = osal_mem_alloc( sizeof( bm_desc_t ) + size );
+  bd_ptr = osal_mem_alloc( allocSize );
 
   if ( bd_ptr != NULL )
   {

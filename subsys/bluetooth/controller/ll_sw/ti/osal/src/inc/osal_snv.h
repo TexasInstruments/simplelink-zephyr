@@ -27,16 +27,10 @@ extern "C"
  */
 
 #include "hal_types.h"
-#include "hal_board_cfg.h"
 
 /*********************************************************************
  * CONSTANTS
  */
-
-// NV page configuration
-#define OSAL_NV_PAGE_SIZE               HAL_FLASH_PAGE_SIZE
-#define OSAL_NV_PAGE_BEGIN              ((uint32)HAL_NV_PAGE_BEG)
-#define OSAL_NV_PAGES_USED              HAL_NV_PAGE_CNT
 
 /*********************************************************************
  * MACROS

@@ -22,12 +22,9 @@
 #include "onboard.h"
 #include "osal.h"
 #include "osal_timers.h"
-#include "hal_timer.h"
 #include "osal_clock.h"
 
-#ifdef USE_ICALL
-  #include <icall.h>
-#endif /* USE_ICALL */
+#include <icall.h>
 /*********************************************************************
  * MACROS
  */
@@ -103,10 +100,8 @@ void osalTimerInit( void )
 {
   osal_systemClock = 0;
 
-#ifdef USE_ICALL
   // Initialize variables used to track timing and provide OSAL timer service
   osal_last_timestamp = (uint_least32_t) ICall_getTicks();
-#endif /* USE_ICALL */
 }
 
 /*********************************************************************
@@ -232,7 +227,6 @@ void osalDeleteTimer( osalTimerRec_t *rmTimer )
   }
 }
 
-#ifdef USE_ICALL
 /*********************************************************************
  * @fn      osal_timer_refTimeUpdate
  *
@@ -272,7 +266,6 @@ void osal_timer_refTimeUpdate (void)
     }
     osalAdjustTimer(milliseconds);
 }
-#endif /* USE_ICALL */
 
 /*********************************************************************
  * @fn      osal_start_timerEx
@@ -293,12 +286,10 @@ uint8 osal_start_timerEx( uint8 taskID, uint16 event_id, uint32 timeout_value )
   halIntState_t intState;
   osalTimerRec_t *newTimer;
 
-#ifdef USE_ICALL
   if ( timerHead == NULL )
   {
     osal_timer_refTimeUpdate();
   }
-#endif /* USE_ICALL */
 
   HAL_ENTER_CRITICAL_SECTION( intState );  // Hold off interrupts.
 
@@ -564,34 +555,6 @@ void osalTimerUpdate( uint32 updateTime )
   }
 }
 
-#ifdef POWER_SAVING
-/*********************************************************************
- * @fn      osal_adjust_timers
- *
- * @brief   Update the timer structures for elapsed ticks.
- *
- * @param   none
- *
- * @return  none
- *********************************************************************/
-void osal_adjust_timers( void )
-{
-  uint32 eTime;
-
-  if ( timerHead != NULL )
-  {
-    // Compute elapsed time (msec)
-    eTime = TimerElapsed() / TICK_COUNT;
-
-    if ( eTime )
-    {
-      osalTimerUpdate( eTime );
-    }
-  }
-}
-#endif /* POWER_SAVING */
-
-#if defined POWER_SAVING || defined USE_ICALL
 /*********************************************************************
  * @fn      osal_next_timeout
  *
@@ -634,7 +597,6 @@ uint32 osal_next_timeout( void )
 
   return ( nextTimeout );
 }
-#endif // POWER_SAVING || USE_ICALL
 
 /*********************************************************************
  * @fn      osal_GetSystemClock()

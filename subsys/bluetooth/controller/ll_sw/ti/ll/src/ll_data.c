@@ -28,8 +28,7 @@
 #include "ll_al.h"
 #include "ll_privacy.h"
 #include "cs/ll_cs_db.h"
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * CONSTANTS
@@ -66,7 +65,7 @@
  */
 llConnState_t *llDataGetConnPtr( uint8 connId )
 {
-  return( &llConns.llConnection[connId] );
+  return( (connId != LL_INVALID_CONNECTION_ID) ? &llConns.llConnection[connId] : NULL );
 }
 #endif
 /*******************************************************************************
@@ -92,8 +91,6 @@ llConnState_t *llDataGetConnPtr( uint8 connId )
  */
 llStatus_t llDynamicAlloc( void )
 {
-  llStatus_t status;
-
 #if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG))
 
   // allocate Scanner Info
@@ -108,7 +105,7 @@ llStatus_t llDynamicAlloc( void )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
-#endif // SCAN_CFG || (FLASH_ROM_BUILD)
+#endif // SCAN_CFG
 
 #if (defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG))
   // allocate Initiator Info
@@ -127,7 +124,7 @@ llStatus_t llDynamicAlloc( void )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
-#endif // (INIT_CFG) || (FLASH_ROM_BUILD)
+#endif // (INIT_CFG)
 
   // allocate DTM Info
   dtmInfo = MAP_osal_mem_alloc( sizeof(dtmInfo_t) );
@@ -156,14 +153,6 @@ llStatus_t llDynamicAlloc( void )
   memset (llTaskList.llTasks, 0, sizeof( taskInfo_t ) *
                                           (maxNumConns + LL_NUM_TASK_BLOCKS));
 
-  // allocate and initialize RX window task when the SDAA module is enable.
-  status = MAP_llSDAASetupRXWindowCmd();
-  if ( status != LL_STATUS_SUCCESS )
-  {
-    // return LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED if
-    // MAP_llSDAASetupRXWindowCmd() fail to allocate memory
-    return ( status );
-  }
 #ifdef LL_CONN_SIZE
   totalConnSize = sizeInfo.sizeTaskInfo;
 #endif // LL_CONN_SIZE
@@ -231,8 +220,9 @@ llStatus_t llDynamicAlloc( void )
 #endif // ADV_CONN_CFG | INIT_CFG
 
   // Accept list
-  alTable = (alTable_t *)MAP_osal_mem_alloc( sizeof(alTable_t) + sizeof(alEntry_t) *
-                                               ( BLE_NUM_AL_ENTRIES ) );
+  alTable = (alTable_t *)MAP_osal_mem_alloc( ( sizeof(alEntry_t) *
+                                               ( EXT_ACCEPT_LIST_SIZE + BLE_MAX_NUM_AL_ENTRIES ) ) +
+                                             sizeof(alTable_t) );
   if ( !alTable )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
@@ -243,7 +233,7 @@ llStatus_t llDynamicAlloc( void )
 
   // Accept List for Scanner
   alTableScan = (alTable_t *)MAP_osal_mem_alloc( sizeof(alTable_t) + sizeof(alEntry_t) *
-                                               ( BLE_NUM_AL_ENTRIES ) );
+                                               ( BLE_MAX_NUM_AL_SCAN_ENTRIES ) );
   if ( !alTableScan )
   {
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
@@ -268,68 +258,6 @@ llStatus_t llDynamicAlloc( void )
     return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
   }
 
-#ifndef CC23X0
-  status = MAP_llDmmDynamicAlloc();
-  if (!status)
-  {
-    return( status );
-  }
-#endif
-  return( LL_STATUS_SUCCESS );
-}
-
-/*******************************************************************************
- * @fn          llDmmDynamicAlloc
- *
- * @brief       This function is used to dynamically DMM allocate memory needed by
- *              the Controller.
- *
- *              Note: This is a one time allocation, the memory of which is
- *                    never freed! So for all intents and purposes, essentially
- *                    static.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      LL_STATUS_SUCCESS
- *              LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED
- */
-llStatus_t llDmmDynamicAlloc( void )
-{
-  uint8 prio;
-
-  // DMM Policy feature
-  dmmPolicyManager.adv = MAP_osal_mem_alloc(sizeof(dmmPolicyManagerThreshold_t) * AE_DEFAULT_NUM_ADV_SETS);
-  if ( !dmmPolicyManager.adv )
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-  }
-
-  dmmPolicyManager.conn = MAP_osal_mem_alloc(sizeof(dmmPolicyManagerThreshold_t) * maxNumConns);
-  if ( !dmmPolicyManager.conn )
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-  }
-
-  dmmPolicyManager.advHandle = MAP_osal_mem_alloc(AE_DEFAULT_NUM_ADV_SETS);
-  if ( !dmmPolicyManager.advHandle )
-  {
-    return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-  }
-
-  for (prio=0;prio<DMM_POLICY_MAX_REPEAT_PRIORITIES;prio++)
-  {
-    dmmPolicyManager.connRepeatPrio[prio] = MAP_osal_mem_alloc(maxNumConns);
-    if ( !dmmPolicyManager.connRepeatPrio[prio] )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-  }
   return( LL_STATUS_SUCCESS );
 }
 
@@ -350,23 +278,23 @@ llStatus_t llDmmDynamicAlloc( void )
  */
 void llDynamicFree( void )
 {
-#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)) /* || (FLASH_ROM_BUILD) */
+#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG))
   // check Scan
   if ( extScanInfo )
   {
     // free already allocated data
     MAP_osal_mem_free( extScanInfo );
   }
-#endif // SCAN_CFG || FLASH_ROM_BUILD
+#endif // SCAN_CFG
 
-#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)) /* || (FLASH_ROM_BUILD) */
+#if (defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG))
   // check Init
   if ( extInitInfo )
   {
     // free already allocated data
     MAP_osal_mem_free( extInitInfo );
   }
-#endif // INIT_CFG || FLASH_ROM_BUILD
+#endif // INIT_CFG
 
   // check DTM
   if ( dtmInfo )
@@ -379,13 +307,6 @@ void llDynamicFree( void )
   {
     // free already allocated data
     MAP_osal_mem_free( llTaskList.llTasks );
-  }
-
-  // check if ptr for RX window task is exist
-  if ( pRXWindowTask )
-  {
-    // free already allocated data
-    MAP_osal_mem_free( pRXWindowTask );
   }
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
@@ -445,65 +366,11 @@ void llDynamicFree( void )
     MAP_osal_mem_free( pRfPathComp );
   }
 
-#ifdef RTLS_CTE
-  // Constant Tone Extension
-  if ( llCte )
-  {
-    MAP_osal_mem_free( llCte );
-  }
-#endif
-
   // Channel Sounding
   MAP_llCsFreeAll();
-
-
-  // Free DMM allocations
-  MAP_llDmmDynamicFree();
 
   return;
 }
 
-/*******************************************************************************
- * @fn          llDmmDynamicFree
- *
- * @brief       This function is used to free any DMM dynamically allocated memory.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llDmmDynamicFree( void )
-{
-  uint8 prio;
-  // DMM Policy feature
-  if ( dmmPolicyManager.adv )
-  {
-    MAP_osal_mem_free( dmmPolicyManager.adv );
-  }
-
-  if ( dmmPolicyManager.conn )
-  {
-    MAP_osal_mem_free( dmmPolicyManager.conn );
-  }
-
-  if ( dmmPolicyManager.advHandle )
-  {
-    MAP_osal_mem_free( dmmPolicyManager.advHandle );
-  }
-
-  for (prio=0;prio<DMM_POLICY_MAX_REPEAT_PRIORITIES;prio++)
-  {
-    if ( dmmPolicyManager.connRepeatPrio[prio] )
-    {
-      MAP_osal_mem_free( dmmPolicyManager.connRepeatPrio[prio] );
-    }
-  }
-}
 /*******************************************************************************
  */

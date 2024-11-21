@@ -81,11 +81,6 @@ extern "C"
   extern void osal_timer_ISR( void );
 
   /*
-   * Adjust timer tables
-   */
-  extern void osal_adjust_timers( void );
-
-  /*
    * Update timer tables
    */
   extern void osalTimerUpdate( uint32 updateTime );

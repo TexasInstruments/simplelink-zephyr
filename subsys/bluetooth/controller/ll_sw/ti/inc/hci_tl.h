@@ -93,12 +93,30 @@ extern uint8 hciSmpTaskID;
 #define HCI_CMD_MIN_LENGTH                                4
 
 /**
+ * @brief Minimum length for extended command packet
+ *
+ * Minimum length for CMD packet is 1+2+2
+ * | Packet Type (1) | OPCode(2) | Length(2) |
+ */
+#define HCI_EXT_CMD_MIN_LENGTH                            5
+
+/**
  * @brief Minimum length for event packet
  *
  * Minimum length for EVENT packet is 1+1+1
  * | Packet Type (1) | Event Code(1) | Length(1) |
  */
 #define HCI_EVENT_MIN_LENGTH                              3
+
+/**
+ * @brief Status field length
+ */
+#define HCI_EVENT_STATUS_LENGTH                           1
+
+/**
+ * @brief HCI Opcode length
+ */
+#define HCI_EVENT_OPCODE_LENGTH                           1
 
 /**
  * @brief Minimum length for event packet
@@ -165,13 +183,13 @@ extern uint8 hciSmpTaskID;
 
 // Controller and Baseband Commands
 #define HCI_SET_EVENT_MASK                                0x0C01    //!< opcode of @ref HCI_SetEventMaskCmd
-#define HCI_RESET                                         0x0C03    //!< opcode of@ref HCI_ResetCmd
+#define HCI_RESET                                         0x0C03    //!< legacy opcode of@ref HCI_ResetCmd
 /// @cond NODOC
-#define HCI_WRITE_LOCAL_NAME                              0x0C13    //!< opcode of @ref HCI_WriteLocalNameCmd
-#define HCI_READ_SCAN_ENABLE                              0x0C19    //!< opcode of @ref HCI_ReadScanEnableCmd
-#define HCI_WRITE_SCAN_ENABLE                             0x0C1A    //!< opcode of @ref HCI_WriteScanEnableCmd
-#define HCI_READ_CLASS_OF_DEVICE                          0x0C23    //!< opcode of @ref HCI_ReadClassOfDeviceCmd
-#define HCI_WRITE_CLASS_OF_DEVICE                         0x0C24    //!< opcode of @ref HCI_WriteClassOfDeviceCmd
+#define HCI_WRITE_LOCAL_NAME                              0x0C13    //!< legacy opcode of @ref HCI_WriteLocalNameCmd
+#define HCI_READ_SCAN_ENABLE                              0x0C19    //!< legacy opcode of @ref HCI_ReadScanEnableCmd
+#define HCI_WRITE_SCAN_ENABLE                             0x0C1A    //!< legacy opcode of @ref HCI_WriteScanEnableCmd
+#define HCI_READ_CLASS_OF_DEVICE                          0x0C23    //!< legacy opcode of @ref HCI_ReadClassOfDeviceCmd
+#define HCI_WRITE_CLASS_OF_DEVICE                         0x0C24    //!< legacy opcode of @ref HCI_WriteClassOfDeviceCmd
 /// @endcond //NODOC
 #define HCI_READ_TRANSMIT_POWER                           0x0C2D    //!< opcode of@ref HCI_ReadTransmitPowerLevelCmd
 /// @cond NODOC
@@ -180,12 +198,12 @@ extern uint8 hciSmpTaskID;
 /// @endcond //NODOC
 #define HCI_HOST_NUM_COMPLETED_PACKETS                    0x0C35    //!< opcode of @ref HCI_HostNumCompletedPktCmd
 /// @cond NODOC
-#define HCI_WRITE_CURRENT_IAC_LAP                         0x0C3A    //!< opcode of @ref HCI_WriteCurrentIacLapCmd
+#define HCI_WRITE_CURRENT_IAC_LAP                         0x0C3A    //!< legacy opcode of @ref HCI_WriteCurrentIacLapCmd
 /// @endcond //NODOC
 #define HCI_SET_EVENT_MASK_PAGE_2                         0x0C63    //!< opcode of @ref HCI_SetEventMaskPage2Cmd
 /// @cond NODOC
-#define HCI_READ_LE_HOST_SUPPORT                          0x0C6C    //!< opcode of @ref HCI_ReadLeHostSupportCmd
-#define HCI_WRITE_LE_HOST_SUPPORT                         0x0C6D    //!< opcode of @ref HCI_WriteLeHostSupportCmd
+#define HCI_READ_LE_HOST_SUPPORT                          0x0C6C    //!< legacy opcode of @ref HCI_ReadLeHostSupportCmd
+#define HCI_WRITE_LE_HOST_SUPPORT                         0x0C6D    //!< legacy opcode of @ref HCI_WriteLeHostSupportCmd
 /// @endcond //NODOC
 #define HCI_READ_AUTH_PAYLOAD_TIMEOUT                     0x0C7B    //!< opcode of @ref HCI_ReadAuthPayloadTimeoutCmd
 #define HCI_WRITE_AUTH_PAYLOAD_TIMEOUT                    0x0C7C    //!< opcode of @ref HCI_WriteAuthPayloadTimeoutCmd
@@ -195,7 +213,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_READ_LOCAL_SUPPORTED_COMMANDS                 0x1002    //!< opcode of @ref HCI_ReadLocalSupportedCommandsCmd
 #define HCI_READ_LOCAL_SUPPORTED_FEATURES                 0x1003    //!< opcode of @ref HCI_ReadLocalSupportedFeaturesCmd
 /// @cond NODOC
-#define HCI_READ_LOCAL_BUFFER_SIZE                        0x1005    //!< opcode of @ref HCI_ReadLocalBufferSizeCmd
+#define HCI_READ_LOCAL_BUFFER_SIZE                        0x1005    //!< legacy opcode of @ref HCI_ReadLocalBufferSizeCmd
 /// @endcond //NODOC
 #define HCI_READ_BDADDR                                   0x1009    //!< opcode of @ref HCI_ReadBDADDRCmd
 
@@ -209,14 +227,14 @@ extern uint8 hciSmpTaskID;
 #define HCI_LE_READ_LOCAL_SUPPORTED_FEATURES              0x2003    //!< opcode of @ref HCI_LE_ReadLocalSupportedFeaturesCmd
 /// @cond NODOC
 #define HCI_LE_SET_RANDOM_ADDR                            0x2005    //!< opcode of @ref HCI_LE_SetRandomAddressCmd
-#define HCI_LE_SET_ADV_PARAM                              0x2006    //!< opcode of @ref HCI_LE_SetAdvParamCmd
+#define HCI_LE_SET_ADV_PARAM                              0x2006    //!< legacy opcode of @ref HCI_LE_SetAdvParamCmd
 #define HCI_LE_READ_ADV_CHANNEL_TX_POWER                  0x2007    //!< opcode of @ref HCI_LE_ReadAdvChanTxPowerCmd
-#define HCI_LE_SET_ADV_DATA                               0x2008    //!< opcode of @ref HCI_LE_SetAdvDataCmd
-#define HCI_LE_SET_SCAN_RSP_DATA                          0x2009    //!< opcode of @ref HCI_LE_SetScanRspDataCmd
-#define HCI_LE_SET_ADV_ENABLE                             0x200A    //!< opcode of @ref HCI_LE_SetAdvEnableCmd
-#define HCI_LE_SET_SCAN_PARAM                             0x200B    //!< opcode of @ref HCI_LE_SetScanParamCmd
-#define HCI_LE_SET_SCAN_ENABLE                            0x200C    //!< opcode of @ref HCI_LE_SetScanEnableCmd
-#define HCI_LE_CREATE_CONNECTION                          0x200D    //!< opcode of @ref HCI_LE_CreateConnCmd
+#define HCI_LE_SET_ADV_DATA                               0x2008    //!< legacy opcode of @ref HCI_LE_SetAdvDataCmd
+#define HCI_LE_SET_SCAN_RSP_DATA                          0x2009    //!< legacy opcode of @ref HCI_LE_SetScanRspDataCmd
+#define HCI_LE_SET_ADV_ENABLE                             0x200A    //!< legacy opcode of @ref HCI_LE_SetAdvEnableCmd
+#define HCI_LE_SET_SCAN_PARAM                             0x200B    //!< legacy opcode of @ref HCI_LE_SetScanParamCmd
+#define HCI_LE_SET_SCAN_ENABLE                            0x200C    //!< legacy opcode of @ref HCI_LE_SetScanEnableCmd
+#define HCI_LE_CREATE_CONNECTION                          0x200D    //!< legacy opcode of @ref HCI_LE_CreateConnCmd
 #define HCI_LE_CREATE_CONNECTION_CANCEL                   0x200E    //!< opcode of @ref HCI_LE_CreateConnCancelCmd
 /// @endcond // NODOC
 #define HCI_LE_READ_ACCEPT_LIST_SIZE                      0x200F    //!< opcode of @ref HCI_LE_ReadAcceptListSizeCmd
@@ -275,21 +293,21 @@ extern uint8 hciSmpTaskID;
 #define HCI_LE_READ_RF_PATH_COMPENSATION                  0x204C    //!< opcode of @ref HCI_LE_ReadRfPathCompCmd
 #define HCI_LE_WRITE_RF_PATH_COMPENSATION                 0x204D    //!< opcode of @ref HCI_LE_WriteRfPathCompCmd
 // @cond NODOC
-#define HCI_LE_SET_ADV_SET_RANDOM_ADDRESS                 0x2035    //!< opcode of @ref HCI_LE_SetAdvSetRandAddrCmd
-#define HCI_LE_SET_EXT_ADV_PARAMETERS                     0x2036    //!< opcode of @ref HCI_LE_SetExtAdvParamsCmd
-#define HCI_LE_SET_EXT_ADV_DATA                           0x2037    //!< opcode of @ref HCI_LE_SetExtAdvDataCmd
-#define HCI_LE_SET_EXT_SCAN_RESPONSE_DATA                 0x2038    //!< opcode of @ref HCI_LE_SetExtScanRspDataCmd
-#define HCI_LE_SET_EXT_ADV_ENABLE                         0x2039    //!< opcode of @ref HCI_LE_SetExtAdvEnableCmd
-#define HCI_LE_READ_MAX_ADV_DATA_LENGTH                   0x203A    //!< opcode of @ref HCI_LE_ReadMaxAdvDataLenCmd
-#define HCI_LE_READ_NUM_SUPPORTED_ADV_SETS                0x203B    //!< opcode of @ref HCI_LE_ReadNumSupportedAdvSetsCmd
-#define HCI_LE_REMOVE_ADV_SET                             0x203C    //!< opcode of @ref HCI_LE_RemoveAdvSetCmd
-#define HCI_LE_CLEAR_ADV_SETS                             0x203D    //!< opcode of @ref HCI_LE_ClearAdvSetsCmd
+#define HCI_LE_SET_ADV_SET_RANDOM_ADDRESS                 0x2035    //!< EXTRA opcode of @ref HCI_LE_SetAdvSetRandAddrCmd
+#define HCI_LE_SET_EXT_ADV_PARAMETERS                     0x2036    //!< EXTRA opcode of @ref HCI_LE_SetExtAdvParamsCmd
+#define HCI_LE_SET_EXT_ADV_DATA                           0x2037    //!< EXTRA opcode of @ref HCI_LE_SetExtAdvDataCmd
+#define HCI_LE_SET_EXT_SCAN_RESPONSE_DATA                 0x2038    //!< EXTRA opcode of @ref HCI_LE_SetExtScanRspDataCmd
+#define HCI_LE_SET_EXT_ADV_ENABLE                         0x2039    //!< EXTRA opcode of @ref HCI_LE_SetExtAdvEnableCmd
+#define HCI_LE_READ_MAX_ADV_DATA_LENGTH                   0x203A    //!< EXTRA opcode of @ref HCI_LE_ReadMaxAdvDataLenCmd
+#define HCI_LE_READ_NUM_SUPPORTED_ADV_SETS                0x203B    //!< EXTRA opcode of @ref HCI_LE_ReadNumSupportedAdvSetsCmd
+#define HCI_LE_REMOVE_ADV_SET                             0x203C    //!< EXTRA opcode of @ref HCI_LE_RemoveAdvSetCmd
+#define HCI_LE_CLEAR_ADV_SETS                             0x203D    //!< EXTRA opcode of @ref HCI_LE_ClearAdvSetsCmd
 #define HCI_LE_SET_PERIODIC_ADV_PARAMETERS                0x203E    //!< opcode of @ref HCI_LE_SetPeriodicAdvParamsCmd
 #define HCI_LE_SET_PERIODIC_ADV_DATA                      0x203F    //!< opcode of @ref HCI_LE_SetPeriodicAdvDataCmd
 #define HCI_LE_SET_PERIODIC_ADV_ENABLE                    0x2040    //!< opcode of @ref HCI_LE_SetPeriodicAdvEnableCmd
-#define HCI_LE_SET_EXT_SCAN_PARAMETERS                    0x2041    //!< opcode of @ref LE_SetExtScanParams
-#define HCI_LE_SET_EXT_SCAN_ENABLE                        0x2042    //!< opcode of @ref LE_SetExtScanEnable
-#define HCI_LE_EXT_CREATE_CONN                            0x2043    //!< opcode of @ref LE_ExtCreateConn
+#define HCI_LE_SET_EXT_SCAN_PARAMETERS                    0x2041    //!< EXTRA opcode of @ref LE_SetExtScanParams
+#define HCI_LE_SET_EXT_SCAN_ENABLE                        0x2042    //!< EXTRA opcode of @ref LE_SetExtScanEnable
+#define HCI_LE_EXT_CREATE_CONN                            0x2043    //!< EXTRA opcode of @ref LE_ExtCreateConn
 #define HCI_LE_PERIODIC_ADV_CREATE_SYNC                   0x2044    //!< opcode of @ref HCI_LE_PeriodicAdvCreateSyncCmd
 #define HCI_LE_PERIODIC_ADV_CREATE_SYNC_CANCEL            0x2045    //!< opcode of @ref HCI_LE_PeriodicAdvCreateSyncCancelCmd
 #define HCI_LE_PERIODIC_ADV_TERMINATE_SYNC                0x2046    //!< opcode of @ref HCI_LE_PeriodicAdvTerminateSyncCmd
@@ -320,20 +338,20 @@ extern uint8 hciSmpTaskID;
 /// @endcond //NODOC
 // LE Vendor Specific LL Extension Commands
 #define HCI_EXT_SET_RX_GAIN                                 0xFC00    //!< opcode of @ref HCI_EXT_SetRxGainCmd
-#define HCI_EXT_SET_TX_POWER                                0xFC01    //!< opcode of @ref HCI_EXT_SetTxPowerDbmCmd
+#define HCI_EXT_SET_TX_POWER                                0xFC01    //!< Deprecated opcode of @ref HCI_EXT_SetTxPowerDbmCmd
 // Reserved and can be used: 0xFC2F
 // Reserved and can be used: 0xFC30
 
-#define HCI_EXT_ONE_PKT_PER_EVT                             0xFC02    //!< opcode of @ref HCI_EXT_OnePktPerEvtCmd
+#define HCI_EXT_ONE_PKT_PER_EVT                             0xFC02    //!< Deprecated opcode of @ref HCI_EXT_OnePktPerEvtCmd
 /// @cond CC254X
-#define HCI_EXT_CLK_DIVIDE_ON_HALT                          0xFC03    //!< opcode of @ref HCI_EXT_ClkDivOnHaltCmd
-#define HCI_EXT_DECLARE_NV_USAGE                            0xFC04    //!< opcode of @ref HCI_EXT_DeclareNvUsageCmd
+#define HCI_EXT_CLK_DIVIDE_ON_HALT                          0xFC03    //!< Deprecated opcode of @ref HCI_EXT_ClkDivOnHaltCmd
+#define HCI_EXT_DECLARE_NV_USAGE                            0xFC04    //!< Deprecated opcode of @ref HCI_EXT_DeclareNvUsageCmd
 /// @endcond // CC254X
 #define HCI_EXT_DECRYPT                                     0xFC05    //!< opcode of @ref HCI_EXT_DecryptCmd
 #define HCI_EXT_SET_LOCAL_SUPPORTED_FEATURES                0xFC06    //!< opcode of @ref HCI_EXT_SetLocalSupportedFeaturesCmd
 #define HCI_EXT_SET_FAST_TX_RESP_TIME                       0xFC07    //!< opcode of @ref HCI_EXT_SetFastTxResponseTimeCmd
 #define HCI_EXT_MODEM_TEST_TX                               0xFC08    //!< opcode of @ref HCI_EXT_ModemTestTxCmd
-#define HCI_EXT_MODEM_HOP_TEST_TX                           0xFC09    //!< opcode of @ref HCI_EXT_ModemHopTestTxCmd
+#define HCI_EXT_MODEM_HOP_TEST_TX                           0xFC09    //!< Deprecated opcode of @ref HCI_EXT_ModemHopTestTxCmd
 #define HCI_EXT_MODEM_TEST_RX                               0xFC0A    //!< opcode of @ref HCI_EXT_ModemTestRxCmd
 #define HCI_EXT_END_MODEM_TEST                              0xFC0B    //!< opcode of @ref HCI_EXT_EndModemTestCmd
 /// @cond NODOC
@@ -358,7 +376,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_OVERRIDE_PL                                 0xFC1A    //!< opcode of @ref HCI_EXT_SetPeripheralLatencyOverrideCmd
 #define HCI_EXT_BUILD_REVISION                              0xFC1B    //!< opcode of @ref HCI_EXT_BuildRevisionCmd
 /// @cond CC254X
-#define HCI_EXT_DELAY_SLEEP                                 0xFC1C    //!< opcode of @ref HCI_EXT_DelaySleepCmd
+#define HCI_EXT_DELAY_SLEEP                                 0xFC1C    //!< Deprecated opcode of @ref HCI_EXT_DelaySleepCmd
 /// @endcond //CC254X
 #define HCI_EXT_RESET_SYSTEM                                0xFC1D    //!< opcode of @ref HCI_EXT_ResetSystemCmd
 /// @cond CC254X
@@ -371,16 +389,16 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_SET_MAX_DATA_LENGTH                         0xFC21    //!< opcode of @ref HCI_EXT_SetMaxDataLenCmd
 #define HCI_EXT_SET_DTM_TX_PKT_CNT                          0xFC24    //!< opcode of @ref HCI_EXT_SetDtmTxPktCntCmd
 /// @cond NODOC
-#define HCI_EXT_READ_RAND_ADDR                              0xFC25    //!< opcode of @ref HCI_ReadRandAddrCmd
+#define HCI_EXT_READ_RAND_ADDR                              0xFC25    //!< Deprecated opcode of @ref HCI_ReadRandAddrCmd
 /// @endcond //NODOC
 #define HCI_EXT_ENHANCED_MODEM_TEST_TX                      0xFC27    //!< opcode of @ref HCI_EXT_EnhancedModemTestTxCmd
-#define HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX                  0xFC28    //!< opcode of @ref HCI_EXT_EnhancedModemHopTestTxCmd
+#define HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX                  0xFC28    //!< Deprecated opcode of @ref HCI_EXT_EnhancedModemHopTestTxCmd
 #define HCI_EXT_ENHANCED_MODEM_TEST_RX                      0xFC29    //!< opcode of @ref HCI_EXT_EnhancedModemTestRxCmd
 // @cond NODOC
 #define HCI_EXT_SET_PIN_OUTPUT                              0xFC2A    //!< opcode of @ref HCI_SetPinOutputCmd
 #define HCI_EXT_SET_LOCATIONING_ACCURACY                    0xFC2B    //!< opcode of @ref HCI_SetLocationingAccuracyCmd
 #define HCI_EXT_GET_ACTIVE_CONNECTION_INFO                  0xFC2C    //!< opcode of @ref HCI_EXT_GetActiveConnInfoCmd
-#define HCI_EXT_COEX_ENABLE                                 0xFC2E    //!< opcode of @ref HCI_EXT_CoexEnableCmd
+#define HCI_EXT_COEX_ENABLE                                 0xFC2E    //!< Deprecated opcode of @ref HCI_EXT_CoexEnableCmd
 #define HCI_EXT_SET_TX_POWER_DBM                            0xFC2F    //!< opcode of @ref HCI_EXT_SetTxPowerDbmCmd
 #define HCI_EXT_SET_MAX_DTM_TX_POWER_DBM                    0xFC30    //!< opcode of @ref HCI_EXT_SetMaxDtmTxPowerDbmCmd
 #define HCI_EXT_GET_RX_STATS                                0xFC31    //!< opcode of @ref HCI_EXT_GetRxStatisticsCmd
@@ -390,18 +408,17 @@ extern uint8 hciSmpTaskID;
 
 #define HCI_EXT_LL_TEST_MODE                                0xFC70    //!< opcode of @ref HCI_EXT_LLTestModeCmd
 
-#define HCI_EXT_LE_SET_EXT_ADV_DATA                         0xFC71    //!< opcode of @ref HCI_EXT_LE_SetExtAdvDataCmd
-#define HCI_EXT_LE_SET_EXT_SCAN_RESPONSE_DATA               0xFC72    //!< opcode of @ref HCI_EXT_LE_SetExtScanRspDataCmd
+#define HCI_EXT_LE_SET_EXT_ADV_DATA                         0xFC71    //!< EXTRA opcode of @ref HCI_EXT_LE_SetExtAdvDataCmd
+#define HCI_EXT_LE_SET_EXT_SCAN_RESPONSE_DATA               0xFC72    //!< EXTRA opcode of @ref HCI_EXT_LE_SetExtScanRspDataCmd
 #define HCI_EXT_LE_SET_EXT_VIRTUAL_ADV_ADDRESS              0xFC73    //!< opcode of @ref HCI_EXT_SetVirtualAdvAddrCmd
-#define HCI_EXT_SET_SCAN_CHAN                               0xFC74    //!< opcode of @ref HCI_EXT_SetExtScanChannels
+#define HCI_EXT_SET_SCAN_CHAN                               0xFC74    //!< Deprecated  opcode of @ref HCI_EXT_SetExtScanChannels
 #define HCI_EXT_SET_QOS_PARAMETERS                          0xFC75    //!< opcode of @ref HCI_EXT_SetQOSParameters
 #define HCI_EXT_SET_QOS_DEFAULT_PARAMETERS                  0xFC76    //!< opcode of @ref HCI_EXT_SetQOSDefaultParameters
-#define HCI_LE_MAKE_DISCOVERABLE_DONE                       0xFC77    //!< opcode of @ref HCI_LE_SetAdvStatus
-#define HCI_LE_END_DISCOVERABLE_DONE                        0xFC78    //!< opcode of @ref HCI_LE_SetAdvStatus
+#define HCI_LE_MAKE_DISCOVERABLE_DONE                       0xFC77    //!< Deprecated opcode of @ref HCI_LE_SetAdvStatus
+#define HCI_LE_END_DISCOVERABLE_DONE                        0xFC78    //!< Deprecated opcode of @ref HCI_LE_SetAdvStatus
 #define HCI_EXT_SET_HOST_DEFAULT_CHANNEL_CLASSIFICATION     0xFC79    //!< opcode of @ref HCI_EXT_SetHostDefChanClassificationCmd
 #define HCI_EXT_SET_HOST_CONNECTION_CHANNEL_CLASSIFICATION  0xFC7A    //!< opcode of @ref HCI_EXT_SetHostConnChanClassificationCmd
 #define HCI_EXT_SET_ADV_SET_RAND_ADDR                       0xFC7B    //!< opcode of @ref HCI_EXT_SetAdvSetRandAddrCmd
-
 // @endcond //NODOC
 
 /*
@@ -548,6 +565,7 @@ extern uint8 hciSmpTaskID;
 #define HCI_EXT_SET_ADV_SET_RAND_ADDR_EVENT                0x0434    //!< event from @ref HCI_EXT_SetAdvSetRandAddrCmd
 
 #define HCI_EXT_LL_TEST_MODE_EVENT                        0x0470    //!< LL Test Mode
+
 // @endcond // NODOC
 
 // Vendor Specific Event Mask - Texas Instruments Inc specific!
@@ -560,21 +578,27 @@ extern uint8 hciSmpTaskID;
 #define HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES         0x208A    //!< opcode of @ref HCI_LE_CS_ReadRemoteSupportedCapabilities
 #define HCI_LE_CS_SECURITY_ENABLE                            0x208C    //!< opcode of @ref HCI_LE_CS_SecurityEnable
 #define HCI_LE_CS_SET_DEFAULT_SETTINGS                       0x208D    //!< opcode of @ref HCI_LE_CS_SetDefaultSettings
-#define HCI_LE_CS_READ_LOCAL_FAE_TABLE                       0x03F7    //!< opcode of @ref HCI_LE_CS_ReadLocalFAETable
 #define HCI_LE_CS_READ_REMOTE_FAE_TABLE                      0x208E    //!< opcode of @ref HCI_LE_CS_ReadRemoteFAETable
 #define HCI_LE_CS_WRITE_REMOTE_FAE_TABLE                     0x208F    //!< opcode of @ref HCI_LE_CS_WriteRemoteFAETable
 #define HCI_LE_CS_CREATE_CONFIG                              0x2090    //!< opcode of @ref HCI_LE_CS_CreateConfig
 #define HCI_LE_CS_REMOVE_CONFIG                              0x2091    //!< opcode of @ref HCI_LE_CS_RemoveConfig
 #define HCI_LE_CS_SET_CHANNEL_CLASSIFICATION                 0x2092    //!< opcode of @ref HCI_LE_CS_SetChannelClassification
+#define HCI_LE_CS_SET_PROCEDURE_PARAMS                       0x2093    //!< opcode of @ref HCI_LE_CS_SetProcedureParameters
 #define HCI_LE_CS_PROCEDURE_ENABLE                           0x2094    //!< opcode of @ref HCI_LE_CS_ProcedureEnable
 #define HCI_LE_CS_TEST                                       0x2095    //!< opcode of @ref HCI_LE_CS_Test
 #define HCI_LE_CS_TEST_END                                   0x2096    //!< opcode of @ref HCI_LE_CS_TestEnd
-#define HCI_LE_CS_SET_PROCEDURE_PARAMS                       0x2093    //!< opcode of @ref HCI_LE_CS_SetProcedureParameters
+
 /** @} */ // end of HCI_Constants
 
 /*******************************************************************************
  * TYPEDEFS
  */
+
+typedef struct _hciRawData_t
+{
+  uint16 pktLen;
+  uint8_t *pData;
+} hciRawData_t;
 
 /*******************************************************************************
  * LOCAL VARIABLES

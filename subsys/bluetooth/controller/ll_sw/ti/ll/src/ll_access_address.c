@@ -24,11 +24,9 @@
 
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include "ll_common.h"
-#ifndef CC23X0
-#include "trng_api.h"
-#endif
+
 #include "ll_enc.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -50,6 +48,9 @@
  * GLOBAL VARIABLES
  */
 
+// LSB of AccessAddress that too similar to the preamble
+uint8 const gPreamSameTbl[] = {0x00,0x01,0x05,0x0B,0x11,0x1D,0x21,0x2B,0x40,0x45,0x5D,0x63,0x6B,0x80,
+                               0x8B,0x94,0xA0,0xA1,0xB1,0xB3,0xC6,0xCB,0xDB,0xDD,0xFF};
 /*******************************************************************************
  * Functions
  */
@@ -84,6 +85,7 @@ uint8 llValidAccessAddr( uint32 accessAddr )
          !MAP_llEqualBytes(accessAddr)               &&  // test if all four bytes are equal
          !MAP_llGtTwentyFourTransitions(accessAddr)  &&  // test that there aren't more than 24 transitions
          !MAP_llLtThreeOnesInLsb(accessAddr)         &&  // test if there's at least three ones in lsb
+         !MAP_llLSBPreamSimilar(accessAddr)         &&  // test if the lsb is different from the preamble
          !MAP_llGtElevenTransitionsInLsh(accessAddr) &&  // test there's no more than 11 transitions in lsh
          !MAP_llLtTwoChangesInLastSixBits(accessAddr) )  // test there's a minimum of two changes in the last six bit portion
     {
@@ -126,6 +128,49 @@ uint32 llGenerateValidAccessAddr( void )
   return( accessAddr );
 }
 
+/*******************************************************************************
+ * @fn          llLSBPreamSimilar
+ *
+ * @brief       This function was added due to RCL-859,
+ *              when some AccessAddress are not synced correctly
+ *              when using Coded Phy, because the address is too similar
+ *              to the preamble byte. this function will check if the LSB of
+ *              the AA is similar to the preamble, and if it does, it will determine
+ *              the AA as not valid.
+ *
+ * input parameters
+ *
+ * @param       accessAddr - Connection synchronization word.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      Indicates if access address meets criteria:
+ *              TRUE: Access address is similar, not a valid AA.
+ *              FALSE: Access address is not similar to Pream, valid AA.
+ */
+uint8 llLSBPreamSimilar( uint32 accessAddr )
+{
+  // Get the 8 bit LSB
+  uint8 eightLSB = (uint8)(accessAddr & 0xFF);
+  uint8 status = FALSE;
+  uint8 preamSameTblsize = (sizeof(gPreamSameTbl) / sizeof(gPreamSameTbl[0]));
+
+  // gPreamSameTbl is a table with all the LSB that too similiar to the preamble,
+  // so check if the LSB of the generated AA is one of this entries
+  for(int8 i = 0 ; i < preamSameTblsize ; i++)
+  {
+      if ( eightLSB == gPreamSameTbl[i] )
+      {
+          // LSB is too similar to the preamble, AA is not valid
+          status = TRUE;
+          break;
+      }
+  }
+
+  return status;
+}
 
 /*******************************************************************************
  * @fn          llGtSixConsecZerosOrOnes

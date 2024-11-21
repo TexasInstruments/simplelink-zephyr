@@ -76,9 +76,6 @@ extern "C"
  * GLOBAL VARIABLES
  */
 
-// ALT: Remove caching as CC26xx is fast enough.
-extern uint8 cachedTRNGdata[];
-
 /*******************************************************************************
  * Functions
  */
@@ -89,11 +86,12 @@ extern int16 LL_ENC_EncryptMsg( uint8 *nonce, uint8 pktHdr, uint8 pktLen, uint8 
 extern int16 LL_ENC_DecryptMsg( uint8 *nonce, uint8 pktHdr, uint8 pktLen, uint8 *pBuf, uint8 *mic );
 
 // Random Number Generation
-extern uint8 LL_ENC_GeneratePseudoRandNum( void );
-extern uint8 LL_ENC_GenerateTrueRandNum( uint8 *buf, uint8 len );
-extern uint8 LL_ENC_GenerateDRBGRandNum( uint8 *buf, uint8 len );
-extern void  LL_ENC_GenerateDRBGSeedNum();
-extern uint8 LL_ENC_GenerateTRNGRandNum( uint8 *buf, uint8 len );
+extern uint8  LL_ENC_GeneratePseudoRandNum( void );
+extern uint32 LL_ENC_GeneratePseudo32RandNum( void );
+extern uint8  LL_ENC_GenerateTrueRandNum( uint8 *buf, uint8 len );
+extern uint8  LL_ENC_GenerateDRBGRandNum( uint8 *buf, uint8 len );
+extern void   LL_ENC_GenerateDRBGSeedNum();
+extern uint8  LL_ENC_GenerateTRNGRandNum( uint8 *buf, uint8 len );
 
 // CCM Encryption
 extern void  LL_ENC_AES128_Encrypt( uint8 *key, uint8 *plaintext,  uint8 *ciphertext );

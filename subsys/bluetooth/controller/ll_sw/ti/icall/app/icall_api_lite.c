@@ -27,12 +27,9 @@
 
 #include "ble_dispatch.h"
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
-#ifndef CC23X0
-#include "trng_api.h"
-#endif
 #include "ll_common.h"
 #include "ll_enc.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -40,8 +37,6 @@
 // BM allocator and de-allocator functions
 pfnBMAlloc_t pfnBMAlloc = NULL;
 pfnBMFree_t  pfnBMFree  = NULL;
-
-uint32 lastAppOpcodeIdxSent = 0xFFFFFFFF;
 
 #ifndef STACK_LIBRARY
 /* This variable exit on teh stack side, and it is always equal to the maximum

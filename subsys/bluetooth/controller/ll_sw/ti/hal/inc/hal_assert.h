@@ -8,13 +8,11 @@
          time define:
 
          HALNODEBUG       - No action ever.
-         RCN_APP_ASSERT   - Remote TI Application Callback.
          EXT_HAL_ASSERT   - Extended Application Callback.
          ICALL_HAL_ASSERT - Maps asserts to ICall_abort.
          Default          - Legacy HAL assert handler. Depends on following
                             additional build time define:
                             HAL_ASSERT_RESET  - Reset the device.
-                            HAL_ASSERT_LIGHTS - Flash the LEDs.
                             HAL_ASSERT_SPIN   - Spinlock.
                             Otherwise:        - Just return.
 
@@ -37,14 +35,6 @@
 
 #include "hal_types.h"
 #include "hal_defs.h"
-
-#ifdef CC33xx
-#include "debug_assert.h"
-#endif //CC33xx
-
-#ifdef  RCN_APP_ASSERT
-#include "hal_appasrt.h"
-#endif /* RCN_APP_ASSERT */
 
 /*******************************************************************************
  * MACROS
@@ -146,11 +136,6 @@
 #define HAL_ASSERT_FORCED()
 #define HAL_ASSERT_STATEMENT(statement)
 #define HAL_ASSERT_DECLARATION(declaration)
-#elif  defined(RCN_APP_ASSERT)
-#define HAL_ASSERT(expr)                     st( if (!(expr)) HAL_APPASRT_callAssrtHanlder(); )
-#define HAL_ASSERT_FORCED()                  HAL_APPASRT_callAssrtHanlder()
-#define HAL_ASSERT_STATEMENT(statement)      st( statement )
-#define HAL_ASSERT_DECLARATION(declaration)  declaration
 #elif  defined(EXT_HAL_ASSERT)
 #define HAL_ASSERT(cause)                    st( if ((cause)!=TRUE) halAssertHandlerExt((cause)); )
 #define HAL_ASSERT_FORCED()                  halAssertHandlerExt( FALSE );
@@ -161,13 +146,8 @@
 #define HAL_ASSERT_FORCED()                  ICall_abort();
 #define HAL_ASSERT_STATEMENT(statement)      st( statement )
 #define HAL_ASSERT_DECLARATION(declaration)  declaration
-#elif  defined(CC33xx)
-#define HAL_ASSERT(expr)                     ASSERT_BLE(expr)
-#define HAL_ASSERT_FORCED()                  ASSERT_BLE(FALSE);
-#define HAL_ASSERT_STATEMENT(statement)      // st( statement )
-#define HAL_ASSERT_DECLARATION(declaration)  // declaration
 #else // default handler LEGACY_HAL_ASSERT
-#define HAL_ASSERT(expr)                     st( if (!(expr)) halAssertHandler(); )
+#define HAL_ASSERT(expr)                     st( if (!(expr)) { halAssertHandler(); } )
 #define HAL_ASSERT_FORCED()                  halAssertHandler();
 #define HAL_ASSERT_STATEMENT(statement)      st( statement )
 #define HAL_ASSERT_DECLARATION(declaration)  declaration
@@ -191,7 +171,7 @@
  */
 
 // User Defined HAL Assert Callback
-typedef void (*assertCback_t)( uint8 assertCause, uint8 assertSubcause );
+typedef void (*assertCback_t)( uint8 assertCause, uint8 assertSubCause );
 
 /*******************************************************************************
  * EXTERNS
@@ -204,6 +184,5 @@ extern void halAssertInit( assertCback_t assertCback, uint8 legacyMode );
 extern void halAssertHandler( void );
 extern void halAssertHandlerExt( uint8 assertCause );
 extern void halAssertSpinlock( void );
-extern void halAssertHazardLights( void );
 
 #endif /* HAL_ASSERT_H */

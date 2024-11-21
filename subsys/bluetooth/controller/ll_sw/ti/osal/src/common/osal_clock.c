@@ -19,7 +19,6 @@
  */
 
 #include "comdef.h"
-#include "hal_board.h"
 #include "onboard.h"
 #include "osal.h"
 #include "osal_clock.h"
@@ -65,72 +64,15 @@
 /*********************************************************************
  * EXTERNAL FUNCTIONS
  */
-#ifndef USE_ICALL
-extern uint32 macMcuPrecisionCount(void);
-#endif /* !USE_ICALL */
-
-#if (defined HAL_MCU_CC2430) || (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533)
-
-  /*  This function is used to divide a 31 bit dividend by a 16 bit
-   *  divisor and return a packed 16 bit quotient and 16 bit
-   *  remainder.
-   *
-   *  Note: This routine takes ~25.6us @32MHz. With C overhead, the
-   *        time is ~32us.
-   *
-   *  dividend - 31 bit dividend.
-   *  divisor - 16 bit divisor.
-   *
-   *  return - MSW divisor; LSW quotient
-   */
-  extern __near_func uint32 osalMcuDivide31By16To16( uint32 dividend, uint16 divisor );
-
-  #define CONVERT_320US_TO_MS_ELAPSED_REMAINDER( x, y, z ) st( \
-                                                               \
-    /* The 16 bit quotient is in MSW and */                    \
-    /* the 16 bit remainder is in LSW. */                      \
-    x = osalMcuDivide31By16To16( x, 25 );                      \
-                                                               \
-    /* Add quotient to y */                                    \
-    y += (x >> 16);                                            \
-                                                               \
-    /* Copy remainder to z */                                  \
-    z = (uint16)(x & 0x0FFFF);                                 \
-  )
-
-  #define CONVERT_MS_TO_S_ELAPSED_REMAINDER( x, y, z ) st(     \
-                                                               \
-    /* The 16 bit quotient is in MSW and */                    \
-    /* the 16 bit remainder is in LSW. */                      \
-    x = osalMcuDivide31By16To16( x, 1000 );                    \
-                                                               \
-    /* Add quotient to y */                                    \
-    y += (x >> 16);                                            \
-                                                               \
-    /* Copy remainder to z */                                  \
-    z = (uint16)(x & 0x0FFFF);                                 \
-  )
-
-#else /* (defined HAL_MCU_CC2430) || (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533) */
-
-  #define CONVERT_320US_TO_MS_ELAPSED_REMAINDER( x, y, z ) st( \
-    y += x / 25;                                               \
-    z = x % 25;                                                \
-  )
 
   #define CONVERT_MS_TO_S_ELAPSED_REMAINDER( x, y, z ) st(     \
     y += x / 1000;                                             \
     z = x % 1000;                                              \
   )
-#endif /* (defined HAL_MCU_CC2430) || (defined HAL_MCU_CC2530) || (defined HAL_MCU_CC2533) */
 
 /*********************************************************************
  * LOCAL VARIABLES
  */
-#ifndef USE_ICALL
-  static uint32 previousMacTimerTick = 0;
-  static uint16 remUsTicks = 0;
-#endif /* !USE_ICALL */
 
 static uint32 timeMSec = 0;
 
@@ -165,54 +107,6 @@ static void osalClockUpdate( uint32 elapsedMSec );
  */
 void osalTimeUpdate( void )
 {
-#ifndef USE_ICALL
-  /* Note that when ICall is in use the OSAL tick is not updated
-   * in this fashion but rather through real OS timer tick. */
-  halIntState_t intState;
-  uint32 tmp;
-  uint32 ticks320us;
-  uint32 elapsedMSec = 0;
-
-  HAL_ENTER_CRITICAL_SECTION(intState);
-  // Get the free-running count of 320us timer ticks
-  tmp = macMcuPrecisionCount();
-  HAL_EXIT_CRITICAL_SECTION(intState);
-
-  if ( tmp != previousMacTimerTick )
-  {
-    // Calculate the elapsed ticks of the free-running timer.
-    ticks320us = (tmp - previousMacTimerTick) & 0xffffffffu;
-
-    if (ticks320us >= TIMER_CLOCK_UPDATE )
-    {
-      // Store the MAC Timer tick count for the next time through this function.
-      previousMacTimerTick = tmp;
-
-      /*
-       * remUsTicks can have a maximum value of 24 (Since remusTicks got by mod
-       * of 25). The value of COUNTER_TICK320US is a multiple of 25 and the
-       * quotient of  CONVERT_320US_TO_MS_ELAPSED_REMAINDER() does not exceed
-       * 0xFFFF or 16 bit.
-       */
-      while(ticks320us >= COUNTER_TICK320US)
-      {
-        ticks320us  -= COUNTER_TICK320US;
-        elapsedMSec += COUNTER_ELAPSEDMS;
-      }
-
-      // update converted number with remaining ticks from loop and the
-      // accumulated remainder from loop
-      tmp = (ticks320us * 8) + remUsTicks;
-
-      // Convert the 320 us ticks into milliseconds and a remainder
-      CONVERT_320US_TO_MS_ELAPSED_REMAINDER( tmp, elapsedMSec, remUsTicks );
-
-      // Update OSAL Clock and Timers
-      osalClockUpdate( elapsedMSec );
-      osalTimerUpdate( elapsedMSec );
-    }
-  }
-#endif /* USE_ICALL */
 }
 
 /*********************************************************************
@@ -242,7 +136,6 @@ static void osalClockUpdate( uint32 elapsedMSec )
   HAL_EXIT_CRITICAL_SECTION(intState);
 }
 
-#if defined HAL_BOARD_CC2538 || defined USE_ICALL
 /*********************************************************************
  * @fn      osalAdjustTimer
  *
@@ -255,19 +148,10 @@ static void osalClockUpdate( uint32 elapsedMSec )
 void osalAdjustTimer(uint32 Msec )
 {
   /* Disable SysTick interrupts */
-#if defined HAL_BOARD_CC2538
-  SysTickIntDisable();
-#endif  /* HAL_BOARD_CC2538 */
 
   osalClockUpdate(Msec);
   osalTimerUpdate(Msec);
-
-  /* Enable SysTick interrupts */
-#if defined HAL_BOARD_CC2538
-  SysTickIntEnable();
-#endif  /* HAL_BOARD_CC2538 */
 }
-#endif /* HAL_BOARD_CC2538 || USE_ICALL */
 
 /*********************************************************************
  * @fn      osal_setClock

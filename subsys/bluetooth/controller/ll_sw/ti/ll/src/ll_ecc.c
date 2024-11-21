@@ -19,22 +19,8 @@
  */
 
 #include <ti/drivers/ECDH.h>
-#ifdef CC23X0
 #include <ti/drivers/ecdh/ECDHLPF3SW.h>
 #include <ti/drivers/cryptoutils/sharedresources/CryptoResourceLPF3.h>
-#else
-#if !defined(DeviceFamily_CC26X1)
-#include <ti/drivers/ecdh/ECDHCC26X2.h>
-#else
-#include <ti/drivers/ecdh/ECDHCC26X1.h>
-#endif
-#include <ti/drivers/cryptoutils/sharedresources/CryptoResourceCC26XX.h>
-#include "rtos_api.h"
-#ifndef CC33xx
-#include "crypto_api.h"
-#include "ecc_api.h"
-#endif // !CC33xx
-#endif // !CC23X0
 
 #include <ti/drivers/cryptoutils/cryptokey/CryptoKeyPlaintext.h>
 #include <ti/drivers/cryptoutils/ecc/ECCParams.h>
@@ -45,7 +31,7 @@
 
 #include "ll_enc.h"
 #include "ll_ecc.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "hci.h"
 #include "ll_user_config.h"
 

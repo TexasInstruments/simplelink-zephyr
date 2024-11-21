@@ -23,7 +23,7 @@
 #include "ll_common.h"
 #include "ll_csdrbg.h"
 #include "ll_enc.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * CONSTANTS
@@ -148,7 +148,7 @@ llStatus_t CSDRBG_security_function_e(uint8* key, uint8* plainText,
  */
 llStatus_t f7(uint8* key, uint8* inputString, uint8 len, uint8* encryptedData)
 {
-    uint8 temp[UINT8_SIZE_128] = {0};
+    uint8 temp[UINT8_SIZE_128] ALIGNED = {0};
 
     // check parameters
     if ((key == NULL) || (inputString == NULL) || (encryptedData == NULL))
@@ -218,10 +218,10 @@ llStatus_t f8(uint8* input_bit_string, uint8* SM)
 
     uint8 k[UINT8_SIZE_128] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                                0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
-    uint8 k2[UINT8_SIZE_128];
-    uint8 X[UINT8_SIZE_128];
-    uint8 encr[UINT8_SIZE_128] = {0};
-    uint8 encr2[UINT8_SIZE_128] = {0};
+    uint8 k2[UINT8_SIZE_128] ALIGNED = {0};
+    uint8 X[UINT8_SIZE_128] ALIGNED = {0};
+    uint8 encr[UINT8_SIZE_128] ALIGNED = {0};
+    uint8 encr2[UINT8_SIZE_128] ALIGNED = {0};
 
     // check parameters.
     if ((input_bit_string == NULL) || (SM == NULL))
@@ -244,7 +244,7 @@ llStatus_t f8(uint8* input_bit_string, uint8* SM)
     }
 
     // F7 function with input2 and k the output is x
-    f7(k, input2, F7_BLOCK_NUM, X);
+    f7_status = f7(k, input2, F7_BLOCK_NUM, X);
     if (f7_status != LL_STATUS_SUCCESS)
     {
         return f7_status;
@@ -294,11 +294,11 @@ llStatus_t f8(uint8* input_bit_string, uint8* SM)
  */
 llStatus_t f9(uint8* SM, drbgParams_t* params)
 {
-    uint8 v1[UINT8_SIZE_128];
-    uint8 v2[UINT8_SIZE_128];
+    uint8 v1[UINT8_SIZE_128] ALIGNED;
+    uint8 v2[UINT8_SIZE_128] ALIGNED;
     uint8 X[UINT8_SIZE_256];
-    uint8 x1[UINT8_SIZE_128];
-    uint8 x2[UINT8_SIZE_128];
+    uint8 x1[UINT8_SIZE_128] ALIGNED = {0};
+    uint8 x2[UINT8_SIZE_128] ALIGNED = {0};
     uint8 one = 1;
 
     // check parameters
@@ -446,7 +446,7 @@ llStatus_t CSDRBG_generate(drbgParams_t* params, uint8* prandomBits)
 {
     uint8 securityFunc_e_status;
     uint64 count = 0;
-    uint8 V[UINT8_SIZE_128] = {0};
+    uint8 V[UINT8_SIZE_128] ALIGNED = {0};
 
     // check parameters
     if ((params == NULL) || (prandomBits == NULL))
@@ -605,8 +605,6 @@ llStatus_t LL_CSDRBG_BackTracking(drbgParams_t* params)
     // The CS_Step, CS Transaction_Counter fields shall be reset to zero
     params->TransactionCounter = 0;
     params->CSStepCounter = 0;
-    // csProcedureCounter increses by 1
-    params->csProcedureCounter += 1;
 
     return (LL_STATUS_SUCCESS);
 }

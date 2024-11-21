@@ -25,10 +25,8 @@
 #include "stdint.h"
 #include "stdbool.h"
 #include <ti/devices/DeviceFamily.h>
+#include <ti/drivers/utils/Math.h>
 #include DeviceFamily_constructPath(inc/hw_memmap.h)
-#if !defined(CC23X0) && !defined(CC33xx)
-#include <driverlib/prcm.h>
-#endif //!CC23X0 && !CC33xx
 #include "bcomdef.h"
 #include <ti/drivers/rcl/LRF.h>
 #include "osal_tasks.h"
@@ -45,28 +43,13 @@
 #include "ll_rat.h"
 #include "ll_timer_drift.h"
 #include "ll_privacy.h"
-#include "hal_gpio_wrapper.h"
+#include "ll_handover_sn.h"
 #ifdef BLE_HEALTH
 #include <health_toolkit/inc/debugInfo_internal.h>
 #endif // BLE_HEALTH
-//
-#include "rom_jt.h"
 #include "ll_ae.h"
-#ifdef CC33xx
-#include "ble_thermal_protection.h"
-#endif
 
 #include "cs/ll_cs_db.h"
-
-#if !defined(CC23X0) && !defined(CC33xx)
-#if !defined(DeviceFamily_CC13X4) && !defined(DeviceFamily_CC26X4)
-#if !defined(DeviceFamily_CC26X1)
-  #include <driverlib/rf_bt5_coex.h>
-#else
-  #include <ti/devices/cc13x2_cc26x2/driverlib/rf_bt5_coex.h>
-#endif // DeviceFamily_CC26X1
-#endif // DeviceFamily_CC13X4 || DeviceFamily_CC26X4
-#endif //!CC23X0 && !CC33xx
 
 #ifdef __IAR_SYSTEMS_ICC__
 // Note: Not required for TI Compiler (CCS)
@@ -74,11 +57,6 @@
 #endif
 
 // SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_mst.h"
-#endif // DEBUG_SW_TRACE
-
 /*******************************************************************************
  * MACROS
  */
@@ -218,11 +196,6 @@ llConnEvtNotice_t llConnEvtNotice;
 
 extern void LL_rclRescheduleCommand(RCL_Command *cmd);
 
-#ifdef RTLS_CTE
-// CTE Antenna Array
-extern cteAntennaProp_t cteAntennaProp;
-#endif
-
 // DMM Policy Table
 uint32 dmmPolicyTable[DMM_POLICY_MAX_ACTIVITIES][DMM_POLICY_MAX_PRIORITIES] =
 {
@@ -247,14 +220,6 @@ uint32 dmmPolicyTable[DMM_POLICY_MAX_ACTIVITIES][DMM_POLICY_MAX_PRIORITIES] =
   DMM_POLICY_ACTIVITY_OBSERVING + DMM_POLICY_PRIORITY_URGENT
   }
 };
-
-// DMM Policy Manager
-dmmPolicyManager_t dmmPolicyManager;
-
-#ifdef USE_COEX
-// Coex feature
-llCoex_t llCoex;
-#endif
 
 // LL control messages strings, used only when BLE_LOG is defined
 char *llCtrl_BleLogStrings[] = {
@@ -288,7 +253,7 @@ char *llCtrl_BleLogStrings[] = {
   "LL_CTRL_CTE_RSP              ",
 };
 
-//Lookup table for convert control packet to packet data len align with control packet opcode
+// Lookup table for convert control packet to packet data len align with control packet opcode
 const uint8 ctrlPktLenTable[NUM_OF_CTRL_PKT] =
 {
    LL_CONN_UPDATE_IND_PAYLOAD_LEN,         //index 0  - LL_CTRL_CONNECTION_UPDATE_IND
@@ -319,19 +284,25 @@ const uint8 ctrlPktLenTable[NUM_OF_CTRL_PKT] =
    LL_MIN_USED_CHANNELS_IND_LEN,           //index 25 - LL_CTRL_MIN_USED_CHANNELS_IND
    LL_CTE_REQ_PAYLOAD_LEN,                 //index 26 - LL_CTRL_CTE_REQ
    LL_CTE_RSP_PAYLOAD_LEN,                 //index 27 - LL_CTRL_CTE_RSP
-   LL_CS_SEC_RSP_PL_LEN,                   //index 28 - LL_CTRL_CS_CHANNEL_MAP_IND 
-   LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN,     //index 29 - LL_CTRL_CS_FAE_RSP         
-   LL_CS_CAPABILITIES_RSP_PAYLOAD_LEN,     //index 30 - LL_CTRL_CS_FAE_REQ         
-   LL_CS_CONFIG_REQ_PL_LEN,                //index 31 - LL_CTRL_CS_TERMINATE_IND   
-   LL_CS_CONFIG_RSP_PL_LEN,                //index 32 - LL_CTRL_CS_IND             
-   LL_CS_REQ_PL_LEN,                       //index 33 - LL_CTRL_CS_RSP             
-   LL_CS_RSP_PL_LEN,                       //index 34 - LL_CTRL_CS_REQ             
-   LL_CS_IND_PL_LEN,                       //index 35 - LL_CTRL_CS_CONFIG_RSP      
-   LL_CS_TERMINATE_IND_PL_LEN,             //index 36 - LL_CTRL_CS_CONFIG_REQ      
-   LL_CS_FAE_REQ_PL_LEN,                   //index 37 - LL_CTRL_CS_CAPABILITIES_RSP
-   LL_CS_FAE_RSP_PL_LEN,                   //index 38 - LL_CTRL_CS_CAPABILITIES_REQ
-   LL_CS_CHANNEL_MAP_IND_PL_LEN,           //index 39 - LL_CTRL_CS_SEC_RSP         
-   LL_CS_SEC_REQ_PL_LEN,                   //index 40 - LL_CTRL_CS_SEC_REQ         
+};
+
+// Lookup table for convert control packet to packet data len align with control packet opcode
+const uint8 ctrlCsPktLenTable[NUM_OF_CS_CTRL_PKT] =
+{
+   LL_CS_SEC_RSP_PL_LEN,                   //index 0 - LL_CTRL_CS_SEC_RSP
+   LL_CS_CAPABILITIES_REQ_PAYLOAD_LEN,     //index 1 - LL_CTRL_CS_CAPABILITIES_REQ
+   LL_CS_CAPABILITIES_RSP_PAYLOAD_LEN,     //index 2 - LL_CTRL_CS_CAPABILITIES_RSP
+   LL_CS_CONFIG_REQ_PL_LEN,                //index 3 - LL_CTRL_CS_CONFIG_REQ
+   LL_CS_CONFIG_RSP_PL_LEN,                //index 4 - LL_CTRL_CS_CONFIG_RSP
+   LL_CS_REQ_PL_LEN,                       //index 5 - LL_CTRL_CS_REQ
+   LL_CS_RSP_PL_LEN,                       //index 6 - LL_CTRL_CS_RSP
+   LL_CS_IND_PL_LEN,                       //index 7 - LL_CTRL_CS_IND
+   LL_CS_TERMINATE_REQ_PL_LEN,             //index 8 - LL_CTRL_CS_TERMINATE_REQ
+   LL_CS_FAE_REQ_PL_LEN,                   //index 9 - LL_CTRL_CS_FAE_REQ
+   LL_CS_FAE_RSP_PL_LEN,                   //index 10 - LL_CTRL_CS_FAE_RSP
+   LL_CS_CHANNEL_MAP_IND_PL_LEN,           //index 11 - LL_CTRL_CS_CHANNEL_MAP_IND
+   LL_CS_SEC_REQ_PL_LEN,                   //index 12 - LL_CTRL_CS_SEC_REQ
+   LL_CS_TERMINATE_RSP_PL_LEN,             //index 13 - LL_CTRL_CS_TERMINATE_RSP
 };
 
 void llPostRealignConn(llConnState_t *connPtr, uint32 timeToNextEvt);
@@ -367,556 +338,6 @@ uint8 llHaltRadio( uint32 cmd )
 {
   return ((uint8)(RCL_Command_stop((RCL_Command_Handle)cmd, RCL_StopType_Hard)));
 }
-
-
-/*******************************************************************************
- * @fn          llProcessPostRfOps
- *
- * @brief       This function is used to perform post-radio operations that
- *              were delayed because they either affect the radio, or can't be
- *              performed without the use of the radio. After the operation is
- *              complete, a callback is generated for the HCI to handle.
- *
- *              Note: This routine is typcially called from the TASKDONE ISR
- *                    handler just after the radio ends (thus the routine name),
- *                    but it is also called from the task scheduler if there
- *                    is no active task (i.e. current task is NULL) to ensure
- *                    no post-RF operations are lost due to some unexpected
- *                    way a task was ended.
- *
- * input parameters
- *
- * @param       None.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llProcessPostRfOps( void )
-{
-  // quick check to see if anything is needed
-  if ( postRfOperations == 0 )
-  {
-    return;
-  }
-
-  // check if a True Random Number Generation was required
-  if ( postRfOperations & LL_POST_RADIO_GET_TRNG )
-  {
-    uint8 randData[ B_RANDOM_NUM_SIZE ];
-
-    // perform operation
-    (void)MAP_LL_ENC_GenerateTrueRandNum( randData, B_RANDOM_NUM_SIZE );
-
-    // generate callback that operation is complete
-    // Note: The length is always given by B_RANDOM_NUM_SIZE.
-    MAP_LL_RandCback( randData );
-
-    // clear the flag
-    postRfOperations &= ~LL_POST_RADIO_GET_TRNG;
-  }
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  // check if a True Random Number Generation (FIPS) cache update was required
-  if ( postRfOperations & LL_POST_RADIO_CACHE_RANDOM_NUM )
-  {
-    // perform operation to cache TRNG to be used as FIPS compliant data
-    // ALT: Remove caching as CC26xx is fast enough.
-    (void)MAP_LL_ENC_GenerateTrueRandNum( cachedTRNGdata, LL_ENC_TRUE_RAND_BUF_SIZE );
-
-    // clear the flag
-    postRfOperations &= ~LL_POST_RADIO_CACHE_RANDOM_NUM;
-  }
-#endif // ADV_CONN_CFG | INIT_CFG
-
-  return;
-}
-
-#ifndef CC23X0
-/*******************************************************************************
- * @fn          llSetTxPwrLegacy
- *
- * @brief       This routine is used set the legacy Tx Power according to entered
- *              value
- *
- * input parameters
- *
- * @param       txPwrIndex : Tx Power Table index for current Tx Power value.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetTxPwrLegacy( uint8 txPwrIndex )
-{
-  rfOpImmedCmd_SetTxPwr_t rfCmd;
-
-  // update pointer to Tx Power values
-  rfSetup.txPower  = llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[txPwrIndex].txPwrVal;
-
-  // setup Tx Power parameters
-  rfCmd.cmdNum  = CMD_SET_TX_POWER;
-  rfCmd.txPower = llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[txPwrIndex].txPwrVal;
-
-  // issue immediate command to set Tx Power
-  // Note: The immediate command does not execute if the radio is inactive,
-  //       however in this case, Tx power will be set when the radio setup
-  //       executes upon wake. We only need ensure the pointer is updated
-  //       in rfSetup. Possible failures include: RF_StatCmdDoneError (which
-  //       should never occur), or RF_StatRadioInactiveError.
-  // Note: For dual mode, if the radio is running but for another stack, what
-  //       error status is returned then? Hopefully RF_StatRadioInactiveError.
-  RF_runImmediateCmd( rfHandle, (uint32_t *)&rfCmd );
-
-  return;
-}
-
-/*******************************************************************************
- * @fn          llSetTxPower
- *
- * @brief       This function is used to set the current radio transmit power.
- *              For PG1, this is the IB/GC 8 bit value only, used to set the
- *              ADI 0 registers. For PG2, this is the IB/GC/TempCoeff 16 bit
- *              value, used to set the immediate command parameter.
- *
- * input parameters
- *
- * @param       txPower - LL_EXT_TX_POWER_MINUS_20_DBM
- *                        LL_EXT_TX_POWER_MINUS_15_DBM
- *                        LL_EXT_TX_POWER_MINUS_10_DBM
- *                        LL_EXT_TX_POWER_MINUS_5_DBM
- *                        LL_EXT_TX_POWER_0_DBM
- *                        LL_EXT_TX_POWER_1_DBM
- *                        LL_EXT_TX_POWER_2_DBM
- *                        LL_EXT_TX_POWER_3_DBM
- *                        LL_EXT_TX_POWER_4_DBM
- *                        LL_EXT_TX_POWER_5_DBM
- *                        LL_EXT_TX_POWER_14_DBM
- *                        LL_EXT_TX_POWER_15_DBM
- *                        LL_EXT_TX_POWER_16_DBM
- *                        LL_EXT_TX_POWER_17_DBM
- *                        LL_EXT_TX_POWER_18_DBM
- *                        LL_EXT_TX_POWER_19_DBM
- *                        LL_EXT_TX_POWER_20_DBM
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llSetTxPower( RFBLEDPL_TX_POWER_TYPE txPower )
-{
-#if !defined(CC13X2P)
-  rfOpImmedCmd_SetTxPwr_t rfCmd;
-#endif // !CC13X2P
-
-  // save the Tx Power setting
-  curTxPowerVal = txPower;
-
-#if defined(CC33xx)
-  // limit TX power to the CC33xx thermal TX power limit value
-  txPower = bleThermal_GetTxPowerLimitIndex();
-#endif // CC33xx
-
-  // update pointer to Tx Power values
-  rfSetup.txPower  = llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[txPower].txPwrVal;
-
-#if defined(CC13X2P)
-    // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-    MAP_llTxPwrSwitchPA( curTxPowerVal, NULL );
-#else // CC13X2P
-
-  // setup Tx Power parameters
-  rfCmd.cmdNum  = CMD_SET_TX_POWER;
-  rfCmd.txPower = llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[txPower].txPwrVal;
-
-  // issue immediate command to set Tx Power
-  // Note: The immediate command does not execute if the radio is inactive,
-  //       however in this case, Tx power will be set when the radio setup
-  //       executes upon wake. We only need ensure the pointer is updated
-  //       in rfSetup. Possible failures include: RF_StatCmdDoneError (which
-  //       should never occur), or RF_StatRadioInactiveError.
-  // Note: For dual mode, if the radio is running but for another stack, what
-  //       error status is returned then? Hopefully RF_StatRadioInactiveError.
-  RF_runImmediateCmd( rfHandle, (uint32_t *)&rfCmd );
-
-#endif
-
-  return;
-}
-
-/*******************************************************************************
- * @fn          llTxPwrPoutLU
- *
- * @brief       This routine is used to perform a lookup of the Tx Power Table.
- *              It accepts a Tx power output value (-127..+126 dBm) and returns
- *              the best fit Tx power table index.
- *
- * input parameters
- *
- * @param       pOut - A Tx power output value (in dBm) from -127..+126.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Best fit Tx power table index.
- */
-uint8 llTxPwrPoutLU( int8 pOut )
-{
-  // check if user's value is less than smallest supported value
-  if ( pOut < llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[0].Pout )
-  {
-    // it is, so set to smallest supported value
-    return( 0 );
-  }
-  // check if user's value is greater than largest supported value
-  else if ( pOut > llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[llConfigTable.userCfgPtr->txPwrTblPtr->numTxPwrVals-1].Pout )
-  {
-    // it is, so set to largest supported value value
-    return( llConfigTable.userCfgPtr->txPwrTblPtr->numTxPwrVals-1 );
-  }
-  else // find best fit
-  {
-    for (uint8 i=0; i<llConfigTable.userCfgPtr->txPwrTblPtr->numTxPwrVals; i++)
-    {
-      if ( pOut <= llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[i].Pout )
-      {
-        return( i );
-      }
-    }
-
-    // no value found so return default
-    // Note: This can only happen if the Tx Power Table itself is not
-    //       properly ordered!
-    // ALT: Use curTxPowerVal instead.
-    return( llConfigTable.userCfgPtr->txPwrTblPtr->defaultTxPwrVal );
-  }
-}
-
-#if defined(CC13X2P)
-/*******************************************************************************
- * @fn          llTxPwrLU
- *
- * @brief       This routine is used to perform a lookup of the Tx Power Table.
- *              It accepts a Tx power value, and returns the corresponding Tx
- *              power table index.
- *
- * input parameters
- *
- * @param       txPower - A 16-bit HW Tx Power table value.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Tx power table index.
- */
-uint8 llTxPwrLU( uint16 txPower )
-{
-  // search TxPowerTable for matching txPower value
-  for ( uint8 i=0; i<llConfigTable.userCfgPtr->txPwrTblPtr->numTxPwrVals; i++)
-  {
-    // check for match, masking out PA Type
-    if ( (llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[i].txPwrVal & TX_POWER_HP_PA_MASK) == txPower )
-    {
-      // found a match, so return corresponding index
-      return( i );
-    }
-  }
-
-  // no match found
-  // Note: This would be a fatal error, since these are hardcoded HW Tx Power
-  //       Table values. For now, return default index.
-  return( llConfigTable.userCfgPtr->txPwrTblPtr->defaultTxPwrVal );
-}
-
-/*******************************************************************************
- * @fn          llTxPwrSetRfGainIndex
- *
- * @brief       This routine is used to find and save the Override Register
- *              table index associated with the HP PA RF Gain.
- *
- *              Note: This routine assumes that at power up, the RF Gain
- *                    override register will be initializd to zero, and that
- *                    this will be the only zero value in the table. This is
- *                    done because future HP PA overrides may be added after
- *                    this value in the table. Alternatively, a table containing
- *                    override register pointers with additional information
- *                    can be passed to the stack, ala the Tx Power Table.
- *              Note: This routine assumes that rebooting restores this value
- *                    to zero, as defined in ble_user_config.c. This would be
- *                    done by the C runtime.
- *
- * input parameters
- *
- * @param       regTable - A pointer to the override register table.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llTxPwrSetRfGainIndex( uint32 *regTable )
-{
-  // locate the index of the HP PA Gain Common RF Override Register
-  // Note: Assumes there's only one zero value in the table, and that indexed
-  //       entry's value is restored to zero upon reset.
-  if ( llConfigTable.userCfgPtr->rfRegPtr )
-  {
-    for (uint8 i=0;; i++)
-    {
-      // find zero entry
-      if ( llConfigTable.userCfgPtr->rfRegPtr[i].fwRegOverride == OVERRIDE_REG_HP_PA_RF_GAIN )
-      {
-        // assume default Tx Power values by replacing with termination
-        llConfigTable.userCfgPtr->rfRegPtr[i].fwRegOverride = OVERRIDE_REG_TERMINATION;
-
-        // save index of HP PA gain register
-        txPwrRfGainReg = i;
-
-        return;
-      }
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          llTxPwrGetRfCmdType
- *
- * @brief       This routine is used to export from the txPwrIndexAndTypeOfRfCmd the bit
- *              that indicates whether this is Legecy or BLE5 type of Rf command
- *
- * input parameters
- *
- * @param       txPwrIndexAndTypeOfRfCmd - 0-6 bits: Tx Power Table index for current Tx Power value.
- *                                         7 bit:    TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- *
- * output parameters
- *
- * @param       Type of Rf: 1 - TX_PWR_CMD_LEGACY, 0 - TX_PWR_CMD_BLE5.
- *
- * @return      None.
- */
-bool llTxPwrGetRfCmdType(uint8 txPwrIndexAndTypeOfRfCmd )
-{
-  // return the MSB (TX_PWR_CMD_BIT_MASK )of the txPwrIndexAndTypeOfRfCmd in order to check
-  // if this is legacy or not.
-  return ((txPwrIndexAndTypeOfRfCmd >> TX_PWR_CMD_POS_BIT) & 0x1);
-}
-
-/*******************************************************************************
- * @fn          llTxPwrGetTxPwrIndex
- *
- * @brief       This routine is used to export from the txPwrIndexAndTypeOfRfCmd the tx power
- *              index value
- *
- * input parameters
- *
- * @param       txPwrIndexAndTypeOfRfCmd - 0-6 bits: Tx Power Table index for current Tx Power value.
- *                                         7 bit:    TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- *
- * output parameters
- *
- * @param       Tx power Index (there are 20 entries in the RF table), this value cannot exceed to 255
- *
- * @return      None.
- */
-uint8 llTxPwrGetTxPwrIndex(uint8 txPwrIndexAndTypeOfRfCmd )
-{
-  // return the 0-6 bits of the txPwrIndexAndTypeOfRfCmd in order to
-  // get the tx power index
-  return ((txPwrIndexAndTypeOfRfCmd ) & (~( 1 << TX_PWR_CMD_POS_BIT)));
-}
-
-/*******************************************************************************
- * @fn          llTxPwrSetRfCmdType
- *
- * @brief       This routine is used to set the type of RF command in the
- *              input variable. for each value entered the bit in the TX_PWR_CMD_POS_BIT
- *				would be changed.
- *
- * input parameters
- *
- * @param       pTxPwrIndexAndTypeOfRfCmd - 0-6 bits: Tx Power Table index for current Tx Power value.
- *                                          7 bit: TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- *
- * @param       TypeOfRfCmd               - TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llTxPwrSetRfCmdType(uint8 *pTxPwrIndexAndTypeOfRfCmd, bool TypeOfRfCmd)
-{
-  // Set bit TX_PWR_CMD_BIT_MASK to be TypeOfRfCmd that was entered.
-  (*pTxPwrIndexAndTypeOfRfCmd) |= ( TypeOfRfCmd << TX_PWR_CMD_POS_BIT );
-}
-
-/*******************************************************************************
- * @fn          validateTxPwrRestrictions
- *
- * @brief       This routine is used to validate that the desired tx power is
- *              lower then the maximum allowd. If not, it will backoff to the max
- *              value defined in the TxPowerBackoffTable in ble_user_config.c
- *
- * @design 		/ref did_246702078
- *
- * input parameters
- *
- * @param       txPwrIndexAndTypeOfRfCmd - 0-6 bits: Tx Power Table index for current Tx Power value.
- *                                         This is the tx power that we would compare with
- *                                         the new backoff table value.
- *                                         7 bit: TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- * @param       pNewGain   - Tx Power Table index for current Tx Power value.
- * @param       pRfCmd     - Pointer to BLE5 RF Command.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void validateTxPwrRestrictions(uint8      txPwrIndexAndTypeOfRfCmd,
-                               txPwrVal_t **pNewGain,
-                               ble5OpCmd_t *pRfCmd)
-{
-  txPwrBackoffVal_t channel_backoff = llConfigTable.userCfgPtr->txPwrBackoffTblPtr->txPwrBackoffValsPtr[pRfCmd->chan];
-  int8 backoff_power = curTxPowerVal;
-  // Get the tx power index from input
-  uint8 txPwrIndex = llTxPwrGetTxPwrIndex(txPwrIndexAndTypeOfRfCmd);
-  // Get the rf Command type from the input
-  bool rfCmdType = llTxPwrGetRfCmdType(txPwrIndexAndTypeOfRfCmd);
-
-  // In case this is not BLE5, but legacy Adv - use 1M Phy.
-  // For legacy BLE we dont have the paramter of pRfCmd->phyMode,
-  // We would use the default phy of 1M
-  if ( rfCmdType == TX_PWR_CMD_LEGACY)
-  {
-    backoff_power = channel_backoff.txPwrBackoff1MPhy;
-  }
-  // Check the phy mode for BLE5 according to pRfCmd->phyMode
-  else
-  {
-    switch (pRfCmd->phyMode)
-    {
-    case BLE5_1M_PHY:
-      backoff_power = channel_backoff.txPwrBackoff1MPhy;
-      break;
-    case BLE5_2M_PHY:
-      backoff_power = channel_backoff.txPwrBackoff2MPhy;
-      break;
-    case BLE5_CODED_S8_PHY: // Also the same value as BLE5_CODED_PHY definition
-    case BLE5_CODED_S2_PHY:
-      backoff_power = channel_backoff.txPwrBackoffCoded;
-      break;
-    default:
-      break;
-    }
-  }
-
-  // Need to compare the current tx power with the backoff table.
-  // Once the value in the backoff is lower than the current - update the gain.
-  if(backoff_power < txPwrIndex){
-    *pNewGain = &llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[backoff_power];
-  }
-}
-
-/*******************************************************************************
- * @fn          llTxPwrSwitchPA
- *
- * @brief       This routine is used to switch the device to either the default
- *              PA or to the HP PA.
- *
- * @Note        The input variable txPwrIndexAndTypeOfRfCmd would be consisted by
- *              the type of RF command and the tx power index. The Type of Rf command
- *              would be set in the MSB of the txPwrIndexAndTypeOfRfCmd variable once we
- *              are in legacy mode. This would be done only in one functionality case
- *              when performing legacy advertisment (see llExtAdvSchedSetup function)
- *              For all other cases that are not legacy advertisment the type of RF command
- *              bit would remain zero to impelement BLE5 type of RF command.
- *              we are able to use the MSB of the txPwrIndexAndTypeOfRfCmd because the tx power index
- *              would never reach 255 range of indexes.
- *
- * input parameters
- *
- * @param       txPwrIndexAndTypeOfRfCmd - 0-6 bits: Tx Power Table index for current Tx Power value.
- *                                         7 bit: TX_PWR_CMD_LEGACY / TX_PWR_CMD_BLE5.
- * @param       rfCmd                    - Pointer to BLE5 RF Command, or NULL.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llTxPwrSwitchPA( uint8   txPwrIndexAndTypeOfRfCmd,
-                      uint32 *rfCmd )
-{
-  ble5OpCmd_t *pRf = (ble5OpCmd_t *)rfCmd;
-  // Get the tx power index from input
-  uint8 txPwrIndex = llTxPwrGetTxPwrIndex(txPwrIndexAndTypeOfRfCmd);
-  // Get the rf Command type from the input
-  bool rfCmdType = llTxPwrGetRfCmdType(txPwrIndexAndTypeOfRfCmd);
-  // Get the newGain value from the table
-  txPwrVal_t *pNewGain = &llConfigTable.userCfgPtr->txPwrTblPtr->txPwrValsPtr[txPwrIndex];
-
-  // check if the RF command is valid
-  if ( pRf )
-  {
-    // backoff tx power if needed
-    // This would be done to BLE & BLE5 in case pRf is not NULL
-    if (llConfigTable.userCfgPtr->txPwrBackoffTblPtr)
-    {
-      validateTxPwrRestrictions(txPwrIndexAndTypeOfRfCmd , &pNewGain,pRf);
-    }
-
-    // In case this is BLE5 (and not legacy), Perform the next steps.
-    if (rfCmdType == TX_PWR_CMD_BLE5)
-    {
-      // set the RF Command's Tx Power value to the escape value
-      pRf->txPower = TX_POWER_ESCAPE_VALUE;
-
-      // check if the HP PA is needed
-      if ( pNewGain->Pout > LL_TX_POWER_5_DBM )
-      {
-        // set the HP PA Tx Power value, masking out PA Type
-        pRf->tx20Power    = (uint32 *) rfSetup.pRegOverrideTx20;
-        ((uint32*)pRf->tx20Power)[0] = TX20_POWER_OVERRIDE(pNewGain->txPwrVal & TX_POWER_HP_PA_MASK);
-      }
-      else // default PA
-      {
-        pRf->tx20Power    =  (uint32 *)rfSetup.pRegOverrideTxStd;
-        ((uint32*)pRf->tx20Power)[0] = TX_STD_POWER_OVERRIDE(pNewGain->txPwrVal & TX_POWER_HP_PA_MASK);
-      }
-    }
-  }
-
-  // Set the Tx power when pRf is NULL and also for legacy advertisement with calculated gain done
-  // in the validateTxPwrRestrictions function.
-  if ( (pRf == NULL) || ( rfCmdType == TX_PWR_CMD_LEGACY ) )
-  {
-    RF_TxPowerTable_Value newValue;
-
-    newValue.paType   = (pNewGain->txPwrVal & ~TX_POWER_HP_PA_MASK)?RF_TxPowerTable_HighPA:RF_TxPowerTable_DefaultPA;
-    newValue.rawValue = pNewGain->txPwrVal & TX_POWER_HP_PA_MASK;
-
-    // Note: This command does not wake the RF core.
-    RF_setTxPower(rfHandle, newValue);
-  }
-
-  return;
-}
-#endif // CC13X2P
-#endif //!CC23X0
 
 /*******************************************************************************
  * @fn          llCheckAcceptListUsage
@@ -1003,12 +424,14 @@ void llSetupConn( uint8 connId )
   uint32		 curTime = MAP_llGetCurrentTime() + RAT_TICKS_IN_1MS;
   llConnState_t *connPtr = MAP_llDataGetConnPtr( connId );
 
+  // Set dynamicWinOffset to be dynamic( e.g defined by the RCL).
+  extInitCmd.dynamicWinOffset = 1;
+
   BLE_LOG_INT_INT(0, BLE_LOG_MODULE_CTRL, "CTRL: llSetupConn connId=%d, status=%d\n", connId, 0);
 
   //Guard time between anchor times will be used if user defined CENTRAL_GUARD_TIME_ENABLE
   if (!(extStackSettings & CENTRAL_GUARD_TIME_ENABLE))
   {
-    extInitCmd.dynamicWinOffset = 1;
     extInitCmd.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
   }
   else
@@ -1031,23 +454,15 @@ void llSetupConn( uint8 connId )
     }
     if (connPtrRef)
     {
-      extInitCmd.dynamicWinOffset = 1;
       extInitCmd.connectTime = connPtrRef->llTask->anchorPoint +
                                 (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS) +
                                 (((connId - connPtrRef->connId)  * NUM_SLOTS_PER_CENTRAL) * RAT_TICKS_IN_625US);
     }
     else
     {
-      extInitCmd.dynamicWinOffset = 1;
       extInitCmd.connectTime = curTime + (connPtr->curParam.connInterval * RAT_TICKS_IN_1_25MS);
     }
   }
-#ifdef DEBUG_SW_TRACE
-	DBG_PRINT0(DBGSYS, "");
-	DBG_PRINTL1(DBGSYS, "INIT Cur  Time + 1.25ms: = 0x%08X", curTime );
-	DBG_PRINTL1(DBGSYS, "INIT Conn Time:   = 0x%08X", extInitParam.connectTime );
-	DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
 
   return;
 }
@@ -1330,130 +745,6 @@ void llReplaceCtrlPkt( llConnState_t *connPtr,
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-/*******************************************************************************
- * @fn          llMoveBackCtrlPkt
- *
- * @brief       This function is used to take control packets from the ctrlQueue
- *              and to insert them in to the ctrlPkts queue instead of the place holder.
- *
- *              The intention is to keep using the ROM function which
- *              process the control packet procedures and to manipulate the
- *              control commands queue in the way that there will be new control
- *              commands only after going out from the control packet procedures function.
- *
- * input parameters
- *
- * @param       connPtr  - Pointer to the current connection.
- * @param       ctrlQueue - queue which keep the control packets to insert
- * @param       numItems - Number of items in the ctrlQueue
- *
- *
- * output parameters
- *
- * @param       none.
- *
- * @return      first item index.
- */
-uint8 llMoveBackCtrlPkt( llConnState_t *connPtr,
-                         uint8 *ctrlQueue,
-                         uint8         numItems)
-{
-  halIntState_t intState;
-  uint8 itemQueue;
-  uint8 returnIndex = 0xFF;
-
-
-  // case inserting the ctrlQueue items back to the ctrlPkts queue
-  // case there is control command inside ctrlQueue
-  if (numItems > 0)
-  {
-    HAL_ENTER_CRITICAL_SECTION(intState);
-    // find the control packet place holder in the queue
-    // start from the tail and not from the head to avoid override
-    // place holder which was not belong to the control commands in ctrlQueue
-    for ( itemQueue = LL_MAX_NUM_CTRL_PROC_PKTS; ((itemQueue > 0) && (numItems > 0)); itemQueue-- )
-    {
-      // case place holder was found.
-      if ( connPtr->ctrlPktInfo.ctrlPkts[itemQueue - 1] == LL_CTRL_DUMMY_PLACE_HOLDER_TRANSMIT )
-      {
-        // replace it with the appropriate control packet
-        connPtr->ctrlPktInfo.ctrlPkts[itemQueue - 1] = ctrlQueue[numItems - 1];
-        // decrement the number of control packets left
-        numItems--;
-        returnIndex = itemQueue - 1;
-      }
-    }
-    HAL_EXIT_CRITICAL_SECTION(intState);
-  }
-
-  return returnIndex;
-}
-/*******************************************************************************
- * @fn          llMoveCtrlPkt
- *
- * @brief       This function is used to take control packet from the ctrlList and
- *              to find it in the ctrlPkts queue. once it was found, the function
- *              replace it with place holder and copy it to a given new queue - ctrlQueue
- *
- *              The intention is to keep using the ROM function which
- *              process the control packet procedures and to manipulate the
- *              control commands queue in the way that there will not be new control
- *              commands in it.
- *
- * input parameters
- *
- * @param       connPtr  - Pointer to the current connection.
- * @param       ctrlList - List of Control packets type to move from queue.
- *
- *
- * output parameters
- *
- * @param       ctrlQueue - queue which keep the control packets that were moved
- *
- * @return      Number of items in the ctrlQueue.
- */
-uint8 llMoveCtrlPkt( llConnState_t *connPtr,
-                     uint8         *ctrlList,
-                     uint8         *ctrlQueue)
-{
-  halIntState_t intState;
-  uint8 itemQueue = 1;
-  uint8 itemList;
-  uint8 numItems = 0;
-
-  HAL_ENTER_CRITICAL_SECTION(intState);
-
-  // find the control packet to remove from the queue
-  while (( itemQueue < LL_MAX_NUM_CTRL_PROC_PKTS ) &&
-         (connPtr->ctrlPktInfo.ctrlPkts[itemQueue] != LL_CTRL_UNDEFINED_PKT))
-  {
-    // move over the control commands list
-    for (itemList = 0; ctrlList[itemList] != LL_CTRL_UNDEFINED_PKT; itemList++)
-    {
-      // case control packet was found.
-      if ( connPtr->ctrlPktInfo.ctrlPkts[itemQueue] == ctrlList[itemList])
-      {
-        // stuff place holder to keep a place for the packet for future insert
-        connPtr->ctrlPktInfo.ctrlPkts[itemQueue] = LL_CTRL_DUMMY_PLACE_HOLDER_TRANSMIT;
-
-        // insert the control in to the new queue
-        ctrlQueue[numItems] = ctrlList[itemList];
-        // increase the number of items in the new queu
-        numItems++;
-
-        // go find the next control
-        break;
-      }
-    }
-    itemQueue++;
-  }
-
-  HAL_EXIT_CRITICAL_SECTION(intState);
-
-  return numItems;
-}
-#endif // ADV_CONN_CFG | INIT_CFG
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 /*******************************************************************************
@@ -1557,14 +848,6 @@ void llSetNextDataChan( llConnState_t *connPtr )
     // get the next data channel
     connPtr->currentMappedChan = connPtr->pChSelAlgo( connPtr );
 
-    // Disable the notification to host that channel map has changed to avoid disconnection
-    // As this is vendor specific event
-    if (MAP_checkVsEventsStatus())
-    {
-      // Notify that channel map has changed
-      MAP_LL_EXT_ChanMapUpdateCback(connPtr->connId, connPtr->curChanMap.chanMap, connPtr->currentMappedChan);
-    }
-
     // clear the pending flag
     connPtr->pendingChanUpdate = CHANNEL_MAP_UPDATE_APPLIED;
   }
@@ -1577,11 +860,6 @@ void llSetNextDataChan( llConnState_t *connPtr )
   // set the channel number
   // Note: The channel field is prior to ble5OpCmd_t field changes, so okay.
   ((RCL_CmdBle5Connection *)connPtr->llTask->command)->channel = connPtr->currentMappedChan;
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINT1(DBGSYS, "Set Next Chan: %d", connPtr->currentMappedChan);
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
 
   return;
 }
@@ -2161,6 +1439,10 @@ llConnState_t *llAllocConnId( void )
       connPtr->txStats.numTxRetrans    = 0;
       connPtr->txStats.numTxEntryDone  = 0;
 
+      // Reset Handover flags
+      connPtr->estWithHandover         = 0;
+      connPtr->handoverInProg          = 0;
+
       return( connPtr );
     }
   }
@@ -2194,37 +1476,9 @@ llConnState_t *llAllocConnId( void )
  */
 void llReleaseConnId( llConnState_t *connPtr )
 {
-#ifdef RTLS_CTE
-  // Clean the CTE struct and release the antenna switch array
-  if ( llCte[connPtr->connId].initiator.pAntenna != NULL )
-  {
-    MAP_osal_mem_free( llCte[connPtr->connId].initiator.pAntenna );
-  }
-  if ( llCte[connPtr->connId].responder.pAntenna != NULL )
-  {
-    MAP_osal_mem_free( llCte[connPtr->connId].responder.pAntenna );
-  }
-  // check for release the CTE auto copy buffer
-  if ((llCte[connPtr->connId].initiator.samplingEnable != LL_CTE_SAMPLING_NOT_INIT) &&
-      (llCteSamples.pAutoCopyBuffers != NULL))
-  {
-    // reset the enable parameter before release the auto copy buffer
-    llCte[connPtr->connId].initiator.samplingEnable = LL_CTE_SAMPLING_NOT_INIT;
-    // check for release the CTE auto copy buffer
-    MAP_llFreeCteSamplesEntryQueue();
-  }
-  // clear all CTE connection set
-  MAP_osal_memset( &llCte[connPtr->connId], 0, sizeof( llCte_t ) );
-#endif // RTLS_CTE
-
   // clear all CS data set
   MAP_llCsClearConnProcedures(connPtr->connId);
 
-  // Reset DMM threshold
-  if ((llState == LL_STATE_CONN_CENTRAL) || (llState == LL_STATE_CONN_PERIPHERAL))
-  {
-    MAP_llDmmSetThreshold(llState,connPtr->connId,TRUE);
-  }
   // check that this connection is active
   // Note: If a cancel is issued, this connection may be released even though
   //       it isn't yet active.
@@ -2241,7 +1495,9 @@ void llReleaseConnId( llConnState_t *connPtr )
 
   // count the number of active connections
   // Note: Only side effect the current connection if there are no more
-  if ( --llConns.numLLConns == 0 )
+  --llConns.numLLConns;
+  if ( ( llConns.llConnection[connPtr->connId].connId == llConns.currentConn ) ||
+       ( llConns.numLLConns == 0 ))
   {
     // mark the current connection as invalid until a new one is assigned
     llConns.currentConn = LL_INVALID_CONNECTION_ID;
@@ -2249,6 +1505,10 @@ void llReleaseConnId( llConnState_t *connPtr )
 
   // mark the connection as deallocated
   connPtr->allocConn = FALSE;
+
+  memset (&llConns.llConnection[connPtr->connId], 0, sizeof( llConnState_t ));
+
+  llConns.llConnection[connPtr->connId].connId = LL_INVALID_CONNECTION_ID;
 
   return;
 }
@@ -3059,6 +2319,12 @@ uint16 llFindNextConn(void)
     // It is limited to be up to LL_MAX_COLLISION_COMPRISON.
     numOfCollisionComprison++;
 
+    if ( activeConns[activeConnIndex2] == LL_INACTIVE_CONNECTIONS )
+    {
+      // This can happen if we removed the handover connection.
+      // Change the connIndex to invalid
+      activeConnIndex2 = LL_INACTIVE_CONNECTIONS;
+    }
   }// End of while (currentActiveConnId != LL_INACTIVE_CONNECTIONS)
 
   // if the earliestConnId is the same as the selectedConnId or there is
@@ -3237,15 +2503,15 @@ uint8 llGetNextConn( void )
   uint8            nextConnId;
   llConnState_t    *connPtr = NULL;
 
-  // Set GPIO
-  HAL_GPIO_SET( HAL_GPIO_8 );
-
   // Sanity Check
   // There should be at least one active connection.
   LL_ASSERT( llConns.numActiveConns != 0 );
 
   // clear the number of active conns counter
   numActiveConns = 0;
+
+  // Initialize activeConnsArray
+  osal_memset(activeConns, LL_INACTIVE_CONNECTIONS, maxNumConns);
 
   // take a snapshot of the current time with pad
   curTime = MAP_llGetCurrentTime() + LL_TOPO_PAD;
@@ -3297,6 +2563,12 @@ uint8 llGetNextConn( void )
     MAP_llHardwareError( HW_FAIL_FW_INTERNAL_ERROR );
   }
 
+  // NOTE: We should not get here if we have 1 connection and handover
+  // is in progress as the serving node
+  // This is currently protected by the ll_scheduler (the only location
+  // this function is called from.
+  // Need to add another protection to prevent the scheduler from scheduling
+  // this connection
   /********************************************/
   /********* Check Single Connection **********/
   /********************************************/
@@ -3311,8 +2583,6 @@ uint8 llGetNextConn( void )
       // check if this connection is active
       if ( connPtr->activeConn )
       {
-        HAL_GPIO_CLR( HAL_GPIO_8 );
-
         // Sanity Check
         LL_ASSERT( connPtr->connId == activeConns[0] );
 
@@ -3342,6 +2612,19 @@ uint8 llGetNextConn( void )
     MAP_llHardwareError( HW_FAIL_FW_INTERNAL_ERROR );
   }
 
+  // If there are 2 connections check if one is in the middle of an handover process
+  if ( llConns.numActiveConns == 2 )
+  {
+    uint16 connHandle = MAP_llReturnNonHandoverConn();
+
+    // If there is a connection in the middle of handover process
+    // return the other connection handle, otherwise continue
+    if ( connHandle != LL_CONNHANDLE_INVALID )
+    {
+      return connHandle;
+    }
+  }
+
   /*************************************************/
   /*********** Check Multiple Connection **********/
   /************************************************/
@@ -3351,6 +2634,9 @@ uint8 llGetNextConn( void )
   /********************************************/
   // sort by start time
   MAP_llShellSortActiveConns(activeConns , llConns.numActiveConns);
+
+  // If there is a connection in the middle of an handover process, remove it
+  MAP_llRemoveHandoverConn(activeConns , llConns.numActiveConns);
 
   /********************************************/
   /************ Find Next Connection **********/
@@ -3379,9 +2665,6 @@ uint8 llGetNextConn( void )
   }
   /* Note: The nextConnId max time length is calculated in llFindNextConn() routine */
   /* Note: Start Timer for the max connection length in llLinkSchedSetup() routine  */
-
-  // Reset GPIO
-  HAL_GPIO_CLR( HAL_GPIO_8 );
 
   // return the next connection id.
   return( nextConnId );
@@ -3615,7 +2898,7 @@ void llConnCleanup( llConnState_t *connPtr )
         // free the TX data buffer
         MAP_osal_bm_free( (void *)pEntry );
       }
-      /* Clear the pTxDataEntryQ */
+      // Clear the pTxDataEntryQ
       llClearTxDataQueue(connPtr->pTxDataEntryQ);
     }
 
@@ -3658,12 +2941,13 @@ void llConnCleanup( llConnState_t *connPtr )
       // clear count
       numComplPkts = 0;
     }
-    // release the connection
-    MAP_llReleaseConnId( connPtr );
-
     // free the associated task block
     // Note: If the last task, llState will be set to Idle.
     MAP_llFreeTask( &connPtr->llTask );
+
+    // release the connection
+    MAP_llReleaseConnId( connPtr );
+
 
     HAL_EXIT_CRITICAL_SECTION(cs);
   } // connPtr != NULL
@@ -3703,8 +2987,12 @@ void llConnTerminate( llConnState_t *connPtr,
     // cleanup the connection data structures and task
     MAP_llConnCleanup( connPtr );
 
-    // determine next task (if any) and schedule it
-    MAP_llScheduler();
+    // Only call the scheduler if the connection isn't terminated due to a successful handover
+    if ( reason != LL_CONN_TERMINATE_SUCCESSFUL_HANDOVER )
+    {
+      // determine next task (if any) and schedule it
+      MAP_llScheduler();
+    }
   }
 
   return;
@@ -3851,16 +3139,6 @@ void llInitFeatureSet( void )
 #endif // AE_CFG
 
   // set here and omit those features later in rom_init.c depends on defines
-#ifndef CC23X0
-  deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_EXTENDED_ADVERTISING;
-  deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_PERIODIC_ADVERTISING;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTION_CTE_REQUEST;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTION_CTE_RESPONSE;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_ANTENNA_SWITCHING_DURING_CTE_RX;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_RECEIVING_CTE;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTIONLESS_CTE_TRANSMITTER;
-  deviceFeatureSet.featureSet[2] |= (uint8)LL_FEATURE_CONNECTIONLESS_CTE_RECEIVER;
-#endif // !CC23X0
   deviceFeatureSet.featureSet[1] |= (uint8)LL_FEATURE_PERIODIC_ADVERTISING;
   deviceFeatureSet.featureSet[3] |= (uint8)LL_FEATURE_REMOTE_PUBLIC_KEY_VALIDATION;
 
@@ -4055,15 +3333,15 @@ void llConvertLstoToEvent( llConnState_t *connPtr,
  */
 void llConvertCtrlProcTimeoutToEvent( llConnState_t *connPtr )
 {
-  // find the number of connection intervals in the control procedure timeout
+  // Find the number of connection intervals in the control procedure timeout
   // Note: 1600 coarse ticks per second
   connPtr->ctrlPktInfo.ctrlTimeoutVal = (uint16)LL_MAX_CTRL_PROC_TIMEOUT /
                                         connPtr->curParam.connInterval;
 
-  // take the ceiling
+  // Take the ceiling
   if ( (uint16)LL_MAX_CTRL_PROC_TIMEOUT % connPtr->curParam.connInterval )
   {
-    // there's overage, so bump the count
+    // There's overage, so bump the count
     connPtr->ctrlPktInfo.ctrlTimeoutVal++;
   }
 
@@ -4082,9 +3360,7 @@ void llConvertCtrlProcTimeoutToEvent( llConnState_t *connPtr )
  *
  * input parameters
  *
- * @param       *connPtr - Pointer to a connection.
- * @param        context - LL_TX_DATA_CONTEXT_TX_ISR          |
- *                         LL_TX_DATA_CONTEXT_POST_PROCESSING
+
  *
  * output parameters
  *
@@ -4092,14 +3368,19 @@ void llConvertCtrlProcTimeoutToEvent( llConnState_t *connPtr )
  *
  * @return      None.
  */
-void llProcessTxData( llConnState_t *connPtr, uint8 context )
+void llProcessTxData( void )
 {
-  RCL_Buffer_TxBuffer *pDataEntry;
+  // get connection information
+  llConnState_t *connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
+
+  if (NULL != connPtr)
+  {
+  RCL_Buffer_TxBuffer *pDataEntry = NULL;
 
   // free all Finished entries
-  while( (pDataEntry=RCL_TxBuffer_head(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers)) != NULL )
+  while ( (pDataEntry=RCL_TxBuffer_head(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers)) != NULL )
   {
-    // check if the data entry is not finsihed
+    // check if the data entry is not finished
     if ( pDataEntry->state != RCL_BufferStateFinished )
     {
       // we're done since the data entries at this point forward are
@@ -4141,8 +3422,7 @@ void llProcessTxData( llConnState_t *connPtr, uint8 context )
   //       with a number of completed packets set to zero, so for now, this
   //       will not be supported.
   if ( (numComplPkts > 0)                   &&
-       ((numComplPkts >= numComplPktsLimit) ||
-       ((context == LL_TX_DATA_CONTEXT_POST_PROCESSING) && numComplPktsFlush)) )
+       ((numComplPkts >= numComplPktsLimit) || numComplPktsFlush) )
   {
     uint16 connId = connPtr->connId;
     uint16 numCompletedPackets = numComplPkts;
@@ -4154,8 +3434,8 @@ void llProcessTxData( llConnState_t *connPtr, uint8 context )
 
       // clear count
       numComplPkts = 0;
-    }
-    
+  }
+  }
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
@@ -4216,17 +3496,6 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
             LL_DATA_PDU_HDR_LLID_DATA_PKT_FIRST       : // first pkt
             LL_DATA_PDU_HDR_LLID_DATA_PKT_NEXT;         // continuation pkt
 
-#ifdef LL_TEST_MODE
-#ifndef CC23X0
-  if (( llTestMode.testCase == LL_TEST_MODE_TP_CON_SLA_BV69 ) ||
-      ( llTestMode.testCase == LL_TEST_MODE_TP_CON_MAS_BV65 ))
-  {
-    // set CTE present bit
-    pktHdr |= BV(LL_DATA_PDU_HDR_CP_BIT);
-  }
-#endif
-#endif
-
   // put LLID in the packet
   // Note: Skip data length - derived by the FW from the data entry length.
   *pData++ = pktHdr;
@@ -4245,51 +3514,6 @@ uint8 llWriteTxData ( llConnState_t *connPtr,
   // it will set the packet as last packet only if lastPkt set to 0x10
   SET_LAST_PKT(dataEntry->pad0, lastPkt);
   dataEntry->length = dataLen + dataEntry->numPad + LL_PKT_HDR_LEN + 1;
-
-#ifdef LL_TEST_MODE
-#ifndef CC23X0
-  if (( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_07 ) ||
-      ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_06 ) ||
-      ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_05 ))
-  {
-    // adjust length for header
-    dataEntry->length += LL_PKT_LLID_LEN;
-
-    // check if packet needs to be encrypted
-    if ( connPtr->encEnabled )
-    {
-      // add the LL_PKT_MIC_LEN to the header payload length
-      *pDataLen += LL_PKT_MIC_LEN;
-
-      // adjust length for encryption
-      dataEntry->length += LL_PKT_MIC_LEN;
-
-      // and encrypt
-      MAP_LL_ENC_Encrypt( connPtr,
-                          pktHdr,
-                          dataLen,
-                          pData );
-    }
-    if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_05 )
-    {
-        // set incorrect MIC
-        *(pData + dataLen) = 0x55;
-    }
-    else if ( llTestMode.testCase == LL_TEST_MODE_TP_SEC_MAS_BI_06 )
-    {
-        //Flipping header (LLID or RFU) after MIC calculation
-        uint8 *pHdr = (uint8 *)(dataEntry+1);
-        *pHdr = 0;
-     }
-
-    // queue it on connection TX queue
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    return( LL_STATUS_SUCCESS );
-  }
-#endif
-#endif // LL_TEST_MODE
 
   // check if data output is allowed
   // Note: Data output can be disabled so that the TX FIFO can empty. This is
@@ -5228,20 +4452,20 @@ uint32 llOctets2Time( uint8  curPhy,
 uint16 llSetCodedMaxTxTime( llConnState_t *connPtr )
 {
    connPtr->lenInfo.connEffectiveMaxTxTimeUncoded =
-     MIN( connPtr->lenInfo.connMaxTxTime,
-          connPtr->lenInfo.connRemoteMaxRxTime );
+     Math_MIN( connPtr->lenInfo.connMaxTxTime,
+               connPtr->lenInfo.connRemoteMaxRxTime );
 
    connPtr->lenInfo.connIntervalPortionAvail =
      (connPtr->curParam.connInterval * LL_CONNECTION_SLOT_TIME) -
      ((2*LL_CONNECTION_T_IFS) +
-      MIN(connPtr->lenInfo.connEffectiveMaxRxTime,
-          ((connPtr->lenInfo.connEffectiveMaxRxOctets * 64) + 976)));
+         Math_MIN(connPtr->lenInfo.connEffectiveMaxRxTime,
+                  ((connPtr->lenInfo.connEffectiveMaxRxOctets * 64) + 976)));
 
    connPtr->lenInfo.connEffectiveMaxTxTimeAvail =
-     MIN( connPtr->lenInfo.connEffectiveMaxTxTimeUncoded,
-          connPtr->lenInfo.connIntervalPortionAvail );
+       Math_MIN( connPtr->lenInfo.connEffectiveMaxTxTimeUncoded,
+                 connPtr->lenInfo.connIntervalPortionAvail );
 
-   return( MAX( 2704, connPtr->lenInfo.connEffectiveMaxTxTimeAvail ) );
+   return( Math_MAX( 2704, connPtr->lenInfo.connEffectiveMaxTxTimeAvail ) );
 
 }
 
@@ -5279,8 +4503,8 @@ uint8 llVerifyCodedConnInterval( llConnState_t *connPtr,
   {
     return( (connInterval * (2*LL_CONNECTION_SLOT_TIME)) <
             ((2*LL_CONNECTION_T_IFS) +
-              MIN( connPtr->lenInfo.connEffectiveMaxRxTime,
-                   ((connPtr->lenInfo.connEffectiveMaxRxOctets * 64) + 976)) + 2704) );
+                Math_MIN( connPtr->lenInfo.connEffectiveMaxRxTime,
+                          ((connPtr->lenInfo.connEffectiveMaxRxOctets * 64) + 976)) + 2704) );
   }
 
   return( FALSE );
@@ -5339,8 +4563,8 @@ uint8 llGetSlowestPhy( uint8 phys )
  *
  * input parameters
  *
- * @param       activeConns    - List of active connection Ids.
- * @param       numActiveConns - Number of valid entries in activeConns.
+ * @param       activeConnsArray - List of active connection IDs.
+ * @param       numActiveConns   - Number of valid entries in activeConns.
  *
  * output parameters
  *
@@ -5434,6 +4658,48 @@ void llSortActiveConns( uint8 *activeConnsArray, uint8 numActiveConns )
   } while( n!=0 );
 
   return;
+}
+
+/*******************************************************************************
+ * @fn          llRemoveHandoverConn
+ *
+ * @brief       This function will remove the connection that is currently in the
+ *              middle of an handover process from the active connections array
+ *
+ * input parameters
+ *
+ * @param       activeConnsArray - List of active connection IDs.
+ * @param       numActiveConns   - Number of valid entries in activeConns.
+ *
+ * output parameters
+ *
+ * @param       Connection IDs list without the handover connection
+ *
+ * @return      None
+ */
+void llRemoveHandoverConn(uint8 *activeConnsArray, uint8 numActiveConns)
+{
+  uint8_t i;
+  uint8_t j;
+  llConnState_t *connPtr;
+
+  for (i = 0; i < maxNumConns; i++)
+  {
+    connPtr = MAP_llDataGetConnPtr(activeConnsArray[i]);
+
+    if ( (connPtr != NULL) &&
+         (connPtr->activeConn == TRUE) &&
+         (llIsHandoverInProgress(connPtr) == TRUE) )
+    {
+      for (j = i; j < maxNumConns-1; j++)
+      {
+        activeConnsArray[j] = activeConnsArray[j+1];
+      }
+      // Set the last index as inactive as well
+      activeConnsArray[maxNumConns-1] = LL_INACTIVE_CONNECTIONS;
+      break;
+    }
+  }
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -5577,9 +4843,15 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
       numEventsPast  =  time / (connPtr->curParam.connInterval * RAT_TICKS_IN_625US);
       numEventsPast += (time % (connPtr->curParam.connInterval * RAT_TICKS_IN_625US))?1:0;
 
-      // update next event counter
-      connPtr->nextEvent = connPtr->currentEvent + numEventsPast;
-
+      if ( connPtr->estWithHandover == UTRUE )
+      {
+        connPtr->nextEvent += numEventsPast;
+      }
+      else
+      {
+        // update next event counter
+        connPtr->nextEvent = connPtr->currentEvent + numEventsPast;
+      }
       // find the time to next event
       timeToNextEvt = (uint32)numEventsPast * (uint32)connPtr->curParam.connInterval;
     }
@@ -5619,19 +4891,17 @@ void llRealignConn( llConnState_t *connPtr, uint32 curTime )
       connPtr->lastTimeToNextEvt = timeToNextEvt;
 
       // calculate timer drift based on time since last event
-#ifdef CC23X0
       connPtr->timerDrift = ((timeToNextEvt * (RCOSC_LF_SCA + connPtr->mstSCA)) /
                              RAT_TICKS_IN_100US) + 1;
-#else
-      connPtr->timerDrift = ((timeToNextEvt * connPtr->scaFactor) /
-                             RAT_TICKS_IN_100US) + 1;
-#endif
 
       // correct for elapsed timer drift
       connCmd->timing.absStartTime -= connPtr->timerDrift;
-      // and adjust the timeout relative to the start time based on last timeout
-      ((RCL_CmdBle5Connection *)connCmd)->relRxTimeoutTime =
-        connPtr->lastTimeoutTime + (2 * connPtr->timerDrift);
+      if ( connPtr->estWithHandover == UFALSE )
+      {
+          // and adjust the timeout relative to the start time based on last timeout
+          ((RCL_CmdBle5Connection *)connCmd)->relRxTimeoutTime =
+                  connPtr->lastTimeoutTime + (2 * connPtr->timerDrift);
+      }
 
       // add window size to timeout time
       if ( connPtr->pendingParamUpdate == PARAM_UPDATE_APPLIED )
@@ -5888,17 +5158,17 @@ void llSendConnEvtCallback(uint8 connEvtStatus, uint16 numPkts, llConnState_t *c
       // Or all connection event handles are to be sent...
       (llConnEvtNotice.handle == LL_CONNHANDLE_ALL)))
   {
-    // if event counter is 0
+    // if this is the first succesful packet
     // and registered to Connection_Established event
-    if ( (connPtr->currentEvent == 0) &&
+    if ( (connPtr->firstPacket) &&
         ((llConnEvtNotice.eventType & LL_CONN_EVT_CONN_ESTABLISHED) == LL_CONN_EVT_CONN_ESTABLISHED) )
     {
       sendReport   = TRUE;
       curEventType = LL_CONN_EVT_CONN_ESTABLISHED;
     }
-    // else if there was a PHY Update
-    // and registered to PHY UPDATE event
-    else if ( (connPtr->phyUpdatedNoChange == TRUE) &&
+    // Else if there is a PHY update indication
+    else if ( (connPtr->phyUpdateSentOrReceivedInd == TRUE) &&
+               // and registered to PHY update event
               ((llConnEvtNotice.eventType & LL_CONN_EVT_PHY_UPDATE) == LL_CONN_EVT_PHY_UPDATE) )
     {
       sendReport   = TRUE;
@@ -5956,1233 +5226,11 @@ void llSendConnEvtCallback(uint8 connEvtStatus, uint16 numPkts, llConnState_t *c
       ((llConnEvtNotice.cb))(pReport);
     }
   }
-  if (connPtr->phyUpdatedNoChange == TRUE )
+  if (connPtr->phyUpdateSentOrReceivedInd == TRUE )
   {
-    connPtr->phyUpdatedNoChange = FALSE;
+    connPtr->phyUpdateSentOrReceivedInd = FALSE;
   }
 }
-
-#ifndef CC23X0
-/*******************************************************************************
- * @fn          llRfOverrideCommonValue
- *
- * @brief       This function sets common value array for the RF Core
- *
- * input parameters
- *
- * @param       val      - data to updated
- * @param       offset   - field offset from common overrides
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llRfOverrideCommonValue(uint32 val, uint8 offset)
-{
-  uint32 *pOverride;
-  if ((uint32 *)llUserConfig.rfRegPtr != NULL)
-  {
-    // Get pointer to common overrides
-    pOverride = (uint32 *)llUserConfig.rfRegPtr;
-
-    // Write the override (will be applied when CM0 powercycles)
-    *(pOverride + offset)  = val;
-  }
-}
-#endif
-
-#ifdef RTLS_CTE
-/*******************************************************************************
- * @fn          llSetupCte
- *
- * @brief       This function is used to setup the CTE request or CTE response
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- * @param       req - true for CTE request and false for CTE response.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      Boolean to indicate whether the setup was successfully
- *              completed:
- *              TRUE:  Success
- *              FALSE: Not Done
- */
-uint8 llSetupCte( llConnState_t *connPtr, uint8 req)
-{
-  // For LL_CTE_RSP_PAYLOAD_LEN we add 1 for the CTEInfo header byte
-  uint8 payloadSize = (req)?LL_CTE_REQ_PAYLOAD_LEN:LL_CTE_RSP_PAYLOAD_LEN + 1;
-  // allocate a data entry and payload to send control packet
-  uint8 *pData = MAP_LL_TX_bm_alloc( payloadSize );
-
-  // check if we have a data entry
-  if ( pData != NULL )
-  {
-    dataEntry_t *dataEntry;
-    uint8        pktLen;
-
-    // get a pointer to the data entry header
-    dataEntry = (dataEntry_t *)(pData - (sizeof(dataEntry_t) + LL_PKT_LLID_LEN));
-
-    // determine length of packet
-    pktLen = LL_PKT_LLID_LEN +
-             payloadSize +
-             ((connPtr->encEnabled)?LL_PKT_MIC_LEN:0);
-
-    // yes, so initialize the data entry
-    dataEntry->pNextEntry = NULL;
-    dataEntry->status     = DATASTAT_PENDING;
-    dataEntry->config     = DATA_ENTRY_TYPE_GENERAL | DATA_ENTRY_LEN_SIZE_0;
-    dataEntry->length     = pktLen;
-
-    // point to the payload
-    pData = (uint8 *)(dataEntry+1);
-
-    // write the header
-    if (req)
-    {
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT;
-      // write control type
-      pData[0] = LL_CTRL_CTE_REQ;
-      // write the CTE length and type
-      pData[1] = ((llCte[connPtr->connId].initiator.requestLen) | LL_CTE_INFO_TYPE_MASK) & ((llCte[connPtr->connId].initiator.requestType << LL_CTE_INFO_TYPE_OFFSET) | LL_CTE_INFO_TIME_MASK);
-      llCte[connPtr->connId].initiator.sendRequest = TRUE;
-      llCte[connPtr->connId].initiator.periodicEvent = connPtr->currentEvent + llCte[connPtr->connId].initiator.requestInterval;
-    }
-    else
-    {
-      // enable CP bit (CTE Present)
-      *pData++ = LL_DATA_PDU_HDR_LLID_CONTROL_PKT | BV(LL_DATA_PDU_HDR_CP_BIT);
-      // write CTE Info byte (CTE length and type) which should be part of the header but because our header
-      // implemented as fix size of 2 bytes we process the CTE info as data.
-      pData[0] = ((llCte[connPtr->connId].responder.len) | LL_CTE_INFO_TYPE_MASK) & ((llCte[connPtr->connId].responder.type << LL_CTE_INFO_TYPE_OFFSET) | LL_CTE_INFO_TIME_MASK);
-      // write control type
-      pData[1] = LL_CTRL_CTE_RSP;
-    }
-
-    // encrypt TX packet in place in the TX FIFO
-    if ( connPtr->encEnabled )
-    {
-      if (req)
-      {
-        // encrypt PDU with authentication check
-        MAP_LL_ENC_Encrypt( connPtr,
-                            LL_DATA_PDU_HDR_LLID_CONTROL_PKT,
-                            payloadSize,
-                            pData );
-      }
-      else
-      {
-        // encrypt PDU without the cte header
-        MAP_LL_ENC_Encrypt( connPtr,
-                            LL_DATA_PDU_HDR_LLID_CONTROL_PKT | BV(LL_DATA_PDU_HDR_CP_BIT),
-                            payloadSize - 1,
-                            &pData[1] );
-      }
-    }
-
-    // queue it on connection TX list and queue for RF
-    MAP_llAddTxDataEntry( connPtr->pTxDataEntryQ,
-                          dataEntry );
-
-    // deactivate peripheral latency, if it was enabled
-    // Note: Not used by Central.
-    connPtr->peripheralLatency = 0;
-
-    // set the control packet timeout for 40s relative to our present time
-    // Note: This is done in terms of connection events.
-    connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-    return( TRUE );
-  }
-
-  return( FALSE );
-}
-
-/*******************************************************************************
- * @fn          llRfSetupFwParamCmd
- *
- * @brief       This function is used to setup RF FW param command
- *
- * input parameters
- *
- * @param       address - value of the Byte index
- * @param       size - value type:
- *              0 for four-byte value
- *              3 for one-byte value
- * @param       value - value to write
- * @param       nextCmd - next rf command to execute
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llRfSetupFwParamCmd( uint8 address, uint8 size, uint32 value, rfOpCmd_t *nextCmd)
-{
-    fwParCmd.cmdNum  = CMD_WRITE_FW_PARAM;
-    fwParCmd.address = address | (size << 11);
-    fwParCmd.value   = value;
-
-    // setup radio command to run an immediate command
-    runFwParCmd.rfOpCmd.cmdNum    = CMD_RUN_IMMEDIATE_COMMAND;
-    runFwParCmd.rfOpCmd.status    = RFSTAT_IDLE;
-    runFwParCmd.rfOpCmd.pNextRfOp = nextCmd;
-    runFwParCmd.rfOpCmd.startTime = 0;
-    runFwParCmd.rfOpCmd.startTrig = TRIGTYPE_NOW;
-    runFwParCmd.rfOpCmd.condition = CONDTYPE_ALWAYS_RUN_NEXT_CMD;
-    runFwParCmd.reserved          = 0;
-    runFwParCmd.cmdVal            = (uint32)&fwParCmd;
-    runFwParCmd.cmdStatVal        = 0;
-}
-
-/*******************************************************************************
- * @fn          llUpdateCteState
- *
- * @brief       This function is used to set the CTE state
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       connPtr - Pointer to the current connection.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llUpdateCteState( llConnState_t *connPtr)
-{
-  // check for periodic CTE request
-  if ((connPtr->phyInfo.curPhy != LL_PHY_CODED) &&
-      (llCte[connPtr->connId].initiator.requestEnable == TRUE) &&
-      (llCte[connPtr->connId].initiator.sendRequest == FALSE) &&
-      ( connPtr->ctrlPktInfo.ctrlPktCount == 0 ))
-  {
-    if ((llCte[connPtr->connId].initiator.requestInterval > 1) &&
-        (llCte[connPtr->connId].initiator.periodicEvent <= connPtr->nextEvent))
-    {
-      MAP_llEnqueueCtrlPkt( connPtr, LL_CTRL_CTE_REQ );
-    }
-    // in case we need to send the request each connection event
-    else if (llCte[connPtr->connId].initiator.requestInterval == 1)
-    {
-      // queue the request on connection TX list for RF
-      MAP_llSetupCte( connPtr,TRUE );
-    }
-  }
-}
-
-/*******************************************************************************
- * @fn          llGetCteInfo
- *
- * @brief       This function is used to get the CTE info from received CTE packet
- *              and forward the event to HCI
- *
- * @design      /ref did_202754181
- *
- * input parameters
- *
- * @param       id - CTE Task ID (could be connection, connectionless or test).
- * @param       pStruct - Pointer to the CTE Task struct (NULL in case of CTE test ID).
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-uint8 llGetCteInfo( uint8 id, void *pStruct )
-{
-  uint16 sampleCount;
-  uint8 sampleRate;
-  uint8 sampleSize;
-  uint8 rawRfMode;
-  uint8 switchTime;
-  llCteSamplesRfHeader_t *samplesHdr;
-  uint8 *samplesData;
-  dataEntry_t *pDataEntry = NULL;
-  llConnState_t *connPtr = NULL;
-#ifdef USE_PERIODIC_SCAN
-  llPeriodicScanSet_t *pPeriodicScan = NULL;
-#endif //USE_PERIODIC_SCAN
-  uint8 cteLen;
-  uint8 cteType;
-
-  // update relevant structure
-  switch (id)
-  {
-    case CTE_TASK_ID_CONNECTION:
-        connPtr = (llConnState_t *)pStruct;
-        break;
-#ifdef USE_PERIODIC_SCAN
-    case CTE_TASK_ID_CONNECTIONLESS:
-        pPeriodicScan = (llPeriodicScanSet_t *)pStruct;
-        break;
-#endif //USE_PERIODIC_SCAN
-  }
-  // verify that the RF finished copy the complete samples
-  if ((llCteSamples.autoCopyCompleted > 0) && (llCteSamples.pAutoCopyBuffers != NULL))
-  {
-    // get the samples buffer
-    pDataEntry = MAP_RFHAL_GetNextDataEntry( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-  }
-
-  if ((llCteSamples.autoCopyCompleted == 0) || (llCteSamples.pAutoCopyBuffers == NULL) ||
-      (pDataEntry == NULL) || (pDataEntry->status != DATASTAT_FINISHED))
-  {
-    if ((connPtr != NULL) && (llCte[connPtr->connId].initiator.recvCte == TRUE))
-    {
-      llCte[connPtr->connId].initiator.recvCte = FALSE;
-    }
-    return FALSE;
-  }
-  // decrease number of completed buffers
-  llCteSamples.autoCopyCompleted--;
-  // set the samples pointers
-  samplesData = (uint8 *)(pDataEntry + 1);
-  samplesHdr = (llCteSamplesRfHeader_t *)(samplesData);
-  samplesData += sizeof(llCteSamplesRfHeader_t);
-  cteLen = (samplesHdr->cteInfo & LL_CTE_INFO_TIME_MASK);
-  cteType = (samplesHdr->cteInfo & LL_CTE_INFO_TYPE_MASK) >> LL_CTE_INFO_TYPE_OFFSET;
-
-  if ((id == CTE_TASK_ID_TEST) && (llCteTest.testMode == TRUE) && (llCteTest.inProgress == TRUE))
-  {
-    if (cteType == LL_CTE_TYPE_AOA)
-    {
-      rawRfMode = 1;
-      switchTime = llCteTest.pAntenna->switchTime;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_1US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_1US;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_2US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_2US;
-    }
-    else
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-    // calculate the number of samples
-    sampleCount = CTE_REFERENCE_PERIOD + (((cteLen * 8) -
-                 (CTE_OFFSET + CTE_REFERENCE_PERIOD)) / (switchTime * 2));
-
-    // send CTE event to Host
-    HCI_ConnectionlessIqReportEvent(0,
-                                    (trxTestCmd.chan - 102)/2,
-                                    0,
-                                    0,
-                                    cteType,
-                                    switchTime,
-                                    samplesHdr->status.status.bCrcErr,
-                                    0,
-                                    sampleCount,
-                                    (uint32 *)samplesData);
-  }
-#ifdef USE_PERIODIC_SCAN
-  else
-  if ((id == CTE_TASK_ID_CONNECTIONLESS) && (pPeriodicScan != NULL))
-  {
-    if (pPeriodicScan->cteInfo.enable != LL_CTE_SAMPLING_ENABLE)
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-    if (pPeriodicScan->phy == BLE5_1M_PHY)
-    {
-      // sample rate is default 1Mhz or defined by VS host command
-      sampleRate = pPeriodicScan->cteConfig.sampleRate1M;
-      // sample size is default 8 bits or defined by VS host command
-      sampleSize = pPeriodicScan->cteConfig.sampleSize1M;
-    }
-    else
-    {
-      // sample rate is default 1Mhz or defined by VS host command
-      sampleRate = pPeriodicScan->cteConfig.sampleRate2M;
-      // sample size is default 8 bits or defined by VS host command
-      sampleSize = pPeriodicScan->cteConfig.sampleSize2M;
-    }
-
-    // if we are in RF RAW mode then we need to also take the switching period samples into account
-    if (pPeriodicScan->cteConfig.sampleCtrl & CTE_SAMPLING_CONTROL_RF_RAW_NO_FILTERING)
-    {
-      // take length and switching into account due to inclusion of switching period samples
-      // we want ALL RF samples so sampleCount needs to match accordingly
-      rawRfMode = 2;
-      switchTime = LL_CTE_SAMPLE_SLOT_1US;
-    }
-    else if (cteType == LL_CTE_TYPE_AOA)
-    {
-      rawRfMode = 1;
-      switchTime = pPeriodicScan->cteInfo.pAntenna->switchTime;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_1US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_1US;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_2US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_2US;
-    }
-    else
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-    // calculate the number of samples
-    sampleCount = CTE_REFERENCE_PERIOD +  rawRfMode*(((cteLen * 8) -
-                 (CTE_OFFSET + CTE_REFERENCE_PERIOD)) / (switchTime * 2));
-    // check if oversampling was configured
-    if ((sampleRate > CTE_SAMPLING_CONFIG_1MHZ) || (sampleSize > LL_CTE_SAMPLE_SIZE_8BITS))
-    {
-      // send Extended CTE event to Host (VS event)
-      HCI_ExtConnectionlessIqReportEvent(pPeriodicScan->handle,
-                                      pPeriodicScan->rfCmd.chan,
-                                      (int16)(samplesHdr->rssi | 0xFF00),
-                                      pPeriodicScan->cteRssiAntenna,
-                                      cteType,
-                                      switchTime,
-                                      samplesHdr->status.status.bCrcErr,
-                                      pPeriodicScan->eventCounter,
-                                      sampleCount,
-                                      sampleRate,
-                                      sampleSize,
-                                      pPeriodicScan->cteConfig.sampleCtrl,
-                                      (uint32 *)samplesData);
-    }
-    else
-    {
-      // send connectionless CTE event to Host (spec event)
-      HCI_ConnectionlessIqReportEvent(pPeriodicScan->handle,
-                                      pPeriodicScan->rfCmd.chan,
-                                      (int16)(samplesHdr->rssi | 0xFF00),
-                                      pPeriodicScan->cteRssiAntenna,
-                                      cteType,
-                                      switchTime,
-                                      samplesHdr->status.status.bCrcErr,
-                                      pPeriodicScan->eventCounter,
-                                      sampleCount,
-                                      (uint32 *)samplesData);
-    }
-  }
-#endif //USE_PERIODIC_SCAN
-  else
-  if ((id == CTE_TASK_ID_CONNECTION) && (connPtr != NULL) && (llCte[connPtr->connId].initiator.recvCte == TRUE))
-  {
-    llCte[connPtr->connId].initiator.recvCte = FALSE;
-    // validate the received CTE information
-    if ((llCte[connPtr->connId].initiator.samplingEnable != LL_CTE_SAMPLING_ENABLE) ||
-        (llCte[connPtr->connId].initiator.recvInfo.length < LL_CTE_MIN_LEN) ||
-        (llCte[connPtr->connId].initiator.recvInfo.length > LL_CTE_MAX_LEN) ||
-        (connPtr->phyInfo.curPhy == LL_PHY_CODED))
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-
-    // validate the received CTE information against the RF information
-    if ((connPtr->phyInfo.curPhy != (samplesHdr->status.status.rfPhy + 1)) ||
-        (llCte[connPtr->connId].initiator.recvInfo.length != cteLen)       ||
-        (llCte[connPtr->connId].initiator.recvInfo.type != cteType)        ||
-        (sizeof(uint32) * LL_CTE_NUM_RF_SAMPLES(cteLen) != samplesHdr->length))
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-    // setup the report information and prepare the RAMs for reading
-    llCte[connPtr->connId].initiator.recvInfo.rssi = (int16)(samplesHdr->rssi | 0xFF00);
-    llCte[connPtr->connId].initiator.recvInfo.packetStatus = samplesHdr->status.status.bCrcErr;
-    llCte[connPtr->connId].initiator.recvInfo.phy = connPtr->phyInfo.curPhy;
-    llCte[connPtr->connId].initiator.recvInfo.connEvent = connPtr->currentEvent;
-    llCte[connPtr->connId].initiator.recvInfo.dataChIndex = connPtr->nextChan;
-
-    if (llCte[connPtr->connId].initiator.recvInfo.phy == LL_PHY_1_MBPS)
-    {
-      // sample rate is default 1Mhz or defined by VS host command
-      sampleRate = llCte[connPtr->connId].initiator.sampleConfig.sampleRate1M;
-      // sample size is default 8 bits or defined by VS host command
-      sampleSize = llCte[connPtr->connId].initiator.sampleConfig.sampleSize1M;
-    }
-    else
-    {
-      // sample rate is default 1Mhz or defined by VS host command
-      sampleRate = llCte[connPtr->connId].initiator.sampleConfig.sampleRate2M;
-      // sample size is default 8 bits or defined by VS host command
-      sampleSize = llCte[connPtr->connId].initiator.sampleConfig.sampleSize2M;
-    }
-
-    // if we are in RF RAW mode then we need to also take the switching period samples into account
-    if (llCte[connPtr->connId].initiator.sampleConfig.sampleCtrl & CTE_SAMPLING_CONTROL_RF_RAW_NO_FILTERING)
-    {
-      // take length and switching into account due to inclusion of switching period samples
-      // we want ALL RF samples so sampleCount needs to match accordingly
-      rawRfMode = 2;
-      switchTime = LL_CTE_SAMPLE_SLOT_1US;
-    }
-    else if (cteType == LL_CTE_TYPE_AOA)
-    {
-      rawRfMode = 1;
-      switchTime = llCte[connPtr->connId].initiator.pAntenna->switchTime;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_1US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_1US;
-    }
-    else if (cteType == LL_CTE_TYPE_AOD_2US)
-    {
-      rawRfMode = 1;
-      switchTime = LL_CTE_SAMPLE_SLOT_2US;
-    }
-    else
-    {
-      MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-      return FALSE;
-    }
-
-    // calculate the number of samples
-    // if rawRfMode is enabled then:
-    // 1. the length is doubled since we are also outputting the switching period samples
-    // 2. switchTime is normalized since it does not play a factor in the amount of samples
-    sampleCount = CTE_REFERENCE_PERIOD + rawRfMode*(((llCte[connPtr->connId].initiator.recvInfo.length * 8) -
-                 (CTE_OFFSET + CTE_REFERENCE_PERIOD)) / (switchTime * 2));
-
-    // check if oversampling was configured
-    if ((sampleRate > CTE_SAMPLING_CONFIG_1MHZ) || (sampleSize > LL_CTE_SAMPLE_SIZE_8BITS))
-    {
-      // send Extended CTE event to Host (VS event)
-      HCI_ExtConnectionIqReportEvent(connPtr->connId,
-                                     llCte[connPtr->connId].initiator.recvInfo.phy,
-                                     llCte[connPtr->connId].initiator.recvInfo.dataChIndex,
-                                     llCte[connPtr->connId].initiator.recvInfo.rssi,
-                                     llCte[connPtr->connId].initiator.recvInfo.rssiAntenna,
-                                     llCte[connPtr->connId].initiator.recvInfo.type,
-                                     switchTime,
-                                     llCte[connPtr->connId].initiator.recvInfo.packetStatus,
-                                     llCte[connPtr->connId].initiator.recvInfo.connEvent,
-                                     sampleCount,
-                                     sampleRate,
-                                     sampleSize,
-                                     llCte[connPtr->connId].initiator.sampleConfig.sampleCtrl,
-                                     (uint32 *)samplesData);
-    }
-    else
-    {
-      // send CTE event to Host (spec event)
-      HCI_ConnectionIqReportEvent(connPtr->connId,
-                                  llCte[connPtr->connId].initiator.recvInfo.phy,
-                                  llCte[connPtr->connId].initiator.recvInfo.dataChIndex,
-                                  llCte[connPtr->connId].initiator.recvInfo.rssi,
-                                  llCte[connPtr->connId].initiator.recvInfo.rssiAntenna,
-                                  llCte[connPtr->connId].initiator.recvInfo.type,
-                                  switchTime,
-                                  llCte[connPtr->connId].initiator.recvInfo.packetStatus,
-                                  llCte[connPtr->connId].initiator.recvInfo.connEvent,
-                                  sampleCount,
-                                  (uint32 *)samplesData);
-    }
-  }
-  MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-  return TRUE;
-}
-
-/*******************************************************************************
- * @fn          llRfOverrideCteValue
- *
- * @brief       This function sets CTE value array for the RF Core
- *
- * input parameters
- *
- * @param       val      - data to updated
- * @param       address  - Hardware address
- * @param       offset   - field offset from CTE overrides
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llRfOverrideCteValue(uint32 val, uint16 address, uint8 offset)
-{
-  uint32 *pOverride;
-
-  if ((uint32 *)llUserConfig.rfRegOverrideCtePtr != NULL)
-  {
-    // Get pointer to CTE overrides
-    pOverride = (uint32 *)llUserConfig.rfRegOverrideCtePtr;
-
-    // Write the override (will be applied when CM0 powercycles)
-    *(pOverride + offset)  = val;
-
-    // Handle the case where CM0 might never powercycle (overrides won't be re-read)
-    // Just write directly to CM0 memory (has no effect if CM0 is asleep, which is fine)
-    HWREG(CM0_RAM_BASE + address) = val;
-  }
-}
-
-/*******************************************************************************
- * @fn          llSetCteAntennaArray
- *
- * @brief       This function sets the CTE antenna array which will be used by the RF Core
- *
- * input parameters
- *
- * @param       pAntenna - pointer to antenna array which will be used by the RF
- * @param       pPattern - pointer to antenna switching pattern received from Host
- * @param       lenPattern - length of antenna switching pattern
- * @param       slotDurations - switching and sampling slots in 1 us or 2 us
- *
- * output parameters
- *
- * @param       pAntenna.
- *
- * @return      status
- */
-uint8 llSetCteAntennaArray(llCteAntSwitch_t *pAntenna, uint8 *pPattern, uint8 lenPattern, uint8 slotDurations)
-{
-  uint8 i;
-
-  MAP_osal_memset( pAntenna, 0, sizeof(llCteAntSwitch_t) + (sizeof(uint32) * (lenPattern - 1)) );
-  pAntenna->numEntries = lenPattern;
-  pAntenna->switchTime = slotDurations;
-  pAntenna->ioMask     = cteAntennaProp.antennaGPIOMask;
-  for (i = 0; i < lenPattern; i++)
-  {
-    // if antenna id is invalid an error should be returned
-    if (pPattern[i] > (cteAntennaProp.antennaTblSize - 1))
-    {
-#ifdef QUAL_TEST
-      pAntenna->ioEntry[i] = 0;
-      continue;
-#else
-      return ( LL_STATUS_ERROR_FEATURE_NOT_SUPPORTED );
-#endif //QUAL_TEST
-    }
-    // configure antenna according to id
-    pAntenna->ioEntry[i] = cteAntennaProp.antennaTbl[pPattern[i]];
-  }
-#if !defined ( HOST_CONFIG )
-  // Set the pin as output only for HCI test
-  // otherwise the GPIO setting should be done by the app
-  uint8_t maskCounter = 0;
-  uint32_t enAntMask = cteAntennaProp.antennaGPIOMask;
-  uint32_t mainAntenna = cteAntennaProp.antennaTbl[0];
-
-  while (enAntMask)
-  {
-    if (enAntMask & 0x1)
-    {
-      IOCPinTypeGpioOutput(maskCounter);
-    }
-
-    if (mainAntenna & 0x1)
-    {
-      // set gpio to first antenna as high
-      GPIO_writeDio(maskCounter, 1);
-    }
-    maskCounter++;
-    enAntMask>>=1;
-    mainAntenna>>=1;
-  }
-#endif //!HOST_CONFIG
-
-  return ( LL_STATUS_SUCCESS );
-}
-#endif //RTLS_CTE
-
-/*******************************************************************************
- * @fn          llDmmSetAdvHandle
- *
- * @brief       This function set the dmm advertise handle
- *
- * @design      /ref did_211916399
- *
- * input parameters
- *
- * @param       handle  - advertise handle
- * @param       clear   - FALSE - set the handle in first empty place
- *                        TRUE - find the handle and set it as empty
- *                               or if handle == 0xFF clear all handles
- * output parameters
- *
- * @param       None.
- *
- * @return      In case of success - return index in dmm advertise handle array
- *              In case of error - return 0xFF
- */
-uint8 llDmmSetAdvHandle(uint8 handle, uint8 clear)
-{
-  uint8 i;
-
-  for (i=0; i<AE_DEFAULT_NUM_ADV_SETS; i++)
-  {
-    if (clear)
-    {
-      if ((dmmPolicyManager.advHandle[i] == handle) || (handle == 0xFF))
-      {
-        dmmPolicyManager.advHandle[i] = 0xFF;
-        if (handle != 0xFF)
-        {
-          return i;
-        }
-      }
-    }
-    else
-    {
-      if (dmmPolicyManager.advHandle[i] == 0xFF)
-      {
-        dmmPolicyManager.advHandle[i] = handle;
-        return i;
-      }
-    }
-  }
-  return 0xFF;
-}
-
-/*******************************************************************************
- * @fn          llDmmGetAdvHandle
- *
- * @brief       This function get the dmm advertise handle
- *
- * @design      /ref did_211916399
- *
- * input parameters
- *
- * @param       handle - advertise handle
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      In case of success - return index in dmm advertise handle array
- *              In case of not found - return 0xFF
- */
-uint8 llDmmGetAdvHandle(uint8 handle)
-{
-  uint8 i;
-
-  for (i=0; i<AE_DEFAULT_NUM_ADV_SETS; i++)
-  {
-    if (dmmPolicyManager.advHandle[i] == handle)
-    {
-      return i;
-    }
-  }
-  return 0xFF;
-}
-
-/*******************************************************************************
- * @fn          llDmmSetThreshold
- *
- * @brief       This function set the dmm thresholds (time and counter)
- *
- * @design      /ref did_211916399
- *
- * input parameters
- *
- * @param       state   - link layer state
- * @param       handle  - advertise handle or connection handle
- * @param       reset  - TRUE - reset the thresholds
- *                       FALSE - increase the counters
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None
- */
-void llDmmSetThreshold(uint8 state, uint8 handle, uint8 reset)
-{
-  switch (state)
-  {
-    case LL_STATE_EXT_ADV:
-      handle = llDmmGetAdvHandle(handle);
-      if(handle == 0xFF)
-      {
-        break;
-      }
-      if (reset)
-      {
-        dmmPolicyManager.adv[handle].aborts = 0;
-        dmmPolicyManager.adv[handle].time = MAP_llGetCurrentTime();
-      }
-      else
-      {
-        dmmPolicyManager.adv[handle].aborts++;
-      }
-      break;
-    case LL_STATE_SCAN:
-      if (reset)
-      {
-        dmmPolicyManager.scan.aborts = 0;
-        dmmPolicyManager.scan.time = MAP_llGetCurrentTime();
-      }
-      else
-      {
-        dmmPolicyManager.scan.aborts++;
-      }
-      break;
-    case LL_STATE_INIT:
-      if (reset)
-      {
-        dmmPolicyManager.init.aborts = 0;
-        dmmPolicyManager.init.time = MAP_llGetCurrentTime();
-      }
-      else
-      {
-        dmmPolicyManager.init.aborts++;
-      }
-      break;
-    case LL_STATE_CONN_PERIPHERAL:
-    case LL_STATE_CONN_CENTRAL:
-      if (reset)
-      {
-        dmmPolicyManager.conn[handle].aborts = 0;
-        dmmPolicyManager.conn[handle].time = MAP_llGetCurrentTime();
-      }
-      else
-      {
-        dmmPolicyManager.conn[handle].aborts++;
-      }
-      break;
-  }
-}
-
-#ifndef CC23X0
-/*******************************************************************************
- * @fn          llDmmGetActivityIndex
- *
- * @brief       This function return a DMM table activity index according to
- *              current activity priority (defined by threshold parameters)
- *
- * @design      /ref did_211916399
- *
- * input parameters
- *
- * @param       cmdNum - radio command number
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      In case of success - return dmm priority index
- *              In case of error - return DMM_POLICY_INVALID_INDEX (0xFFFFFFFF)
- */
-uint32 llDmmGetActivityIndex(uint16 cmdNum)
-{
-  uint32 index = DMM_POLICY_INVALID_INDEX;
-  uint32 currentTime = MAP_llGetCurrentTime();
-  uint32 deltaTime;
-  uint32 eventsNum;
-
-  switch (cmdNum)
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG | ADV_CONN_CFG))
-    case CMD_BLE5_CENTRAL:
-    case CMD_BLE5_PERIPHERAL:
-    {
-        llConnState_t *connPtr = MAP_llDataGetConnPtr( llConns.currentConn );
-
-        if ( connPtr != NULL)
-        {
-          // Check consecutive commands abort
-          eventsNum = (connPtr->curParam.connTimeout) / (connPtr->curParam.connInterval);
-          // Check time elapsed from last successful transmission
-          deltaTime = llTimeDelta(currentTime,dmmPolicyManager.conn[connPtr->connId].time);
-#ifdef RTLS_CTE
-          // In case CTE is enable or first connection event, set the priority to High
-          if ((connPtr->currentEvent <= 2)||
-              (llCte[connPtr->connId].initiator.samplingEnable == LL_CTE_SAMPLING_ENABLE) ||
-              (llCte[connPtr->connId].responder.responseEnable == TRUE))
-          {
-            index = DMM_POLICY_ACTIVITY_CONNECTION + DMM_POLICY_PRIORITY_HIGH;
-            // In case there are 50% aborts or need to repeat the urgent priority or
-            // 500 miliseconds have elapsed from last successful transmission - set the priority to Urgent
-            if ((dmmPolicyManager.conn[connPtr->connId].aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_HIGH / 100)) ||
-                (dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] > 0) ||
-                (deltaTime > DMM_POLICY_TIME_LIMIT_500MS))
-            {
-              index = DMM_POLICY_ACTIVITY_CONNECTION + DMM_POLICY_PRIORITY_URGENT;
-              // increase the repeat counter and reset it in case it reach to DMM_POLICY_REPEAT_PRIO_MAX_COUNT (3)
-              dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] =
-              ((dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] + 1) %
-                DMM_POLICY_REPEAT_PRIO_MAX_COUNT);
-            }
-          }
-          else
-#endif
-          {
-            index = DMM_POLICY_ACTIVITY_CONNECTION;
-            // In case there are 80% aborts or need to repeat the urgent priority or
-            // 1 second has elapsed from last successful transmission - set the priority to Urgent
-            if ((dmmPolicyManager.conn[connPtr->connId].aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_URGENT / 100)) ||
-                (dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] > 0) ||
-                (deltaTime > DMM_POLICY_TIME_LIMIT_1S))
-            {
-              index += DMM_POLICY_PRIORITY_URGENT;
-              // increase the repeat counter and reset it in case it reach to DMM_POLICY_REPEAT_PRIO_MAX_COUNT (3)
-              dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] =
-              ((dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_URGENT][connPtr->connId] + 1) %
-                DMM_POLICY_REPEAT_PRIO_MAX_COUNT);
-            }
-            // In case there are 50% aborts or need to repeat the high priority or
-            // 500 miliseconds have elapsed from last successful transmission or
-            // there is any control packet in tx queue or pending on connection update or
-            // PHY update or channel update - set the priority to High
-            else if ((dmmPolicyManager.conn[connPtr->connId].aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_HIGH / 100)) ||
-                     (dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_HIGH][connPtr->connId] > 0) ||
-                     (deltaTime > DMM_POLICY_TIME_LIMIT_500MS) ||
-                     (connPtr->ctrlPktInfo.ctrlPktCount > 0) ||
-                     (connPtr->pendingParamUpdate != PARAM_UPDATE_NOT_PENDING) ||
-                     (connPtr->pendingPhyUpdate != FALSE) ||
-                     (connPtr->pendingChanUpdate != FALSE))
-            {
-              index += DMM_POLICY_PRIORITY_HIGH;
-              // increase the repeat counter and reset it in case it reach to DMM_POLICY_REPEAT_PRIO_MAX_COUNT (3)
-              dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_HIGH][connPtr->connId] =
-              ((dmmPolicyManager.connRepeatPrio[DMM_POLICY_REPEAT_PRIO_IDX_HIGH][connPtr->connId] + 1) %
-                DMM_POLICY_REPEAT_PRIO_MAX_COUNT);
-            }
-          }
-        }
-        break;
-    }
-#endif // INIT_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case CMD_BLE5_ADV_EXT:
-    case CMD_BLE_ADV:
-    case CMD_BLE_ADV_DIR:
-    case CMD_BLE_ADV_NC:
-    case CMD_BLE_ADV_SCAN:
-    {
-        advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-        uint8 handle;
-
-        if ( pAdvSet == NULL )
-        {
-          break;
-        }
-        handle = llDmmGetAdvHandle(pAdvSet->pAdvParam->handle);
-        if (handle == 0xFF)
-        {
-          break;
-        }
-        if ((cmdNum == CMD_BLE_ADV) || (cmdNum == CMD_BLE_ADV_DIR)
-#ifdef USE_AE
-           || ((cmdNum == CMD_BLE5_ADV_EXT) && (GET_ADV_MODE(pAdvSet->extHdrInfo) == AE_ADV_MODE_CONNECTABLE))
-#endif //USE_AE
-           )
-        {
-          index = DMM_POLICY_ACTIVITY_INITIATING;
-        }
-        else
-        {
-          index = DMM_POLICY_ACTIVITY_BROADCASTING;
-        }
-        eventsNum = 0xFFFFFFFF;
-        // Check time elapsed from last successful transmission
-        deltaTime = llTimeDelta(currentTime,dmmPolicyManager.adv[handle].time);
-        // Find the total number of advertise packats should be transmitted
-        if (pAdvSet->pEnable->duration > 0)
-        {
-          if ((TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) ) &&
-              (pAdvSet->advEvtType == LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT))
-          {
-            eventsNum = (pAdvSet->pEnable->duration * 10000) / 1250;
-          }
-          else
-          {
-            uint32_t primIntMinTemp = BUILD_UINT32(pAdvSet->pAdvParam->primIntMin[0],
-                                                   pAdvSet->pAdvParam->primIntMin[1],
-                                                   pAdvSet->pAdvParam->primIntMin[2],
-                                                   0);
-            eventsNum = (pAdvSet->pEnable->duration * 10000) / (primIntMinTemp * LL_CONNECTION_SLOT_TIME);
-          }
-        }
-
-        // Find the minimum total number of advertise packats should be transmitted
-        if (pAdvSet->pEnable->maxEvents > 0)
-        {
-          eventsNum = MIN(pAdvSet->pEnable->maxEvents, eventsNum);
-        }
-        // In case 2 seconds have elapsed from last successful transmission
-        // Or in case there are 80% consecutive commands aborts - increase the priority to Urgent
-        if ((deltaTime > DMM_POLICY_TIME_LIMIT_2S) ||
-            (dmmPolicyManager.adv[handle].aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_URGENT / 100)))
-        {
-          index += DMM_POLICY_PRIORITY_URGENT;
-        }
-        // In case 500 miliseconds have elapsed from last successful transmission
-        // Or in case there are 50% consecutive commands aborts - increase the priority to High
-        else if ((deltaTime > DMM_POLICY_TIME_LIMIT_500MS) ||
-                 (dmmPolicyManager.adv[handle].aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_HIGH / 100)))
-        {
-          index += DMM_POLICY_PRIORITY_HIGH;
-        }
-        break;
-    }
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-    case CMD_BLE5_SCANNER:
-        index = DMM_POLICY_ACTIVITY_OBSERVING;
-        eventsNum = 0xFFFFFFFF;
-        // Check time elapsed from last successful transmission
-        deltaTime = llTimeDelta(currentTime,dmmPolicyManager.scan.time);
-        // Find the total number of scans should be opened
-        if ((extScanInfo->pEnable->duration > 0) && (extScanInfo->pEnable->period == 0) )
-        {
-          eventsNum = (extScanInfo->pEnable->duration * 10000) / (extScanInfo->pScanParam->extScanParam[0].scanInterval * LL_CONNECTION_SLOT_TIME);
-        }
-        // In case 2 seconds have elapsed from last successful transmission
-        // Or in case there are 80% consecutive commands aborts - increase the priority to Urgent
-        if ((deltaTime > DMM_POLICY_TIME_LIMIT_2S) ||
-            (dmmPolicyManager.scan.aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_URGENT / 100)))
-        {
-          index += DMM_POLICY_PRIORITY_URGENT;
-        }
-        // In case 500 miliseconds have elapsed from last successful transmission
-        // Or in case there are 50% consecutive commands aborts - increase the priority to High
-        else if ((deltaTime > DMM_POLICY_TIME_LIMIT_500MS) ||
-                 (dmmPolicyManager.scan.aborts >= (eventsNum * DMM_POLICY_PERCENT_LIMIT_HIGH / 100)))
-        {
-          index += DMM_POLICY_PRIORITY_HIGH;
-        }
-        break;
-#endif // SCAN_CFG
-    case CMD_BLE5_INITIATOR:
-        index = DMM_POLICY_ACTIVITY_INITIATING;
-        // Check time elapsed from last successful transmission
-        deltaTime = llTimeDelta(currentTime,dmmPolicyManager.init.time);
-        // In case 1 second has elapsed from last successful transmission - increase the priority to Urgent
-        if (deltaTime > DMM_POLICY_TIME_LIMIT_1S)
-        {
-          index += DMM_POLICY_PRIORITY_URGENT;
-        }
-        // In case 500 miliseconds have elapsed from last successful transmission - increase the priority to High
-        else if (deltaTime > DMM_POLICY_TIME_LIMIT_500MS)
-        {
-          index += DMM_POLICY_PRIORITY_HIGH;
-        }
-        break;
-    default:
-        break;
-
-  }
-  return index;
-}
-#endif //CC23X0
-
-#ifdef USE_COEX
-/*******************************************************************************
- * @fn          llCoexGetParams
- *
- * @brief       This function return pointer to Coex Params according to request
- *              RF command which include coex priority (high/low) and RX request
- *
- * @design      /ref did_282027985
- *
- * input parameters
- *
- * @param       cmdNum - radio command number
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      In case of success - return llCoexParams_t pointer
- *              In case of error - return NULL
- */
-llCoexParams_t *llCoexGetParams(uint16 cmdNum)
-{
-  switch (cmdNum)
-  {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG | ADV_CONN_CFG))
-    case CMD_BLE5_CENTRAL:
-    case CMD_BLE5_PERIPHERAL:
-      return (&llCoex.connected);
-#endif // INIT_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-    case CMD_BLE5_ADV_EXT:
-    case CMD_BLE_ADV:
-    case CMD_BLE_ADV_DIR:
-    case CMD_BLE_ADV_NC:
-    case CMD_BLE_ADV_SCAN:
-    {
-      advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
-
-      if ( pAdvSet == NULL )
-      {
-        return NULL;
-      }
-      if ((cmdNum == CMD_BLE_ADV) || (cmdNum == CMD_BLE_ADV_DIR)
-#ifdef USE_AE
-         || ((cmdNum == CMD_BLE5_ADV_EXT) && (GET_ADV_MODE(pAdvSet->extHdrInfo) == AE_ADV_MODE_CONNECTABLE))
-#endif // USE_AE
-         )
-      {
-        return (&llCoex.initiator);
-      }
-      else
-      {
-        return (&llCoex.broadcaster);
-      }
-    }
-#endif // ADV_NCONN_CFG | ADV_CONN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-    case CMD_BLE5_SCANNER:
-      return (&llCoex.observer);
-#endif // SCAN_CFG
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-    case CMD_BLE5_INITIATOR:
-      return (&llCoex.initiator);
-#endif // INIT_CFG
-    // the coex values for test mode will be temporary as broadcaster.
-    case CMD_BLE5_RX_TEST:
-    case CMD_BLE5_TX_TEST:
-        return (&llCoex.broadcaster);
-
-    default:
-      return NULL;
-
-  }
-}
-
-/*******************************************************************************
- * @fn          llCoexSetParams
- *
- * @brief       This function set the Coex Params according to request
- *              RF command which include coex priority (high/low) and RX request
- *
- * @design      /ref did_282027985
- *
- * input parameters
- *
- * @param       cmdNum - radio command number
- *
- * output parameters
- *
- * @param       pCmdParams - updated radio command parameters
- *
- * @return      None
- *
- */
-void llCoexSetParams(uint16 cmdNum, RF_ScheduleCmdParams *pCmdParams)
-{
-  // Get the Coex params only for 3 wire and 1 wire request
-  if ((llCoex.enable) && ((llCoex.type == COEX_TYPE_3_WIRE) || (llCoex.type == COEX_TYPE_1_WIRE_REQUEST)))
-  {
-    llCoexParams_t *pCoexParams = llCoexGetParams(cmdNum);
-    if (pCoexParams != NULL)
-    {
-      pCmdParams->coexPriority = pCoexParams->priority;
-      pCmdParams->coexRequest = pCoexParams->request;
-    }
-  }
-}
-
-#if !defined(DeviceFamily_CC13X4) && !defined(DeviceFamily_CC26X4)
-/*******************************************************************************
- * @fn          llCoexInit
- *
- * @brief       This function initialise the Coex Params according to sysconfig
- *
- * @design      /ref did_282027985
- *
- * input parameters
- *
- * @param       enable - True for init the Coex params else False
- *
- * @return      None
- *
- */
-void llCoexInit(uint8 enable)
-{
-  llCoex.enable = enable;
-
-  if (enable)
-  {
-    // Type "3 Wire" (COEX_TYPE_3_WIRE) define as bUseREQUEST and bUsePRIORITY set to value of 1.
-    // else if bUseREQUEST is 1 and bUsePRIORITY is 0, the type is "1 wire request" (COEX_TYPE_1_WIRE_REQUEST)
-    // else if bUseREQUEST is 0 and bUsePRIORITY is 0, the type is "1 wire grant" (COEX_TYPE_1_WIRE_GRANT)
-    llCoex.type = ((((rfCoreHal_bleCoExConfig_t *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfig))->coExEnable.bUseREQUEST) == 0)? COEX_TYPE_1_WIRE_GRANT:
-                  ((((rfCoreHal_bleCoExConfig_t *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfig))->coExEnable.bUsePRIORITY) == 0)? COEX_TYPE_1_WIRE_REQUEST:COEX_TYPE_3_WIRE;
-    // Set the statistics counters
-    llCoex.counter.grants = 0;
-    llCoex.counter.rejects = 0;
-    llCoex.counter.maxContRejects = 0;
-    llCoex.counter.contRejects = 0;
-    // Set the use cases parameters
-    llCoex.connected.priority = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleConnected.priority;
-    llCoex.connected.request = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleConnected.request;
-    llCoex.initiator.priority = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleInitiator.priority;
-    llCoex.initiator.request = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleInitiator.request;
-    llCoex.broadcaster.priority = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleBroadcaster.priority;
-    llCoex.broadcaster.request = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleBroadcaster.request;
-    llCoex.observer.priority = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleObserver.priority;
-    llCoex.observer.request = ((RF_CoexOverride_BLEUseCases *)(llConfigTable.userCfgPtr->coexUseCaseConfig->coexConfigBle))->bleObserver.request;
-  }
-}
-#endif // !DeviceFamily_CC13X4 && !DeviceFamily_CC26X4
-
-/*******************************************************************************
- * @fn          llCoexUpdateCounters
- *
- * @brief       This function update the Coex counters according to the
- *              RF command status (BLESTAT_ERROR_NO_GRANT or granted)
- *
- * @design      /ref did_282027985
- *
- * input parameters
- *
- * @param       grant - False in case of BLESTAT_ERROR_NO_GRANT else TRUE
- *
- * @return      None
- *
- */
-void llCoexUpdateCounters(uint8 grant)
-{
-  if (llCoex.enable)
-  {
-    if (grant)
-    {
-      llCoex.counter.grants++;
-      llCoex.counter.contRejects = 0;
-    }
-    else
-    {
-      llCoex.counter.rejects++;
-      llCoex.counter.contRejects++;
-      if (llCoex.counter.contRejects > llCoex.counter.maxContRejects)
-      {
-        llCoex.counter.maxContRejects = llCoex.counter.contRejects;
-      }
-    }
-  }
-}
-#endif //USE_COEX
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
 /*******************************************************************************
@@ -7207,10 +5255,6 @@ void llProcessScanTimeout( void )
   {
     // invoke callback, if there is one
     MAP_llExtAdvCBack( LL_CBACK_EXT_SCAN_DURATION_END, NULL );
-
-#ifdef DEBUG_GPIO_ADV_SCAN
-    GPIO_writeDio(HAL_GPIO_2, 0);
-#endif // DEBUG_GPIO_ADV_SCAN
 
     // stop the Scanner
     // Check that the pointer is valid before use
@@ -7390,18 +5434,6 @@ void llProcessCentralConnectionCreated( void )
                                          (connPtr->pChSelAlgo == MAP_llGetNextDataChanAlgo1) ?
                                          LL_CHANNEL_SELECT_ALGO_1                            :
                                          LL_CHANNEL_SELECT_ALGO_2 );
-
-#ifdef RTLS_CTE
-  // init CTE sample rate
-  llCte[connPtr->connId].initiator.sampleConfig.sampleRate1M = CTE_SAMPLING_CONFIG_1MHZ;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleRate2M = CTE_SAMPLING_CONFIG_1MHZ;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleSize1M = LL_CTE_SAMPLE_SIZE_8BITS;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleSize2M = LL_CTE_SAMPLE_SIZE_8BITS;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleCtrl = CTE_SAMPLING_CONTROL_DEFAULT;
-#endif // RTLS_CTE
-
-  // Reset DMM threshold
-  MAP_llDmmSetThreshold(LL_STATE_CONN_CENTRAL,connPtr->connId,TRUE);
 }
 #endif
 
@@ -7410,7 +5442,6 @@ void llProcessCentralConnectionCreated( void )
  * @fn          llProcessPeripheralConnectionCreated
  *
  * @brief       This function is used to perform peripheral connection created procedure
- *              after receives LL_STATE_PERIPHERAL_CONN_CREATED Event
  *
  * input parameters
  *
@@ -7430,10 +5461,52 @@ void llProcessPeripheralConnectionCreated( void )
   uint8         *peerRPA  = NULL;
   uint8         *localRPA = NULL;
   advSet_t      *pAdvSet = MAP_LL_SearchAdvSet( aeCurConnHandle );
+  uint8          ownAddrType = 0xFF;
+  uint8          connIndex = 0;
 
   LL_ASSERT( llConns.currentConn != LL_INVALID_CONNECTION_ID );
 
-  connPtr = MAP_llDataGetConnPtr( pAdvSet->connId );
+  if ( llConns.numActiveConns == 0 )
+  {
+      // No Active connections
+      return;
+  }
+
+  do
+  {
+    // Get the info pointer of the connection.
+    connPtr = MAP_llDataGetConnPtr( connIndex );
+
+	// Check if the connection is active and if it was formed using connection handover
+    if( connPtr->activeConn  == UTRUE )
+    {
+      if ( connPtr->estWithHandover == UTRUE )
+      {
+        // Found the connection formed with handover
+        break;
+      }
+    }
+    connIndex++;
+  } while( connIndex < maxNumConns );
+
+  // If it isn't handover connection
+  if ( connIndex == maxNumConns )
+  {
+    if( pAdvSet != NULL )
+    {
+      // The connection was formed using the Advertising set. Fetch the connection pointer
+      connPtr = MAP_llDataGetConnPtr( pAdvSet->connId );
+      ownAddrType = pAdvSet->pAdvParam->ownAddrType;
+    }
+  }
+  else
+  {
+    // We have the handover connection pointer
+    if ( MAP_LL_PRIV_IsZeroIRK(resolvingList[LOCAL_RL_INDEX].IRK) == FALSE )
+    {
+      ownAddrType = resolvingList[LOCAL_RL_INDEX].idAddrType | LL_DEV_ADDR_TYPE_ID_MASK;
+    }
+  }
 
   // get the peer address type and address from Connect Request packet
   peerType = connPtr->peerInfo.peerAddrType;
@@ -7442,14 +5515,14 @@ void llProcessPeripheralConnectionCreated( void )
   if ( privInfo.addrResolution )
   {
     // check if own address type is Identity
-    if ( LL_IS_ADDR_TYPE_RPA(pAdvSet->pAdvParam->ownAddrType) )
+    if ( LL_IS_ADDR_TYPE_RPA(ownAddrType) )
     {
       // check if Identity address was specified and local IRK is valid
       if ( !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK )
 #ifdef QUAL_TEST
           // note: fix for test case LL/SEC/ADV/BV-06-C
-          && ( !MAP_LL_PRIV_IsNRPA( MASK_ID_ADDRTYPE(pAdvSet->pAdvParam->ownAddrType),
-                                    ADDRTYPE_TO_OWNADDR( pAdvSet->pAdvParam->ownAddrType )) )
+          && ( !MAP_LL_PRIV_IsNRPA( MASK_ID_ADDRTYPE(ownAddrType),
+                                    ADDRTYPE_TO_OWNADDR( ownAddrType )) )
 #endif // QUAL_TEST
         )
       {
@@ -7457,31 +5530,45 @@ void llProcessPeripheralConnectionCreated( void )
       }
     }
 
-    // check if it is an RPA
+    // Check if the peer address is an RPA
     if ( MAP_LL_PRIV_IsRPA( peerType, peerAddr ) )
     {
-      uint8 rlIndex;
+      uint8 rlIndex = INVALID_RESOLVE_LIST_INDEX;
 
-      // check the filter policy
-      // Note: If the filter policy does not use the AL, then we connected
-      //       even though we never resolved the address! Please see CSWG
-      //       Erratum #6984 for more detail.
-      if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_ANY_REQ)  ||
-           (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) )
+      // If the connection wasn't formed using connection handover process, check
+      // the advertiser's accept list policy
+      if ( (connPtr->estWithHandover == UFALSE) && (pAdvSet != NULL) )
       {
-        rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
+        // check the filter policy
+        // Note: If the filter policy does not use the AL, then we connected
+        //       even though we never resolved the address! Please see CSWG
+        //       Erratum #6984 for more detail.
+        if ( (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_ANY_REQ)  ||
+             (pAdvSet->pAdvParam->filterPolicy == LL_ADV_AL_POLICY_AL_SCAN_REQ) )
+        {
+          rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
+        }
+        else // the AL was used, so we had to have resolved the RPA
+        {
+          rlIndex = MAP_LL_PRIV_FindPeerInRL( resolvingList,
+                                              peerType,
+                                              peerAddr );
+        }
       }
-      else // the AL was used, so we had to have resolved the RPA
+      else
       {
-        rlIndex = MAP_LL_PRIV_FindPeerInRL( resolvingList,
-                                            peerType,
-                                            peerAddr );
+        // Check if this is a resolvable address
+        if ( MAP_LL_PRIV_IsRPA( peerType, peerAddr ) )
+        {
+          // Check if this address can to be resolved
+          rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, resolvingList );
+        }
       }
 
-      // ensure we have a valid index
+      // Ensure we have a valid index
       if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
       {
-        // put the Peer's RPA in the RL
+        // Put the Peer's RPA in the RL
         // Note: When the AL is enabled, this isn't needed, but does no harm
         //       either and allows this code to be used in either case.
         MAP_osal_memcpy( resolvingList[rlIndex].RPA, peerAddr, B_ADDR_LEN );
@@ -7490,10 +5577,25 @@ void llProcessPeripheralConnectionCreated( void )
         peerAddr = resolvingList[rlIndex].idAddr;
         peerRPA  = resolvingList[rlIndex].RPA;
 
-        // Update the ownAddrType the device connected with
-        connPtr->ownAddrType = pAdvSet->actualOwnAddrType;
+        if ( pAdvSet != NULL )
+        {
+          // Update the ownAddrType the device connected with
+          connPtr->ownAddrType = pAdvSet->actualOwnAddrType;
+        }
+        else
+        {
+          // Update based on the controller information
+          if ( LL_IsRandomAddressConfigured() == TRUE )
+          {
+            connPtr->ownAddrType = LL_DEV_ADDR_TYPE_RANDOM;
+          }
+          else
+          {
+            connPtr->ownAddrType = LL_DEV_ADDR_TYPE_PUBLIC;
+          }
+        }
 
-        // update peer address type and address in packet
+        // Update peer address type and address in packet
         // Note: This is done to ensure the command HCI_EXT_GetConnInfo
         //       displays the proper peer address and address type.
         connPtr->peerInfo.peerAddrType = MASK_ID_ADDRTYPE(peerType);
@@ -7506,21 +5608,21 @@ void llProcessPeripheralConnectionCreated( void )
                                                 peerType,
                                                 peerAddr );
 
-#ifdef QUAL_TEST
-      // note: test cases LL/SEC/ADV/BV-07-C and LL/SEC/ADV/BV-12-C
+  #ifdef QUAL_TEST
+      // Note: test cases LL/SEC/ADV/BV-07-C and LL/SEC/ADV/BV-12-C
       if ( (rlIndex != INVALID_RESOLVE_LIST_INDEX) &&
            (!MAP_LL_PRIV_IsZeroIRK(resolvingList[rlIndex].IRK)) &&
            (resolvingList[rlIndex].privMode == LL_DEVICE_PRIVACY_MODE) )
-#else
-      // check if the ID address is in the RL and associated with an IRK=0 or
+  #else
+      // Check if the ID address is in the RL and associated with an IRK=0 or
       // an IRK!=0 and Device Privacy Mode
       if ( (rlIndex != INVALID_RESOLVE_LIST_INDEX) &&
            (MAP_LL_PRIV_IsZeroIRK(resolvingList[rlIndex].IRK) ||
             (!MAP_LL_PRIV_IsZeroIRK(resolvingList[rlIndex].IRK) &&
              resolvingList[rlIndex].privMode == LL_DEVICE_PRIVACY_MODE)) )
-#endif // QUAL_TEST
+  #endif // QUAL_TEST
       {
-        // indicate an ID address was received
+        // Indicate an ID address was received
         peerType |= LL_DEV_ADDR_TYPE_ID_MASK;
       }
     }
@@ -7544,25 +5646,16 @@ void llProcessPeripheralConnectionCreated( void )
                                          LL_CHANNEL_SELECT_ALGO_1                            :
                                          LL_CHANNEL_SELECT_ALGO_2 );
 
-  // Send the Adv Set End callback, if enabled
-  MAP_llSendAdvSetEndEvent( pAdvSet );
+  if ( pAdvSet != NULL )
+  {
+    // Send the Adv Set End callback, if enabled
+    MAP_llSendAdvSetEndEvent( pAdvSet );
 
-  // Send the LE Advertisement Set Terminated Event
-  MAP_llSendAdvSetTermEvent( pAdvSet,
-                             LL_STATUS_SUCCESS,
-                             connPtr->connId );
-
-#ifdef RTLS_CTE
-  // init CTE sample rate
-  llCte[connPtr->connId].initiator.sampleConfig.sampleRate1M = CTE_SAMPLING_CONFIG_1MHZ;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleRate2M = CTE_SAMPLING_CONFIG_1MHZ;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleSize1M = LL_CTE_SAMPLE_SIZE_8BITS;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleSize2M = LL_CTE_SAMPLE_SIZE_8BITS;
-  llCte[connPtr->connId].initiator.sampleConfig.sampleCtrl = CTE_SAMPLING_CONTROL_DEFAULT;
-#endif // RTLS_CTE
-
-  // Reset DMM threshold
-  MAP_llDmmSetThreshold(LL_STATE_CONN_PERIPHERAL,connPtr->connId,TRUE);
+    // Send the LE Advertisement Set Terminated Event
+    MAP_llSendAdvSetTermEvent( pAdvSet,
+                               LL_STATUS_SUCCESS,
+                               connPtr->connId );
+  }
 }
 #endif // ADV_CONN_CFG
 
@@ -7586,7 +5679,7 @@ void llProcessPeripheralConnectionCreated( void )
  */
 void llProcessConnectionEstablishFailed( uint8 role, uint8 reason )
 {
-    // notify Host
+    // Notify Host
     MAP_LL_EnhancedConnectionCompleteCback( reason,                              // reasonCode
                                             (uint16)0,                           // connection handle
                                             role,                                // role
@@ -8012,19 +6105,11 @@ uint8 llQueryTxQueue(uint32 addr)
       // get connection information
       llConnState_t *connPtr = MAP_llDataGetConnPtr( connectionIter );
 
-#ifndef CC23X0
-      dataEntry_t *pNext;
-      dataEntrySize = sizeof(dataEntry_t);
-
-      // Get pointer to first data entry in the TX Queue
-      pNext = ((dataQ_t *)connPtr->pTxDataEntryQ)->pNextDataEntry;
-#else
       RCL_Buffer_TxBuffer *pNext;
       dataEntrySize = sizeof(RCL_Buffer_TxBuffer);
 
       // Get pointer to first data entry in the TX Queue
       pNext = RCL_TxBuffer_head(&((txDataQ_t *)(connPtr->pTxDataEntryQ))->llDataBuffers);
-#endif
 
       // count finished entries
       while (pNext != NULL)
@@ -8038,12 +6123,7 @@ uint8 llQueryTxQueue(uint32 addr)
           addressFound = TRUE;
           break;
         }
-#ifndef CC23X0
-        // on to next buffer in ring
-        pNext = pNext->pNextEntry;
-#else
         pNext = RCL_TxBuffer_next(pNext);
-#endif
       }
     }
     connectionIter++;
@@ -8127,26 +6207,36 @@ void llCreateCommonFeatureSet( llConnState_t *connPtr, uint8 *pBuf )
  *
  * output parameters
  *
- * @param       llPhy   - Pointer to LL PHY value. This value represents:
- *                        1. TxPhy/RxPhy value in the HCI_LE_SetPhyCmd from the host
- *                        2. The way we store the PHY value in LL (connPtr).
+ * @param       llPhy         - Pointer to LL PHY value. This value represents:
+ *                              1. TxPhy/RxPhy value in the HCI_LE_SetPhyCmd from the host
+ *                              2. The way we store the PHY value in LL (connPtr).
+ * @param       llPhyCodedOpt - Pointer to LL PHY Options value.
+ *                              1. For PHY 1Mbps and PHY 2Mbps, the option should be on LL_PHY_NONE.
+ *                              2. Using Coded PHY, there are 2 options: LL_PHY_OPT_S2 and LL_PHY_OPT_S8.
  *
  * @return      TRUE  - in case the convert was successful.
  *              FALSE - in case the convert was not successful.
  */
 /********************************************************************************/
-uint8 llConvertBlePhyToLlPhy(uint8 blePhy, uint8 *llPhy)
+uint8 llConvertBlePhyToLlPhy(uint8 blePhy, uint8 *llPhy, uint8 *llPhyCodedOpt)
 {
   switch (blePhy)
   {
     case BLE5_1M_PHY:
       *llPhy = LL_PHY_1_MBPS;
+      *llPhyCodedOpt = LL_PHY_OPT_NONE;
     break;
     case BLE5_2M_PHY:
       *llPhy = LL_PHY_2_MBPS;
+      *llPhyCodedOpt = LL_PHY_OPT_NONE;
     break;
-    case BLE5_CODED_PHY:
+    case BLE5_S8_PHY:
       *llPhy = LL_PHY_CODED;
+      *llPhyCodedOpt = LL_PHY_OPT_S8;
+    break;
+    case BLE5_S2_PHY:
+        *llPhy = LL_PHY_CODED;
+        *llPhyCodedOpt = LL_PHY_OPT_S2;
     break;
     default:
       /* Shouldn't be here! */
@@ -8305,7 +6395,7 @@ uint8 llConvertLlPhyOptToBlePhyOpt(uint8 llPhyOpt, uint8 *blePhyOpt)
 /********************************************************************************/
 uint8 llSetPhy(llConnState_t *connPtr, uint8 blePhy)
 {
-  llConvertBlePhyToLlPhy(blePhy, &connPtr->phyInfo.curPhy);
+  llConvertBlePhyToLlPhy(blePhy, &connPtr->phyInfo.curPhy, &connPtr->phyInfo.phyOpts);
 
   // set max Tx Time and max Remote Tx Time to max coded/uncoded values
   connPtr->lenInfo.connMaxTxTime       = (connPtr->phyInfo.curPhy == LL_PHY_CODED) ? connInitialMaxTxTimeCoded : connInitialMaxTxTimeUncoded;
@@ -8356,17 +6446,8 @@ void llSetRangeDelay(llConnState_t *connPtr)
 /********************************************************************************/
 void llSetPower(uint32 *pRfCmd, RFBLEDPL_TX_POWER_TYPE txPowerIdx, RFBLEDPL_TX_POWER_HW_TYPE txPower)
 {
-#if defined(CC33xx)
-  // limit TX power to the CC33xx thermal TX power limit value
-  txPower = RfBleDpl_getTxPower(bleThermal_GetTxPowerLimitIndex());
-#endif
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on provided Tx Power
-  MAP_llTxPwrSwitchPA( txPowerIdx, pRfCmd );
-#else // !CC13X2P
   // set the Tx power based on initiator setting
   RfBleDpl_setTxPower(pRfCmd, txPower);
-#endif // CC13X2P
 }
 
 /*******************************************************************************
@@ -8400,7 +6481,6 @@ int8 llGetTxPower( void )
  */
 uint8 llValidateConnectIndPkt( uint8 *pData )
 {
-
   uint8 *chanMap = ((uint8 *)(pData + LL_CONN_IND_CHANNEL_MAP_OFFSET));
   uint32 connAccessAddr = *(uint32 *)( pData + LL_CONN_IND_ACCESS_ADDRESS_OFFSET );
   uint16 connInterval = *(uint16 *)( pData + LL_CONN_IND_INTERVAL_OFFSET );
@@ -8447,8 +6527,8 @@ void llUpdateRxBuffersForActiveConnections(List_List *rxBuffers)
   uint8 curConnId = 0;
   llConnState_t *connPtr;
 
-  // update the shared rx buffers for all active connections
-  while (curConnId < maxNumConns)
+  // Update the shared rx buffers for all active connections
+  do
   {
     connPtr = MAP_llDataGetConnPtr( curConnId );
 
@@ -8456,9 +6536,10 @@ void llUpdateRxBuffersForActiveConnections(List_List *rxBuffers)
     {
       linkParam[curConnId].rxBuffers.head = rxBuffers->head;
       linkParam[curConnId].rxBuffers.tail = rxBuffers->tail;
-    }
+	}
+
     curConnId++;
-  }
+  } while (curConnId < maxNumConns);
 }
 
 /*******************************************************************************
@@ -8563,7 +6644,7 @@ uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
         break;
         default:
           // the default value of aux_Conn_req is S8 coded
-          phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS2;
+          phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS8;
       }
     }
     break;
@@ -8576,6 +6657,94 @@ uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
   linkCmd[connId].common.phyFeatures = phyFeatures;
 
   return TRUE;
+}
+
+/*******************************************************************************
+ * @fn          llPhyToPhyFeatures
+ *
+ * @brief       Get the PHY features based on primary and secondary PHY.
+ *
+ * input parameters
+ *
+ * @param       primPhy - Primary PHY used for advertising.
+ * @param       secPhy - Secondary PHY used for advertising.
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      The PHY features based on the primary and secondary PHY.
+ */
+uint16 llPhyToPhyFeatures(uint8 primPhy, uint8 secPhy)
+{
+  uint16_t phyFeatures = 0;
+
+  switch (primPhy)
+  {
+    case AE_PHY_1_MBPS:
+      phyFeatures = llUserConfig.rclPhyFeature1MBPS;
+      break;
+
+    case AE_PHY_2_MBPS:
+      phyFeatures = llUserConfig.rclPhyFeature2MBPS;
+      break;
+
+    case AE_PHY_CODED:
+      phyFeatures = llUserConfig.rclPhyFeatureCoded | llUserConfig.rclPhyFeatureCodedS8;
+      break;
+
+    case AE_PHY_CODED_S2:
+      phyFeatures = llUserConfig.rclPhyFeatureCoded | llUserConfig.rclPhyFeatureCodedS2;
+      break;
+
+    default:
+      return FALSE;
+  }
+
+  if (secPhy == AE_PHY_CODED)
+  {
+    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS8;
+  }
+  else if (secPhy == AE_PHY_CODED_S2)
+  {
+    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS2;
+  }
+
+  return phyFeatures;
+}
+
+/*******************************************************************************
+ * @fn          llAuxPhyFeatures
+ *
+ * @brief       Get the auxiliary PHY features based on the secondary PHY.
+ *
+ * input parameters
+ *
+ * @param       secPhy - Secondary PHY used for advertising.
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      The auxiliary PHY features based on the secondary PHY.
+ */
+uint16 llAuxPhyFeatures(uint8 secPhy)
+{
+  uint16 auxPhyFeature;
+  if ( (secPhy == AE_PHY_1_MBPS) ||
+       (secPhy == AE_PHY_2_MBPS) )
+  {
+    auxPhyFeature = secPhy - 1;
+  }
+  else if(secPhy == AE_PHY_CODED_S2) // Coded
+  {
+    auxPhyFeature = BLE5_CODED_PHY | llUserConfig.rclPhyFeatureCodedS2;
+  }
+  else
+  {
+    auxPhyFeature = BLE5_CODED_PHY;
+  }
+  return auxPhyFeature;
 }
 
 /*******************************************************************************
@@ -8605,55 +6774,7 @@ uint8 RfBleDpl_setConnPhy(uint8 connId, uint8 phy, uint8 phyOpts)
 /********************************************************************************/
 uint8 RfBleDpl_setAdvPhy(void *pRfCmd, uint8 primPhy, uint8 secPhy)
 {
-  uint16_t phyFeatures;
-
-  switch (primPhy)
-  {
-    case AE_PHY_1_MBPS:
-      // For 1 MBPS, use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_1MBPS,
-      phyFeatures = llUserConfig.rclPhyFeature1MBPS;
-      break;
-
-    case AE_PHY_2_MBPS:
-      // For 2 Mbps, use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_2MBPS,
-      phyFeatures = llUserConfig.rclPhyFeature2MBPS;
-    break;
-
-    case AE_PHY_CODED:
-      // For coded with S=8 (125 kbps) in TX , use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_CODED | RCL_BLE_PHY_FEATURE_CODING_S8,
-      phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS8;
-      break;
-
-    case AE_PHY_CODED_S2:
-      // For coded with S=2 (500 kbps) in TX , use .phyFeatures = RCL_BLE_PHY_FEATURE_PHY_CODED | RCL_BLE_PHY_FEATURE_CODING_S2,
-       phyFeatures = llUserConfig.rclPhyFeatureCoded  | llUserConfig.rclPhyFeatureCodedS2;
-       break;
-
-    default:
-      /* Shouldn't be here */
-      return FALSE;
-      break;
-  }
-
-  switch (secPhy)
-  {
-
-  case AE_PHY_CODED:
-    // For secondary channel coded with S=8 (125 kbps) in TX , add | RCL_BLE_PHY_FEATURE_CODING_S8,
-    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS8;
-    break;
-
-  case AE_PHY_CODED_S2:
-    // For secondary channel coded with S=2 (500 kbps) in TX , add | RCL_BLE_PHY_FEATURE_CODING_S2,
-    phyFeatures |= (uint16)llUserConfig.rclPhyFeatureCodedS2;
-    break;
-
-  // no need to add anything if Phy is 1M or 2M. the RCL will take it from the AuxPhy.
-
-  default:
-    break;
-
-  }
+  uint16_t phyFeatures = llPhyToPhyFeatures(primPhy, secPhy);
 
   ((RCL_Command *)pRfCmd)->phyFeatures = phyFeatures;
 
@@ -8784,113 +6905,6 @@ bool RfBleDpl_txPowerIsValid(RFBLEDPL_TX_POWER_TYPE txPower)
   {
     return TRUE; /* Success */
   }
-}
-
-
-/*********************************************************************
- * @fn      llSDAASetupRXWindowCmd
- *
- * @brief   This function used to allocate memory for RX window task
- *          and setup init parameters.
- *
- * input parameters
- *
- * @param   None
- *
- * output parameters
- *
- * @param   None
- *
- * @return  LL_STATUS_SUCCESS, LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED
- */
-uint8 llSDAASetupRXWindowCmd(void)
-{
-#ifdef SDAA_ENABLE //RFLIB implement
-    // allocate RX window task space
-    pRXWindowTask = MAP_osal_mem_alloc( sizeof(taskInfo_t) );
-
-    // check that there was enough heap
-    if ( pRXWindowTask == NULL )
-    {
-      return( LL_STATUS_ERROR_MEM_CAPACITY_EXCEEDED );
-    }
-
-    // set ptr to radio operation
-    pRXWindowTask->command = (uint32)&sdaaFsRfCmd;
-
-    /////set frequency synthesizer command///
-    sdaaFsRfCmd.rfOpCmd.cmdNum = CMD_FS;
-
-    // common initialization
-    sdaaFsRfCmd.rfOpCmd.status = RFSTAT_IDLE;
-
-    // set the Start Trigger
-    CLR_RFOP_PAST_TRIG( sdaaFsRfCmd.rfOpCmd.startTrig );
-    SET_RFOP_TRIG_TYPE( sdaaFsRfCmd.rfOpCmd.startTrig, TRIGTYPE_AT_ABS_TIME );
-
-    // set the command condition
-    SET_RFOP_COND_RULE( sdaaFsRfCmd.rfOpCmd.condition, CONDTYPE_ALWAYS_RUN_NEXT_CMD );
-
-    sdaaFsRfCmd.fractFreq = 0;
-
-    // configure Tx/Rx mode
-    // PG1 Note: Clears 13xx Divider, per the spec.
-    // PG2 Note: Uses default reference frequency.
-    sdaaFsRfCmd.synthCfg = FS_START_IN_RX_MODE;
-
-    // use standard calibration (i.e. no override )
-    // PG1 Note: Perform TDC, coarse, and mid cal.
-    // PG2 Note: Perform TDC, coarse, mid cal. Coarse precal set to zero.
-    sdaaFsRfCmd.calCfg   = FS_USE_STD_CALIBRATION;
-
-    // mid precal
-    sdaaFsRfCmd.midPrecal    = 0;
-    sdaaFsRfCmd.ktPrecal     = 0;
-
-    // TDC precal
-    sdaaFsRfCmd.tdcPrecal    = 0;
-
-    // init default params
-    sdaaRxWindowCmd.rfOpCmd.pNextRfOp = NULL;
-    sdaaRxWindowCmd.rfOpCmd.startTime = 0;
-
-    /////set rx window command///
-    sdaaRxWindowCmd.rfOpCmd.cmdNum = CMD_RX_TEST;
-
-    // common initialization
-    sdaaRxWindowCmd.rfOpCmd.status = RFSTAT_IDLE;
-
-    // set the command condition
-    SET_RFOP_COND_RULE(sdaaRxWindowCmd.rfOpCmd.condition,
-                       CONDTYPE_RUN_TRUE_STOP_FALSE);
-
-    // disable the modem FIFO and turn off FS when done
-    SET_RX_TEST_CONFIG( sdaaRxWindowCmd.config,
-                        RX_DISABLE_MODEM_FIFO,
-                        TRX_TURN_FS_OFF_WHEN_DONE,
-                        RX_NO_SYNC );
-
-    // set the Start Trigger
-    SET_RFOP_TRIG_TYPE( sdaaRxWindowCmd.rfOpCmd.startTrig, TRIGTYPE_NOW );
-    SET_RFOP_PAST_TRIG( sdaaRxWindowCmd.rfOpCmd.startTrig );
-
-    // set end trigger.
-    CLR_RFOP_ALT_TRIG_CMD( sdaaRxWindowCmd.endTrig );
-    SET_RFOP_TRIG_TYPE( sdaaRxWindowCmd.endTrig,
-                        TRIGTYPE_AT_ABS_TIME );
-
-    // define sdaa task
-    pRXWindowTask->taskID = LL_TASK_ID_RX_WINDOW;
-    pRXWindowTask->taskState = LL_TASK_STATE_ACTIVE;
-    pRXWindowTask->startTime = 0;
-    pRXWindowTask->anchorPoint = 0;
-    pRXWindowTask->setup = NULL;
-    pRXWindowTask->rfEvents = 0;
-
-    // link the rx window command to the Fs command
-    sdaaFsRfCmd.rfOpCmd.pNextRfOp = (rfOpCmd_t *)&sdaaRxWindowCmd;
-#endif //SDAA_ENABLE
-    return( LL_STATUS_SUCCESS );
 }
 
 /*********************************************************************
@@ -9921,9 +7935,7 @@ static inline uint8_t llEncryptControlPkt(llConnState_t *connPtr,
     } //else FASLE
   }
   else if ( (ctrlPkt == LL_CTRL_START_ENC_RSP) ||
-            (ctrlPkt == LL_CTRL_PAUSE_ENC_REQ) ||
-            (ctrlPkt == LL_CTRL_PING_REQ)      ||
-            (ctrlPkt == LL_CTRL_PING_RSP)       )
+            (ctrlPkt == LL_CTRL_PAUSE_ENC_REQ) )
   {
     encPkt = TRUE;
   }
@@ -9939,6 +7951,33 @@ static inline uint8_t llEncryptControlPkt(llConnState_t *connPtr,
     encPkt = connPtr->encEnabled;
   }
   return (encPkt);
+}
+
+/*******************************************************************************
+ * @fn          llCheckConnInstant
+ *
+ * @brief       This function check if this connection has a control procedure
+ *              in progress
+ *
+ * input parameters
+ *
+ * @param       connPtr - Connection pointer
+ *
+ * output parameters
+ *
+ * @return FALSE if there isn't a control procedure active else TRUE.
+ */
+uint8 llCheckConnInstant(llConnState_t *connPtr)
+{
+  uint8_t isInstant = 0;
+  isInstant = connPtr->pendingParamUpdate |
+              connPtr->pendingChanUpdate  |
+              connPtr->pendingPhyUpdate   |
+              connPtr->pendingLenUpdate;
+  isInstant |= connPtr->connParamReqFlags.connUpdateActive;
+  isInstant |= connPtr->ctrlPktInfo.ctrlPktCount;
+
+  return isInstant;
 }
 
 #ifdef LL_TEST_MODE

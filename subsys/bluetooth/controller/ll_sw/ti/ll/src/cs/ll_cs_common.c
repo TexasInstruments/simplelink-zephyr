@@ -24,8 +24,7 @@
 #include "ll_csdrbg.h"
 
 #include "ll.h"
-
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * CONSTANTS
@@ -158,12 +157,6 @@ csStatus_e llCsConfigurationCheck(uint16 connId, void* pBuf)
         return (CS_STATUS_FEATURE_NOT_SUPPORTED);
     }
 
-    // check companion signal support
-    if ((pConfig->companionSignal == CS_ENABLE) &&
-        (peerCapabilities.companionSignal == CS_DISABLE))
-    {
-        return (CS_STATUS_FEATURE_NOT_SUPPORTED);
-    }
     if ((pConfig->chSel == CS_CHANNLE_SELECTION_ALG_3C) &&
         ((peerCapabilities.chSel3c != CS_CHANNLE_SELECTION_ALG_3C) ||
          (ownCapabilities.chSel3c != CS_CHANNLE_SELECTION_ALG_3C)))
@@ -299,4 +292,73 @@ uint8 llCsNumOnBit(uint8* pBitMapArray, uint8 amountOfBytesInMapArray)
         }
     }
     return chCount;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_common.h.
+ */
+uint8 llCsGetAbortReason(uint8 connId)
+{
+    uint8 terminateErrCode = llCsDbGetTerminateReason(connId);
+    csAbortReason_e abortRsn;
+    if (terminateErrCode == LL_STATUS_SUCCESS)
+    {
+        abortRsn = CS_NO_ABORT;
+    }
+    else if ((terminateErrCode == LL_STATUS_ERROR_HOST_TERM) ||
+             (terminateErrCode == LL_STATUS_ERROR_PEER_TERM))
+    {
+        abortRsn = CS_ABORT_REQUEST;
+    }
+    else if (terminateErrCode == LL_STATUS_ERROR_INSUFFICIENT_CHANNELS)
+    {
+        abortRsn = CS_ABORT_CHM;
+    }
+    else if (terminateErrCode == LL_STATUS_ERROR_INSTANT_PASSED_HOST)
+    {
+        abortRsn = CS_ABORT_INSTANT_PASSED;
+    }
+    else
+    {
+        abortRsn = CS_ABORT_UNSPECIFIED;
+    }
+    return (uint8)abortRsn;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_common.h.
+ */
+uint8 llCsGetProcDoneStatus(uint8 isProcedureDone, uint8 abortReason)
+{
+    if (abortReason != (uint8)CS_NO_ABORT)
+    {
+        isProcedureDone = (uint8)CS_ABORTED;
+    }
+    else
+    {
+        /* isProcedureDone remains the same */
+    }
+    return isProcedureDone;
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_common.h.
+ */
+uint8 llCsGetNumStepsInBuffer(uint16 connId)
+{
+    uint8 numSubeventSteps = llCsDbGetSubeventInfo(connId, CS_SE_INFO_NUM_STPES);
+    uint8 stepCount = llCsDbGetSubeventInfo(connId, CS_SE_INFO_STEP_COUNT);
+    uint8 numBuffSteps;
+
+    if (stepCount >= numSubeventSteps)
+    {
+        numBuffSteps = 0;
+    }
+    else
+    {
+        numBuffSteps = numSubeventSteps - stepCount;
+        numBuffSteps = CS_NUM_BUFF_STEPS(numBuffSteps);
+    }
+
+    return numBuffSteps;
 }

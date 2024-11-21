@@ -102,33 +102,12 @@ extern "C"
 #define NUM_RX_DATA_ENTRIES             4
 
 #ifndef MAX_NUM_AL_ENTRIES
-#ifdef USE_DFL // (Radio core using dynamic filter list)
-#define MAX_NUM_AL_ENTRIES              GAP_BONDINGS_MAX  // at 8 bytes per AL entry
-#else // !(Radio core using dynamic filter list)
-#define MAX_NUM_AL_ENTRIES              16  // at 8 bytes per AL entry
-#endif // (Radio core using dynamic filter list)
+#define MAX_NUM_AL_ENTRIES              5  // at 8 bytes per AL entry
 #endif // (MAX_NUM_AL_ENTRIES undefined)
 
 #ifndef MAX_NUM_RL_ENTRIES
-#ifdef USE_DFL // (Radio core using dynamic filter list)
-#define MAX_NUM_RL_ENTRIES              GAP_BONDINGS_MAX  // at 60 bytes per RL entry
-#else // !(Radio core using dynamic filter list)
 #define MAX_NUM_RL_ENTRIES              10  // at 60 bytes per RL entry
-#endif // (Radio core using dynamic filter list)
 #endif // (MAX_NUM_RL_ENTRIES undefined)
-
-// Number of CTE Sampling Buffers
-#ifndef MAX_NUM_CTE_BUFS
-#define MAX_NUM_CTE_BUFS                1  // one CTE samples buffer of ~2.5KB used for RF auto copy
-#endif
-
-#ifndef MAX_NUM_MST_PKTS
-#define MAX_NUM_MST_PKTS                UNLIMITED_PKTS_PER_EVENT
-#endif // !MAX_NUM_MST_PKTS
-
-#ifndef MAX_NUM_SLA_PKTS
-#define MAX_NUM_SLA_PKTS                UNLIMITED_PKTS_PER_EVENT
-#endif // !MAX_NUM_SLA_PKTS
 
 #ifndef CONN_CUTOFF_IN_PERCENT
 #define CONN_CUTOFF_IN_PERCENT          95 // in percent of CI wanted
@@ -149,17 +128,7 @@ extern "C"
 // Number Scan Entries
 #define NUM_RX_SCAN_ENTRIES             4
 
-// Packets Per Event
-#define UNLIMITED_PKTS_PER_EVENT        0
-#define ONE_PKT_PER_EVENT               1
-
 #define LL_STARTUP_MARGIN               2100
-
-// RF Operation Pointer and RF Front End Settings for Reset and Wake
-#define RF_OP_PTR_LOCATION              0x210000EC
-//
-#define RF_SETUP_CONFIG_ON_RESET        0x0000
-#define RF_SETUP_CONFIG_ON_WAKE         0x02D0
 
 // Crypto Driver Mode
 #define CRYPTO_DRV_MODE_POLLING         0
@@ -169,43 +138,11 @@ extern "C"
  * TYPEDEFS
  */
 
-// This structure is used to specify Peripheral RF timing margins. All values are
-// in Radio Timer ticks (i.e. 250ns ticks).
-//
-// preRfMargin: This is the amount of time to subtract from the RF operation's
-//              start time (i.e. how much earlier the RF operation will start),
-//              and is used to account for the Frequency Synthesizer Calibration
-//              time and Rx settle time (i.e. Rx Ramp time) such that the radio
-//              is ready to receive.
-// postRfMargin This is the amount of time to add to the duration of Rx while
-//              waiting for packet synch. This effectively extends the receive
-//              window.
-PACKED_TYPEDEF_STRUCT
-{
-  uint8 preRfMargin;
-  uint8 postRfMargin;
-} slvRfMargin_t;
-
-PACKED_TYPEDEF_STRUCT
-{
-  uint8 suffixSel;
-  uint8 suffixSize;
-} pktSuffix_t;
-
-//PACKED typedef uint8 pktSize_t;
-typedef uint8 pktSize_t;
-
 //PACKED typedef uint8 alSize_t;
 typedef uint8 alSize_t;
 
 //PACKED typedef uint8 rlSize_t;
 typedef uint8 rlSize_t;
-
-PACKED_TYPEDEF_STRUCT
-{
-  uint8 maxMstPktsPerEvt;
-  uint8 maxSlvPktsPerEvt;
-} maxPktsPerEvt_t;
 
 typedef void (patchCM0_t)(void);
 
@@ -215,8 +152,6 @@ PACKED_TYPEDEF_STRUCT
   uint16 wakeRfCfgVal;
 } rfCfgVal_t;
 
-//PACKED typedef uint32 rfOp_t;
-typedef uint32 rfOp_t;
 
 PACKED_TYPEDEF_STRUCT
 {
@@ -244,9 +179,9 @@ extern uint8 maxNumTxDataBufs;
 extern uint8 maxNumCteDataBufs;
 extern uint8 maxNumConns;
 extern uint16 maximumPduSize;
-extern uint8 rfFeModeBias;
 extern uint8 alSize;
 extern uint8 rlSize;
+extern uint8 extALSize;
 extern uint32 extStackSettings;
 
 extern uint16  llUserConfig_maxPduSize;

@@ -37,22 +37,11 @@
 #include "ll_enc.h"
 #include "ll_rat.h"
 #include "ll_config.h"
-#include "hal_gpio_wrapper.h"
+#include "ll_handover_sn.h"
+#include "ll_handover_cn.h"
 #include "cs/ll_cs_ctrl_pkt_mgr.h"
 #include "cs/ll_cs_procedure.h"
-//
-#include "rom_jt.h"
-
-// SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_slv.h"
-#endif // DEBUG_SW_TRACE
-
-#ifdef DEBUG_GPIO
-uint8 connGPIO[] = { HAL_GPIO_1, HAL_GPIO_2, HAL_GPIO_3, HAL_GPIO_4,
-                     HAL_GPIO_5, HAL_GPIO_6, HAL_GPIO_7, HAL_GPIO_8 };
-#endif // DEBUG_GPIO
+#include "map_direct.h"
 
 #ifdef LL_TEST_MODE
 // Typical case: CI=10ms, SL=20. Every Nth event will miss.
@@ -124,22 +113,19 @@ void llPeripheral_TaskEnd( void )
   uint16         numPkts;
   uint8          connEvtStatus;
   uint8          channel;
-#ifdef DEBUG_GPIO_CONN
-  GPIO_writeDio(HAL_GPIO_4, 0);
-#endif // DEBUG_GPIO_CONN
-
-#if DEBUG
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL END RAT = 0x%08X", MAP_llGetCurrentTime() );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-#endif // DEBUG
+  uint8          handoverStatus;
 
   // check if the connection is still valid
   if ( llConns.currentConn == LL_INVALID_CONNECTION_ID )
   {
     // connection may have already been ended by a reset
+    return;
+  }
+
+  // Handle the case in which we must terminate an already "Created" connection in the future
+  if (llConns.llConnection[llConns.currentConn].extFeatureMask & EXT_FEATURE_DISCONNECT_ENABLE)
+  {
+    // Connection needs to be cleaned up in llScheduler
     return;
   }
 
@@ -154,6 +140,9 @@ void llPeripheral_TaskEnd( void )
 
     return;
   }
+
+  // Check if we need to terminate an handover connection
+  MAP_llHandoverCheckTermConnAndTerm();
 
   // check if an pending update parameters has been applied
   if ( connPtr->pendingParamUpdate == PARAM_UPDATE_APPLIED )
@@ -190,6 +179,13 @@ void llPeripheral_TaskEnd( void )
   {
     // updated channel now ratified
     connPtr->pendingChanUpdate = FALSE;
+
+    // Check if vendor specific events are enabled
+    if ( MAP_checkVsEventsStatus() == UTRUE )
+    {
+      // Notify that channel map has changed
+      MAP_LL_EXT_ChanMapUpdateCback(connPtr->connId, connPtr->curChanMap.chanMap, connPtr->currentMappedChan);
+    }
   }
 
   // check if the user wants to be notified that a connection event ended
@@ -310,15 +306,9 @@ void llPeripheral_TaskEnd( void )
     }//End of Starvation mode handling.
 
     // Update the supervision expiration count.
+    // Note: The expiration event must be updated after we update the current event.
+    //       This should not be changed
     connPtr->expirationEvent = connPtr->currentEvent + connPtr->expirationValue;
-
-    // clear flag that indicates we received first packet
-    // Note: The first packet only really needs to be signaled when a new
-    //       connection is formed or a connection's parameters are updated.
-    //       However, there's no harm in resetting in every time in order to
-    //       simplify the control logic.
-    // Note: True-Low logic is used here to be consistent with NR's language.
-    connPtr->firstPacket = FALSE;
 
     // peripheral latency may have been disabled because a packet from the central
     // was not received (see Core spec V4.0, Vol 6, Section 4.5.1), so restore
@@ -330,13 +320,9 @@ void llPeripheral_TaskEnd( void )
       // activate peripheral latency
       connPtr->peripheralLatency = connPtr->peripheralLatencyValue;
     }
-    // Reset DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_CONN_PERIPHERAL,connPtr->connId,TRUE);
   }
   else // either no packets received, or packets received with CRC error
   {
-    // Set DMM threshold
-    MAP_llDmmSetThreshold(LL_STATE_CONN_PERIPHERAL,connPtr->connId,FALSE);
     // so listen to every event until a packet is received
     connPtr->peripheralLatency = 0;
 
@@ -366,8 +352,6 @@ void llPeripheral_TaskEnd( void )
       {
         connPtr->expirationEvent = connPtr->expirationValue;
       }
-      // Connection established, so clear the flag that indicates that we have received first packet in this connection
-      connPtr->firstPacket = FALSE;
 
       // peripheral latency may have been disabled because a packet from the central
       // was not received (see Core spec V4.0, Vol 6, Section 4.5.1), so restore
@@ -387,12 +371,7 @@ void llPeripheral_TaskEnd( void )
       // collect packet error information
       connPtr->perInfo.numMissedEvts++;
 
-      HAL_GPIO_SET(connGPIO[connPtr->connId]);
-      HAL_GPIO_CLR(connGPIO[connPtr->connId]);
-      HAL_GPIO_SET(connGPIO[connPtr->connId]);
-      HAL_GPIO_CLR(connGPIO[connPtr->connId]);
-
-      // check if we're still waiting for the first packet from the central.
+      // Check if we're still waiting for the first packet from the central.
       // in that case we should increase the timeoutTime to make sure we don't miss the anchor.
       if (connPtr->firstPacket)
       {
@@ -415,6 +394,11 @@ void llPeripheral_TaskEnd( void )
           ((connPtr->currentEvent > connPtr->expirationEvent) &&
            ((connPtr->currentEvent-connPtr->expirationEvent) < LL_MAX_TIMEOUT_EVENTS)) )
     {
+      if ( connPtr->estWithHandover == UTRUE )
+      {
+        // Notify the upper layers that the handover failed
+        (void)MAP_llHandoverNotifyConnStatus(connPtr->connId, LL_CONN_ESTABLISHMENT_FAILED_TERM);
+      }
       /* Peripheral return values on connection termination:
        * If connection created but not established, and received a request with incorrect access address -> return 0x3e
        * If connection created but not established for Direct Advertisement, but no data packets received -> return 0x3e
@@ -506,43 +490,14 @@ void llPeripheral_TaskEnd( void )
   //       accept the packet.
   if ( connOutput.anchorValid )
   {
-    //GPIO_writeDio(HAL_GPIO_2, 1);
-
     // read/save the the anchor point capture from RAT
     connPtr->llTask->anchorPoint = connOutput.anchorPoint;
 
-#ifdef CC23X0
-    /* TODO: Find characterized value */
-#else
-#if defined(CC26X2) || defined(CC13X2) || defined(CC13X4)
-    // Agama Timestamp Adjustment
-    // This magic number is derived from two changes that result from
-    // improvements to calibration (based on override settings). The first is
-    // the startSynthToRat adjusts from 256us to 166us, resulting in a delay
-    // of +90us. The second affects the pilot tone duration, which was reduced
-    // from 30us for uncoded and 24 us for coded to 12us for both PHYs. The
-    // net increase to the AP is 72us for uncoded, and 78us for coded. However,
-    // at this point, it is easier to simply start the AP a bit earlier.
-    connPtr->llTask->anchorPoint += RAT_TICKS_IN_72US;
-#elif defined(CC13X2P)
-    // For CC13X2P, the pilot tone duration was returned to 30us.
-    connPtr->llTask->anchorPoint += RAT_TICKS_IN_90US;
-#endif // CC26X2 ||CC13X2 || CC13X4
-#endif
     // clear window widening
     linkCmd[connPtr->connId].relRxTimeoutTime = 0;
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINTL1(DBGSYS, "PERIPHERAL AP VALID = 0x%08X", connPtr->llTask->anchorPoint );
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-    //GPIO_writeDio(HAL_GPIO_2, 0);
   }
   else // invalid anchor point due to RX Timeout
   {
-    //GPIO_writeDio(HAL_GPIO_3, 1);
-
     // save last Timeout only when a miss has occurred to preserve timeoutTime
     connPtr->lastTimeoutTime = linkCmd[connPtr->connId].relRxTimeoutTime;
 
@@ -552,32 +507,11 @@ void llPeripheral_TaskEnd( void )
     // disable peripheral latency
     connPtr->peripheralLatency = 0;
     connPtr->peripheralLatencyAllowed = FALSE;
-
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINT0(DBGSYS, "PERIPHERAL AP INVALID!!!!");
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
-    //GPIO_writeDio(HAL_GPIO_3, 0);
   }
-#ifndef CC23X0
-  // obtain the RSSI, if present
-  connPtr->lastRssi = (RSSI_SUFFIX_PRESENT() && (connOutput.lastRssi != LL_RF_RSSI_UNDEFINED))?connOutput.lastRssi:LL_RF_RSSI_INVALID;
-#else
   connPtr->lastRssi = (LRF_RSSI_INVALID == connOutput.lastRssi) ? LL_RF_RSSI_INVALID : connOutput.lastRssi;
-#endif // CC23X0
-
-#ifdef RTLS_CTE
-  // get the CTE information in case received CTE response packet
-  if (llCteSamples.autoCopyCompleted > 0)
-  {
-    MAP_llGetCteInfo( CTE_TASK_ID_CONNECTION, connPtr );
-  }
-#endif // RTLS_CTE
 
   // Check if it's time to build the CS StepList
-  MAP_llCsStartStepListGen(connPtr);
+  MAP_llCsStartStepListGen(connPtr->connId);
   // Check if it's time to begin the CS procedure
   MAP_llCsStartProcedure(connPtr);
 
@@ -589,13 +523,19 @@ void llPeripheral_TaskEnd( void )
   }
 
   // Processing Tx data (if any)
-  MAP_llProcessTxData( connPtr, LL_TX_DATA_CONTEXT_POST_PROCESSING );
+  MAP_llProcessTxData();
 
   //align the RX buffers head and tail pointers with all other active connections
   llUpdateRxBuffersForActiveConnections(&rxDataQ.multiBuffers);
 
   // Send the callback before calculating the next channel
   llSendConnEvtCallback(connEvtStatus, numPkts, connPtr);
+
+  if(connEvtStatus != LL_CONN_EVT_STAT_MISSED)
+  {
+    // First Packet was received, reset flag
+    connPtr->firstPacket = FALSE;
+  }
 
   // update next event, calculate time to next event, calculate timer drift,
   // update anchor points, setup NR T2E1 and T2E2 events
@@ -605,13 +545,14 @@ void llPeripheral_TaskEnd( void )
     return;
   }
 
-  // update CTE state
-#ifdef RTLS_CTE
-  MAP_llUpdateCteState( connPtr );
-#endif // RTLS_CTE
+  // Check if handover is required and trigger handover if it can be done
+  handoverStatus = MAP_llHandoverTriggerDataTransfer();
 
-  // determine next task (if any) and schedule it
-  MAP_llScheduler();
+  if ( handoverStatus != LL_STATUS_SUCCESS )
+  {
+    // Determine next task (if any) and schedule it
+    MAP_llScheduler();
+  }
 
   return;
 }
@@ -644,9 +585,7 @@ uint8 llSetupNextPeripheralEvent( void )
 {
   llConnState_t *connPtr;
   uint32         timeToNextEvt;
-#if !defined(DISABLE_RCOSC_SW_FIX)
   static uint16  applyExtraSCA = 0;
-#endif // !DISABLE_RCOSC_SW_FIX
   uint8_t phyWasChanged = LL_PHY_NONE;
 
   LL_ASSERT( llConns.currentConn != LL_INVALID_CONNECTION_ID );
@@ -844,24 +783,12 @@ uint8 llSetupNextPeripheralEvent( void )
   // advance the anchor point in RAT ticks
   connPtr->llTask->anchorPoint += (timeToNextEvt * RAT_TICKS_IN_625US);
 
-#ifdef DEBUG_SW_TRACE
-  DBG_PRINT0(DBGSYS, "");
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL Time to Next = 0x%08X", timeToNextEvt*RAT_TICKS_IN_625US );
-  DBG_PRINTL1(DBGSYS, "PERIPHERAL Time to Next Start = 0x%08X", connPtr->llTask->anchorPoint );
-  DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
   // Calculate Timer Drift Based on Time to Next Event
   // Note: SCA Factor is in PPM, and time to next event is in 625us ticks.
   //       The result is the timer drift in RAT ticks.
   // Note: Round up one RAT tick to account for floor effect.
-#if !defined(DISABLE_RCOSC_SW_FIX)
   // check if the RCOSC is being used as the source clock
-#ifdef CC23X0
   if (llUserConfig.useSrcClkLFOSC)
-#else
-  if ( ((*sclkSrc & SCLK_LF_MASK) >> 6) == SCLK_LF_RCOSC_LF )
-#endif
   {
     // check if we received an anchor point or not
     if ( connOutput.anchorValid )
@@ -885,7 +812,6 @@ uint8 llSetupNextPeripheralEvent( void )
     }
   }
   else // RCOSC is not being used as SCLK
-#endif // !DISABLE_RCOSC_SW_FIX
   {
     // calculate/recalculate timer drift conditionally(?)
     // Note: It is only necessary to recalculate timer drift if the time to next
@@ -919,27 +845,39 @@ uint8 llSetupNextPeripheralEvent( void )
                                                         connPtr->timerDrift;
 
   connPtr->llTask->startTime = linkCmd[connPtr->connId].common.timing.absStartTime;
-  // clear command status value
+  // Clear command status value
   linkCmd[connPtr->connId].common.status = RCL_CommandStatus_Idle;
-  // setup the receiver Timeout time
+
+  // Setup the receiver Timeout time
   // Note: If the AP is valid, then timeoutTime was previously cleared and any
   //       previous window widening accumulation was therefore reset to zero.
   // Note: Timeout trigger remains as it was when connection was formed.
   linkCmd[connPtr->connId].relRxTimeoutTime += (2 * connPtr->timerDrift);
-  // add the window size if a new connection or update connection is pending
+
+  // Add the window size if a new connection or update connection is pending
   if ( connPtr->pendingParamUpdate == PARAM_UPDATE_APPLIED )
   {
     linkCmd[connPtr->connId].relRxTimeoutTime +=
       ( (uint32)connPtr->curParam.winSize * RAT_TICKS_IN_625US );
   }
+
   if ( connOutput.anchorValid )
   {
-    // account for radio startup overhead and jitter per the spec
+    if ( connPtr->estWithHandover == UTRUE )
+    {
+      // Notify the upper layers that the handover was successful
+      (void)MAP_llHandoverNotifyConnStatus(connPtr->connId, SUCCESS);
+
+      // Turn off the handover bit. The candidate was able to follow the connection successfully
+      connPtr->estWithHandover = UFALSE;
+    }
+
+    // Account for radio startup overhead and jitter per the spec
     linkCmd[connPtr->connId].common.timing.absStartTime -= (LL_RX_RAMP_OVERHEAD + LL_JITTER_CORRECTION);
 
     connPtr->llTask->startTime = linkCmd[connPtr->connId].common.timing.absStartTime;
 
-    // override the lastStartTime based on this valid AP
+    // Override the lastStartTime based on this valid AP
     // Note: Even though the post-processing associated with this connection
     //       resulted in a Hit, it could have been based on a start time that
     //       had been adjusted by many missed/skipped events. If so, then the
@@ -998,23 +936,20 @@ uint8 llSetupNextPeripheralEvent( void )
       // adjust backend of Rx window based on PHY
       linkCmd[connPtr->connId].relRxTimeoutTime += LL_RX_SYNCH_OVERHEAD_CODED;
     }
-#ifndef CC23X0
-    // check if we're using coded
-    if ( (linkCmd[connPtr->connId].relRxTimeoutTime -
-          (LL_RX_RAMP_OVERHEAD  +
-           LL_RX_SYNCH_OVERHEAD +
-           ((connPtr->phyInfo.curPhy == LL_PHY_CODED)?LL_RX_SYNCH_OVERHEAD_CODED:0))) >=
-         ((connPtr->curParam.connInterval * RAT_TICKS_IN_625US) - RAT_TICKS_IN_150US) )
-    {
-      // yes, so terminate immediately as the connection establishment failed
-      MAP_llConnTerminate( connPtr, LL_SUPERVISION_TIMEOUT_TERM );
 
-      return( LL_SETUP_NEXT_LINK_STATUS_TERMINATE );
+    if ( connPtr->estWithHandover == UTRUE )
+    {
+      // This connection was formed during connection handover procedure.
+      // However, the candidate wasn't able to follow the connection. Keep
+      // the peripheral's RX window open until the end of the connection
+      // interval to increase the chance that the candidate will be able to
+      // follow the central
+      linkCmd[connPtr->connId].relRxTimeoutTime = 0;
     }
-#endif
   }
+
   // setup the connection event End Time relative to the timestamp
-    linkCmd[connPtr->connId].common.timing.relHardStopTime =
+  linkCmd[connPtr->connId].common.timing.relHardStopTime =
       ((((uint32)connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
       (2 * RAT_TICKS_IN_150US);
 
@@ -1086,12 +1021,9 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
   {
     // processing based on control packet type at the head of the queue
     if ((connPtr->ctrlPktInfo.ctrlPkts[0] >= LL_CTRL_CS_SEC_RSP) &&
-        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_SEC_REQ) )
+        (connPtr->ctrlPktInfo.ctrlPkts[0] <= LL_CTRL_CS_TERMINATE_RSP) )
     {
-        if(LL_CTRL_PROC_STATUS_SUCCESS == MAP_llCsProcessCsCtrlProcedures(connPtr, connPtr->ctrlPktInfo.ctrlPkts[0]))
-        {
-           return LL_CTRL_PROC_STATUS_SUCCESS;
-        }
+        return MAP_llCsProcessCsCtrlProcedures(connPtr, connPtr->ctrlPktInfo.ctrlPkts[0]);
     }
     switch( connPtr->ctrlPktInfo.ctrlPkts[0] )
     {
@@ -2546,67 +2478,6 @@ uint8 llProcessPeripheralControlProcedures( llConnState_t *connPtr )
         }
         break;
 
-      /*
-      ** Constant Tone Extension request
-      */
-#ifdef RTLS_CTE
-      case LL_CTRL_CTE_REQ:
-        // check if the control packet procedure is active
-        if ( connPtr->ctrlPktInfo.ctrlPktActive == TRUE )
-        {
-          // check that the CTE request procedure was done
-          if ( llCte[connPtr->connId].initiator.sendRequest == FALSE )
-          {
-            // it has been sent, so dequeue this control procedure
-            MAP_llDequeueCtrlPkt( connPtr );
-          }
-          else // no done yet
-          {
-            // check if a control procedure timeout has occurred
-            // Note: No need to cleanup control packet info as we are done.
-            if ( --connPtr->ctrlPktInfo.ctrlTimeout == 0 )
-            {
-              // CPTO timeout, so end it all
-              // Note: No need to cleanup control packet info as we are done.
-              MAP_llConnTerminate( connPtr, LL_CTRL_PKT_TIMEOUT_HOST_TERM );
-
-              return( LL_CTRL_PROC_STATUS_TERMINATE );
-            }
-            else
-            {
-              //  control packet stays at head of queue, so exit here
-              return( LL_CTRL_PROC_STATUS_SUCCESS );
-            }
-          }
-        }
-        else // control packet has not been put on the TX FIFO yet
-        {
-          // so try to put it there; being active depends on a success
-          connPtr->ctrlPktInfo.ctrlPktActive = MAP_llSetupCte( connPtr,TRUE );
-
-          // set the control packet timeout for 40s relative to our present time
-          // Note: This is done in terms of connection events.
-          connPtr->ctrlPktInfo.ctrlTimeout = connPtr->ctrlPktInfo.ctrlTimeoutVal;
-
-          // Note: Two cases are possible:
-          //       a) We successfully placed the packet in the TX FIFO.
-          //       b) We did not.
-          //
-          //       In case (a), it may be possible that a previously just
-          //       completed control packet happened to complete based on
-          //       rfCounters.numTxCtrlAck. Since the current control
-          //       procedure is now active, it could falsely detect
-          //       rfCounters.numTxCtrlAck, when in fact this was from the
-          //       previous control procedure. Consequently, return.
-          //
-          //       In case (b), the control packet stays at the head of the
-          //       queue, and there's nothing more to do. Consequently, return.
-          //
-          //       So, in either case, return.
-          return( LL_CTRL_PROC_STATUS_SUCCESS );
-        }
-        break;
-#endif // RTLS_CTE
       /*
       ** Unknown Control Type Received Response
       */

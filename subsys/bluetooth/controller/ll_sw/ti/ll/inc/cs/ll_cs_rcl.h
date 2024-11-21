@@ -30,21 +30,6 @@
 /*******************************************************************************
  * MACROS
  */
-#ifdef CS_TEST
-#define SIZE_OF_BUFFER_DATA(x) (x * sizeof(RCL_CmdBleCs_Step))
-#define BLE_CS_CREATE_BASIC_STEP(m, tx, rx)                                    \
-    {                                                                          \
-        .channelIdx = 0, .mode = m, .toneExtension = 0, .antennaPermIdx = 0,   \
-        .payloadLen = 0, .aaTx = tx, .aaRx = rx,                               \
-        .payloadTx = {0xAAAAAAAA, 0xAAAAAAAA, 0xAAAAAAAA, 0xAAAAAAAA},         \
-        .payloadRx = {                                                         \
-            0xBBBBBBBB,                                                        \
-            0xBBBBBBBB,                                                        \
-            0xBBBBBBBB,                                                        \
-            0xBBBBBBBB                                                         \
-        }                                                                      \
-    }
-#endif
 
 /*******************************************************************************
  * TYPEDEFS
@@ -60,12 +45,12 @@ typedef struct
         uint16_t tailIndex;    /*!< Number of bytes written */
     } header;
     RCL_CmdBleCs_Step steps[];
-} ble_cs_steps_buffer_t;
+} csStepsBuffer_t;
 
 typedef struct
 {
-    ble_cs_steps_buffer_t *csStepsBuff0;
-    ble_cs_steps_buffer_t *csStepsBuff1;
+    csStepsBuffer_t *csStepsBuff0;
+    csStepsBuffer_t *csStepsBuff1;
     uint8_t               *csStepResultsBuff0;
     RCL_CmdBleCs_Stats    *csOutput;
     uint8                 numSteps;
@@ -81,6 +66,7 @@ typedef struct
  * LOCAL VARIABLES
  */
 extern csLrfConfig_t csLrfConfig;
+extern csRclCmdData_t csRclData;
 
 /*******************************************************************************
  * EXTERNS
@@ -150,6 +136,26 @@ extern void llCsSteps_PostProcess(void);
 extern void llCsResults_PostProcess(uint8 procedureDone);
 
 /*******************************************************************************
+ * @fn          llCsPrepareForNextSubevent
+ *
+ * @brief       Prepare the step buffer for next subevent
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Id
+ * @param       configId - CS config Id
+ * @param       numBuffSteps - Number of steps for buffer
+ * @param       pBuffer - Pointer to the buffer
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void llCsPrepareForNextSubevent(uint16 connId, uint8 configId, uint8 numBuffSteps, csStepsBuffer_t* pBuffer);
+
+/*******************************************************************************
  * @fn          llCsProcessResults
  *
  * @brief       Process CS results and notify Host
@@ -171,8 +177,8 @@ void llCsProcessResults(RCL_CmdBleCs_SubeventResults* resBuf,
 /*******************************************************************************
  * @fn          llCsSetupRcl
  *
- * @brief       This function sets up the device for CS
- * Setup CS RCL command, parameters and output registers.
+ * @brief       Setup CS RCL command, parameters, and output registers
+ *
  *
  * input parameters
  *
@@ -183,10 +189,49 @@ void llCsProcessResults(RCL_CmdBleCs_SubeventResults* resBuf,
  *
  * @param       None.
  *
- * @return      status
- *              success
+ * @return      CS_STATUS_DISABLED_CONFIG_ID - if active config Id is disabled
+ *              CS_STATUS_SUCCESS - otherwise
  */
 csStatus_e llCsSetupRcl(uint16 connId, csRclCmdData_t csRclDataInt);
+
+/*******************************************************************************
+ * @fn          llCsInitRclCmd
+ *
+ * @brief       Initialize CS RCL command
+ * This is used when a brand new procedure is started.
+ *
+ * input parameters
+ *
+ * @param       connId - connection Id
+ * @param       csRclDataInt - CS RCL command data
+ * @param       csConfig - pointer to CS configuration set
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None
+ */
+void llCsInitRclCmd(uint16 connId, csRclCmdData_t csRclDataInt, csConfigurationSet_t* csConfig);
+
+/*******************************************************************************
+ * @fn          llCsSubmitTestCmd
+ *
+ * @brief       Submit CS Test Command
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      Status
+ *              Success if the test command was submitted
+ *              Unexpected Params if this is not a test mode
+ */
+csStatus_e llCsSubmitTestCmd(void);
 
 /*******************************************************************************
  * @fn          llCsRclCallback
@@ -226,25 +271,23 @@ void llCsRclCallback(RCL_Command* cmd, LRF_Events lrfEvents,
 void llCsProcessResultsCb(csProcDoneStat_e procedureDoneSt);
 
 /*******************************************************************************
- * @fn          llCsGenerateMoreSteps
+ * @fn          llCsFillBuffer
  *
- * @brief       Generate More CS Steps
- * Used when need to switch Step Buffers.
+ * @brief       Fill CS Buffer with step details
  *
  * input parameters
  *
  * @param       connId - connection Id
- * @param       numSteps - number of steps to generate
- * @param       stepListBuf - pointer to the stepList
+ * @param       mode - mode
+ * @param       numSteps - number of steps
+ * @param       steps - pointer to steps
  *
  * output parameters
- *
- * @param       None.
+ * @param       csSteps
  *
  * @return      None
  */
-void llCsGenerateMoreSteps(uint16 connId, uint8 numSteps,
-                           ble_cs_steps_buffer_t* stepListBuf);
+void llCsFillBuffer(uint16 connId, uint8 mode, uint8 numSteps, RCL_CmdBleCs_Step* steps);
 
 /*******************************************************************************
  * @fn          llCsRclFreeTask
@@ -257,7 +300,6 @@ void llCsGenerateMoreSteps(uint16 connId, uint8 numSteps,
  * input parameters
  *
  * @param       connHandle - connection handle aka id
- * @param       configId - cs config ID
  *
  * output parameters
  *
@@ -265,6 +307,6 @@ void llCsGenerateMoreSteps(uint16 connId, uint8 numSteps,
  *
  * @return      None
  */
-void llCsRclFreeTask(uint16 connHandle, uint8 configId);
+void llCsRclFreeTask(uint16 connHandle);
 
 #endif

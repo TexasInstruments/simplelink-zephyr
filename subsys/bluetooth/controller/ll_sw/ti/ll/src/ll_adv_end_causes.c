@@ -32,18 +32,11 @@
 #include "ll_rat.h"
 #include "ll_privacy.h"
 #include "ll_ae.h"
-#include "hal_gpio_wrapper.h"
+#include "ll_handover_sn.h"
 
 #include <ti/drivers/rcl/RCL.h>
 #include <ti/drivers/rcl/commands/ble5.h>
-//
-#include "rom_jt.h"
-
-// SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_slv.h"
-#endif // DEBUG_SW_TRACE
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -109,21 +102,9 @@ void llAdv_TaskConnect( void )
   uint32         timeToNextEvt;
   uint8         *pData;
 
-#ifdef DEBUG_GPIO_CONN
-  GPIO_writeDio(HAL_GPIO_1, 0);
-#endif // DEBUG_GPIO_CONN
-
   // check if Adv is still active
   if ( MAP_llGetTaskState(LL_TASK_ID_ADVERTISER) == LL_TASK_STATE_ACTIVE )
   {
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINT0(DBGSYS, "##########################");
-    DBG_PRINT0(DBGSYS, "ADV: CONNECT_IND received!");
-    DBG_PRINT0(DBGSYS, "##########################");
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
-
     // get current Adv Set
     advSet_t *pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
 
@@ -168,12 +149,22 @@ void llAdv_TaskConnect( void )
 
     // save the Adv Set handle for this connection
     // Note: This is needed because, for multiple Adv Sets, another advertiser
-    //       could be scheduled before the OSAL event LL_STATE_PERIPHERAL_CONN_CREATED
+    //       could be scheduled before the OSAL event LL_STATE_PERIPHERAL_CONN_CREATED (Masha: recheck)
     //       is processed.
     aeCurConnHandle = aeCurHandle;
 
     // get a task block for this BLE state/role
     connPtr->llTask = MAP_llAllocTask( LL_TASK_ID_PERIPHERAL );
+
+    if (connPtr->llTask == NULL)
+    {
+      MAP_llConnTerminate( connPtr, LL_STATUS_ERROR_OUT_OF_CONN_RESOURCES );
+
+      // determine next task (if any) and schedule it
+      MAP_llScheduler();
+
+      return;
+    }
 
     /*
     ** Process the CONNECT_IND/AUX_CONNNECT_REQ message parameters.
@@ -335,12 +326,10 @@ void llAdv_TaskConnect( void )
            (uint32)(connPtr->curParam.connInterval << 1))) ||
           (connPtr->curParam.connInterval == 0) )
     {
-      // schedule LL Event to notify the Host a connection was formed with
-      // a bad parameter
-      // Note: This event doesn't take parameters, so it is assumed there that
-      //       the reason code was due to an unacceptable connection interval.
-      (void)MAP_osal_set_event( LL_TaskID, LL_STATE_PERIPHERAL_CONN_CREATED_BAD_PARAM );
-
+      // notify the Host a connection was formed with a bad parameter
+      // it is assumed there that the reason code was due to an unacceptable connection interval.
+      MAP_llProcessConnectionEstablishFailed(LL_LINK_CONNECT_COMPLETE_PERIPHERAL,
+                                             LL_STATUS_ERROR_UNACCEPTABLE_CONN_INTERVAL);
       // it isn't, so terminate
       MAP_llConnTerminate( connPtr, LL_UNACCEPTABLE_CONN_INTERVAL_TERM );
 
@@ -371,10 +360,8 @@ void llAdv_TaskConnect( void )
     //       Peripheral SCA values, in PPM.
     connPtr->scaFactor = MAP_llCalcScaFactor( connPtr->sleepClkAccuracy );
 
-#ifndef DISABLE_RCOSC_SW_FIX
     // save off central contribution
     connPtr->mstSCA = connPtr->scaFactor - pAdvSet->scaValue;
-#endif // !DISABLE_RCOSC_SW_FIX
 
     // save the data channel hop length
     connPtr->hopLength = (uint8)(pData[35] & 0x1F);
@@ -422,11 +409,6 @@ void llAdv_TaskConnect( void )
     connPtr->currentMappedChan = linkCmd[connPtr->connId].channel;
     connPtr->currentChan = connPtr->nextChan;
 
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINT1(DBGSYS, "ADV Set Next Chan: %d", linkCmd[connPtr->connId].chan);
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
     // check if this will not be a legacy advertisement
     if ( TST_AE_PROPS_LEGACY(pAdvSet->pAdvParam->eventProps) )
     {
@@ -451,7 +433,11 @@ void llAdv_TaskConnect( void )
       // No need to Set Coded S8, it's the default value.
       if(pAdvSet->pAdvParam->secPhy == AE_PHY_CODED_S2)
       {
-        connPtr->phyInfo.phyOpts = BLE5_CODED_S2_DEFAULT;
+        connPtr->phyInfo.phyOpts = LL_PHY_OPT_S2;
+      }
+      else if(pAdvSet->pAdvParam->secPhy == AE_PHY_CODED_S8)
+      {
+        connPtr->phyInfo.phyOpts = LL_PHY_OPT_S8;
       }
 
       uint8 phyMode = (uint8)((aeRf_t *)pAdvSet->pRfCmds)->auxPhyFeature;
@@ -463,9 +449,10 @@ void llAdv_TaskConnect( void )
       {
           // tx power or phy value is invalid, so terminate
 
-          // schedule LL Event to notify the Host a connection was formed with
-          // a bad parameter
-          (void)MAP_osal_set_event( LL_TaskID, LL_STATE_PERIPHERAL_CONN_CREATED_BAD_PARAM );
+          // notify the Host a connection was formed with a bad parameter
+          // it is assumed there that the reason code was due to an unacceptable connection interval.
+          MAP_llProcessConnectionEstablishFailed(LL_LINK_CONNECT_COMPLETE_PERIPHERAL,
+                                                LL_STATUS_ERROR_UNACCEPTABLE_CONN_INTERVAL);
 
           MAP_llConnTerminate( connPtr, LL_UNACCEPTABLE_CONN_INTERVAL_TERM );
 
@@ -491,15 +478,15 @@ void llAdv_TaskConnect( void )
 
     connPtr->pTxDataEntryQ = (void *)&txDataQ[connPtr->connId];
 
-    /* Clear the pTxDataEntryQ */
+    // Clear the pTxDataEntryQ
     llClearTxDataQueue(connPtr->pTxDataEntryQ);
 
     connPtr->pRxDataEntryQ = (void *)&linkParam[connPtr->connId].rxBuffers;
 
     connOutput = RCL_StatsConnection_DefaultRuntime();
 
-    // schedule LL Event to post process
-    (void)MAP_osal_set_event( LL_TaskID, LL_STATE_PERIPHERAL_CONN_CREATED );
+    // Process Peripheral
+    MAP_llProcessPeripheralConnectionCreated();
 
     // find amount of time to the connection receive window in 625us ticks
     // check if this is a connection from a legacy advertisement
@@ -529,21 +516,6 @@ void llAdv_TaskConnect( void )
     // add the window offset
     timeToNextEvt += (uint32)connPtr->curParam.winOffset;
 
-#if defined( LL_TEST_MODE )
-#ifndef CC23X0
-    if ( llTestMode.testCase == LL_TEST_MODE_TP_CON_INI_BV03 )
-    {
-      // skip the first three connection events (0..2)
-      timeToNextEvt += (3 * (uint32)connPtr->curParam.connInterval);
-      connPtr->currentChan = (connPtr->currentChan + (connPtr->hopLength * 2)) % LL_MAX_NUM_DATA_CHAN;
-      connPtr->currentEvent = 2;
-      connPtr->nextEvent    = 3;
-
-      linkCmd[connPtr->connId].chan = connPtr->pChSelAlgo( connPtr );
-    }
-#endif
-#endif // LL_TEST_MODE
-
     // save previous time to next event for peripheral task end processing
     // Note: Used to avoid unnecessary timer drift calculation.
     connPtr->lastTimeToNextEvt = timeToNextEvt;
@@ -553,14 +525,6 @@ void llAdv_TaskConnect( void )
     //       result is the timer drift in RAT ticks.
     // Note: Round up one RAT tick to account for floor effect.
     connPtr->timerDrift = ((timeToNextEvt * connPtr->scaFactor) / RAT_TICKS_IN_100US) + 1;
-
-#ifdef DEBUG_SW_TRACE
-    DBG_PRINT0(DBGSYS, "");
-    DBG_PRINTL1(DBGSYS, "ADV Time to Next = 0x%08X", timeToNextEvt*RAT_TICKS_IN_625US );
-    DBG_PRINT1(DBGSYS,  "ADV SCA Factor   = %d", connPtr->scaFactor );
-    DBG_PRINTL1(DBGSYS, "ADV Timer Drift  = 0x%08X", connPtr->timerDrift );
-    DBG_PRINT0(DBGSYS, "");
-#endif // DEBUG_SW_TRACE
 
     // setup the start time of the receive window
     linkCmd[connPtr->connId].common.timing.absStartTime =
@@ -593,6 +557,12 @@ void llAdv_TaskConnect( void )
     linkCmd[connPtr->connId].common.timing.relHardStopTime =
       (((connPtr->curParam.connInterval * *llConfigTable.connEvtCutoff) / 100) * RAT_TICKS_IN_625US) -
       (2 * RAT_TICKS_IN_150US);
+
+    // The device needs more time to sync when using Coded, so extend the end of the Rx Window
+    if ( connPtr->phyInfo.curPhy == LL_PHY_CODED )
+    {
+      linkCmd[connPtr->connId].relRxTimeoutTime += LL_RX_SYNCH_OVERHEAD_CODED;
+    }
 
     // pointer to first radio operation command
     connPtr->llTask->command = (uint32)&linkCmd[connPtr->connId];
@@ -666,19 +636,14 @@ void llExtAdv_PostProcess( void )
   llStatus_t status;
 #endif
 
-#ifdef DEBUG_GPIO_CONN
-  GPIO_writeDio(HAL_GPIO_1, 0);
-#endif // DEBUG_GPIO_CONN
-
-#ifdef DEBUG_GPIO_ADV_SCAN
-  GPIO_writeDio(HAL_GPIO_1, 0);
-#endif // DEBUG_GPIO_ADV_SCAN
-
   // get adv set based on currently used handle
   pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
 
   // Sanity Check
   LL_ASSERT( pAdvSet != NULL );
+
+  // Check if we need to terminate an handover connection
+  MAP_llHandoverCheckTermConnAndTerm();
 
   // got pointer
   if ( pAdvSet )
@@ -694,7 +659,7 @@ void llExtAdv_PostProcess( void )
        * Needed for extended only because we constantly changing the
        * data in each txBuffer
        */
-      RCL_Buffer_TxBuffer *pDataEntry;
+      RCL_Buffer_TxBuffer *pDataEntry = NULL;
 
       do
       {
@@ -721,6 +686,9 @@ void llExtAdv_PostProcess( void )
       }
 #endif // USE_PERIODIC_ADV
     }
+
+    // Check if there was a request to change the adv data while adv is on
+    LL_AE_SetPendingData(pAdvSet);
 
     // check if still active
     if ( pAdvSet->advMode == LL_ADV_MODE_OFF )
@@ -786,7 +754,7 @@ void llExtAdv_PostProcess( void )
     // check if duration is used, and we've reached it
     if ( (pAdvSet->pEnable->duration) && (pAdvSet->durationExpireTime) &&
          (pAdvSet->advEvtType != LL_ADV_CONNECTABLE_HDC_DIRECTED_EVT) &&
-         (pAdvSet->durationExpireTime <= pAdvSet->advStartTime + US_TO_RAT_TICKS(pNextAdvSet->timeConsume)) )
+         (MAP_llTimeCompare(pAdvSet->durationExpireTime, pAdvSet->advStartTime + US_TO_RAT_TICKS(pNextAdvSet->timeConsume)) == FALSE) )
     {
       // terminate the advertiser
       llTermExtAdv(pAdvSet,LL_STATUS_ERROR_DIRECTED_ADV_TIMEOUT);
@@ -822,8 +790,8 @@ void llExtAdv_PostProcess( void )
           MAP_llEndExtAdvTask( pAdvSet );
         }
 
-        // notify the host with appropriate reason code
-        (void)MAP_osal_set_event( LL_TaskID, LL_EVT_DIRECTED_ADV_FAILED );
+        MAP_llProcessConnectionEstablishFailed(LL_LINK_CONNECT_COMPLETE_PERIPHERAL,
+                                               LL_STATUS_ERROR_DIRECTED_ADV_TIMEOUT);
       }
       else // all other Adv Event Types
 #endif // ADV_CONN_CFG
@@ -906,8 +874,8 @@ void llExtAdv_PostProcess( void )
  * @brief       This routine is used to post process the periodic Advertising
  *              command.
  *
- * @Design   /ref did_286039104
  * @Design:  BLE_LOKI-1795
+ * @Design   /ref did_286039104
  *
  * input parameters
  *
@@ -939,7 +907,7 @@ void llPeriodicAdv_PostProcess( void )
    * Needed only because we constantly changing the
    * data in each txBuffer
    */
-  RCL_Buffer_TxBuffer *pDataEntry;
+  RCL_Buffer_TxBuffer *pDataEntry = NULL;
 
   do
   {
@@ -953,22 +921,6 @@ void llPeriodicAdv_PostProcess( void )
   }
   else if (pPeriodicAdv->state != PERIODIC_ADV_STATE_DISABLE)
   {
-#ifdef RTLS_CTE
-    // Check for add or remove CTE
-    if (pPeriodicAdv->cteInfo.pending == PERIODIC_ADV_CTE_PENDING_ENABLE)
-    {
-      pPeriodicAdv->cteInfo.enable = TRUE;
-      pPeriodicAdv->cteInfo.pending = PERIODIC_ADV_CTE_NO_PENDING;
-      dataUpdated = TRUE;
-    }
-    else if (pPeriodicAdv->cteInfo.pending == PERIODIC_ADV_CTE_PENDING_DISABLE)
-    {
-      pPeriodicAdv->cteInfo.enable = FALSE;
-      pPeriodicAdv->cteInfo.pending = PERIODIC_ADV_CTE_NO_PENDING;
-      dataUpdated = TRUE;
-    }
-#endif
-
     // Check if host update the periodic data
     if (pPeriodicAdv->dataUpdated == TRUE)
     {
@@ -1087,16 +1039,7 @@ void llPeriodicAdv_PostProcess( void )
       pPeriodicAdv->otaTime =  MAP_llOctets2Time( pRf->phyFeatures & 0x03,      // first two bits only
                                                  (pRf->phyFeatures>>2) & 0x01, // scheme
                                                  (pPeriodicAdv->extHdrSize + EXTHDR_INFO_SIZE + pPeriodicAdv->fragLen),MIC_NOT_ENABLED );
-#ifdef RTLS_CTE
-      pPeriodicAdv->otaTime += (pPeriodicAdv->cteInfo.enable)?(pPeriodicAdv->cteInfo.len * 8):0;
-
-      // Calculate number of chunks according to the max value of periodic data or CTE count
-      pPeriodicAdv->numChains = MAX(pPeriodicAdv->numFrags,
-                                   (pPeriodicAdv->cteInfo.enable)?
-                                    pPeriodicAdv->cteInfo.count:0);
-#else
       pPeriodicAdv->numChains = pPeriodicAdv->numFrags;
-#endif //RTLS_CTE
 
       if (pPeriodicAdv->numChains > 1)
       {
@@ -1117,7 +1060,7 @@ void llPeriodicAdv_PostProcess( void )
     // Update the chain packet if there is chain packet
     if (pPeriodicAdv->numChains > 1)
     {
-      MAP_llUpdatePeriodicAdvChainPacket( pPeriodicAdv );
+      MAP_llUpdatePeriodicAdvChainPacket( );
     }
   }
   // Schedule this task
@@ -1216,60 +1159,10 @@ llStatus_t llPostProcessExtendedAdv( advSet_t *pAdvSet )
 #endif
   }
 
-  // If there is a pending data update to the ext adv or scan response
-  switch (pAdvSet->pendingDataUpdate)
-  {
-    case LE_AE_EXT_DATA_NO_PENDING:
-    {
-      // There is no data pending, break
-      break;
-    }
-
-    case LE_AE_EXT_DATA_ADV_PENDING:
-    {
-      // Call the AE set data function to update the pointer with the new data
-      status = LE_AE_SetData(pAdvSet->pPendingData, LE_AE_EXT_DATA_CMD_ADV_LAST_CMD_DONE);
-      if (status != LL_STATUS_SUCCESS)
-      {
-        // AE set data failed, do not proceed with the update data process
-        break;
-      }
-
-      // Set pPendingAdvData to NULL
-      pAdvSet->pPendingData = NULL;
-
-      // Set the pending update flag to no pending
-      pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_NO_PENDING;
-
-      break;
-    }
-
-    case LE_AE_EXT_DATA_SCAN_RSP_PENDING:
-    {
-      // Call the set data to update the pointer with the new data
-      status = LE_AE_SetData(pAdvSet->pPendingData, LE_AE_EXT_DATA_CMD_SCAN_LAST_CMD_DONE);
-      if (status != LL_STATUS_SUCCESS)
-      {
-        // Set data failed, do not proceed with the update data process
-        break;
-      }
-
-      // Set pPendingScanRspData to NULL
-      pAdvSet->pPendingData = NULL;
-
-      // Set the pending update flag to no pending
-      pAdvSet->pendingDataUpdate = LE_AE_EXT_DATA_NO_PENDING;
-
-      break;
-    }
-    default:
-        break;
-  }
-
   // initialize the Extended Header Buffer
   MAP_llSetupExtHdr( pAdvSet,
-                      pAdvSet->extHdrFlags,
-                      AE_AUX_OFFSET_AUTO_INSERT );
+                     pAdvSet->extHdrFlags,
+                     AE_AUX_OFFSET_AUTO_INSERT );
 
   if ( TST_AE_PROPS_SCAN(pAdvSet->pAdvParam->eventProps) )
   {

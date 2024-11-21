@@ -1,8 +1,8 @@
 /******************************************************************************
 
- @file  icall_cc2650.c
+ @file  icall_cc23X0.c
 
- @brief CC2650 specific ICall function implementation
+ @brief CC23X0/CC27XX specific ICall function implementation
 
  Group: WCS, LPC, BTS
  $Target Device: DEVICES $

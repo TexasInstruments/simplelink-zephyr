@@ -20,11 +20,12 @@
  */
 #include "bcomdef.h"
 #include "ll_cs_common.h"
+#include "ll_cs_test.h"
 
 /*******************************************************************************
  * EXTERNS
  */
-extern uint8 stepCalcInd;
+
 /*******************************************************************************
  * TYPEDEFS
  */
@@ -77,6 +78,26 @@ uint8 llCsInitDb(void);
  * @return      None
  */
 void llCsDbClearCsConnData(uint16 connId);
+
+/*******************************************************************************
+ * @fn          llCsDbClearProcedureData
+ *
+ * @brief       Clear CS procedure data
+ * Used when CS is initialized and when a procedure ends and is not to be
+ * repeated.
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Id
+ * @param       configId - Config Id
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbClearProcedureData(uint16 connId, uint8 configId);
 
 /*******************************************************************************
  * @fn          llCsDbFree
@@ -631,7 +652,6 @@ uint8 llCsDbIsProcedureEnabled(uint16 connId, uint8 configId);
  * input parameters
  *
  * @param       connId   - connection Id
- * @param       configId - CS configuration Id
  *
  * output parameters
  *
@@ -639,7 +659,7 @@ uint8 llCsDbIsProcedureEnabled(uint16 connId, uint8 configId);
  *
  * @return      terminateState
  */
-uint8 llCsDbGetProcedureTerminateState(uint16 connId, uint8 configId);
+csTerminateState_e llCsDbGetProcedureTerminateState(uint16 connId);
 
 /*******************************************************************************
  * @fn          llCsDbSetProcedureTerminateState
@@ -651,7 +671,6 @@ uint8 llCsDbGetProcedureTerminateState(uint16 connId, uint8 configId);
  * input parameters
  *
  * @param       connId         - connection Id
- * @param       configId       - CS configuration Id
  * @param       terminateState - indicate if the procedure state should be
  *                    updated to CS_DISABLE. The following values are optional:
  *                    CS_TERMINATE_RECEIVED and CS_TERMINATE_DISABLE
@@ -662,8 +681,42 @@ uint8 llCsDbGetProcedureTerminateState(uint16 connId, uint8 configId);
  *
  * @return      None
  */
-void llCsDbSetProcedureTerminateState(uint16 connId, uint8 configId,
-                                      uint8 terminateState);
+void llCsDbSetProcedureTerminateState(uint16 connId, csTerminateState_e terminateState);
+
+/*******************************************************************************
+ * @fn          llCsDbGetTerminateReason
+ *
+ * @brief       Get the CS Terminate Reason
+ *
+ * input parameters
+ *
+ * @param       connId - Connection ID
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Error Code (Termination Reason)
+ */
+uint8 llCsDbGetTerminateReason(uint16 connId);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTerminateReason
+ *
+ * @brief       Set the CS Termination Reason
+ *
+ * input parameters
+ *
+ * @param       connId - Connection Id
+ * @param       errorCode - The error code for the temrination reason
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTerminateReason(uint16 connId, uint8 errorCode);
 
 /*******************************************************************************
  * @fn          llCsDbSetEnableProcedureDuration
@@ -818,6 +871,18 @@ void llCsDbGetProcedureEnableData(uint16 connId, uint8 configId,
                                   csProcedureEnable_t* enData);
 
 /*******************************************************************************
+ * @fn          llCsDbGetSubeventsPerEvent
+ *
+ * @brief       Get the number of subevents per event in a CS procedure
+ *
+ * @param       connId - connection Id
+ * @param       configId - configuration Id
+ *
+ * @return      Number of subevents per event
+ */
+uint8 llCsDbGetSubeventsPerEvent(uint16 connId, uint8 configId);
+
+/*******************************************************************************
  * @fn          llCsDbCompareProcedureData
  *
  * @brief       Compare procedure data saved in the csdb, to what is provided
@@ -935,6 +1000,29 @@ uint8 llCsDbGetNextProcedureFlag(uint16 connId, uint8 configId);
  * @return      None
  */
 void llCsDbSetNextProcedureFlag(uint16 connId, uint8 next);
+
+/*******************************************************************************
+ * @fn          llCsDbGetNextSubeventFlag
+ *
+ * @brief       Get the next subevent flag for a given connection.
+ *
+ * @param       connId - connection Id
+ *
+ * @return      Next subevent flag
+ */
+csNextSubevent_e llCsDbGetNextSubeventFlag(uint16 connId);
+
+/*******************************************************************************
+ * @fn          llCsDbSetNextSubeventFlag
+ *
+ * @brief       Set the next subevent flag for a given connection.
+ *
+ * @param       connId - connection Id
+ * @param       next - next subevent flag
+ *
+ * @return      None
+ */
+void llCsDbSetNextSubeventFlag(uint16 connId, csNextSubevent_e next);
 
 /*******************************************************************************
  * @fn          llCsDbUpdateChannelMap
@@ -1108,6 +1196,57 @@ csBleRole llCsDbGetBleRole(void);
  *             N_AP for the given ACI.
  */
 uint8* llCsDbGetAciTable(csACI_e ACI);
+
+/*******************************************************************************
+ * @fn          llCsDbGetIip
+ *
+ * @brief       Get the T_IP time from tIpTbl
+ *
+ * input parameters
+ *
+ * @param       idx - Index of the T_IP
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      T_IP
+ */
+uint8 llCsDbGetTip(uint8 idx);
+
+/*******************************************************************************
+ * @fn          llCsDbGetTfcs
+ *
+ * @brief       Get T_FCS from tFcsTbl
+ *
+ * input parameters
+ *
+ * @param       idx - Index of F_CS value
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      T_FCS
+ */
+uint8 llCsDbGetTfcs(uint8 idx);
+
+/*******************************************************************************
+ * @fn          llCsDbGetTpm
+ *
+ * @brief       Get T_PM from tPmTbl
+ *
+ * input parameters
+ *
+ * @param       idx - Index of tPM value
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+uint8 llCsDbGetTpm(uint8 idx);
 
 /*******************************************************************************
  * @fn          llCsDbGetACI
@@ -1302,25 +1441,6 @@ uint8 llCsDbGetSubeventInfo(uint16 connId, csSubeventInfo_e type);
  * @return      None.
  */
 void llCsDbSetSubeventCount(uint16 connId, csSubeventInfo_e type, uint8 count);
-
-/*******************************************************************************
- * @fn          llCsDbResetSubeventInfo
- *
- * @brief       Reset Subevent Info.
- *
- * @design      BLE_LOKI-506
- *
- * input parameters
- *
- * @param       connId - connection Id
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      None.
- */
-void llCsDbResetSubeventInfo(uint16 connId);
 
 /*******************************************************************************
  * @fn          llCsDbIncrementSubeventInfoCounter
@@ -1578,8 +1698,7 @@ uint8 llCsDbRandomBitsAvailable(uint8 transactionId, uint8 numBitsRequired);
  *
  * @return      None
  */
-void llCsDbGetRandomBitsFromCache(uint8 transactionId, uint8 numBitsRequired,
-                                  uint8* pRandomBits);
+void llCsDbGetRandomBitsFromCache(uint8 transactionId, uint8 numBitsRequired, uint8* pRandomBits);
 
 /*******************************************************************************
  * @fn          llCsDbGetChannelIdxArray
@@ -1693,3 +1812,374 @@ csModeRole_e getRoleModeSpecificDataType(uint8 role, uint8 mode);
  * @return      integer containing the bits starting from the specified index.
  */
 uint8 llCsDbGetBits(uint8 num, uint8 startIdx, uint8 numBits);
+
+/*******************************************************************************
+ * @fn          llCsDbGetCurrentConnId
+ *
+ * @brief       Get the current connection Id
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Current Connection Id
+ */
+uint16 llCsDbGetCurrentConnId( void );
+
+/*******************************************************************************
+ * @fn          llCsDbGetDefaultChMap
+ *
+ * @brief       Get the default Channel Map
+ *
+ * input parameters
+ *
+ * @param       pCsConfig - pointer to CS config
+ *
+ * output parameters
+ *
+ * @param       pCsConfig
+ *
+ * @return      None
+ */
+void llCsDbGetDefaultChMap(uint8 * pChm);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestMode
+ *
+ * @brief       Enable or Disable CS Test
+ *
+ * input parameters
+ *
+ * @param       mode - CS_TEST_MODE_ENABLE or CS_TEST_MODE_DISABLE
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTestMode(csTestMode_e mode);
+
+/*******************************************************************************
+ * @fn          llCsDbGetTestMode
+ *
+ * @brief       Returns Whether CS Test Mode is enabled or disabled
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      CS_TEST_MODE_DISABLE if CS Test is disabled
+ *              CS_TEST_MODE_ENABLE if CS Test is enabled
+ */
+csTestMode_e llCsDbGetTestMode(void);
+
+/*******************************************************************************
+ * @fn          llCsDbSetSwitchTime
+ *
+ * @brief       Set Antenna Switch Time
+ * Currently swTime is a global variable multiple antennas are not yet supported.
+ * Once it is supported, this may need to be changed
+ *
+ * input parameters
+ *
+ * @param       swT - Antenna switch time
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetSwitchTime( uint8 swT );
+
+/*******************************************************************************
+ * @fn          llCsDbGetSwitchTime
+ *
+ * @brief       Get Antenna Switch  time  from the DB
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Antenna Switch Time
+ */
+uint8 llCsDbGetSwitchTime( void );
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestConfig
+ *
+ * @brief       Set the CS Config based on the test parameters.
+ *
+ * input parameters
+ *
+ * @param       pTestParams - Pointer to Test Parameter
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTestConfig(csTestParams_t* pTestParams);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestDefaultSettings
+ *
+ * @brief       Set CS Default Settings based on test parameters
+ *
+ * input parameters
+ *
+ * @param       pTestParams - pointer to test parameters
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTestDefaultSettings(csTestParams_t* pTestParams);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestProcedureEnable
+ *
+ * @brief       Set Procedure Enable data based on Test Parameters
+ *
+ * input parameters
+ *
+ * @param       pTestParams - Pointer to Test Parameters
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTestProcedureEnable(csTestParams_t* pTestParams);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestProcedureParams
+ *
+ * @brief       Set Test Parameters in the DB
+ *
+ * input parameters
+ *
+ * @param       pTestParams - pointer to test params
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetTestProcedureParams(csTestParams_t* pTestParams);
+
+/*******************************************************************************
+ * @fn          llCsDbSetTestOverrideData
+ *
+ * @brief       Set the CS Test Override Data in CS DB
+ * This function will take the overrides data from the test parameters and
+ * store it in the override data in the DB.
+ * It also check the validity of the parameters.
+ *
+ * input parameters
+ *
+ * @param       pTestParams - pointer to test parameters
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      CS_STATUS_UNEXPECTED_PARAMETER if parameter value is not expected
+ *              CS_STATUS_SUCCESS otherwise
+ */
+csStatus_e llCsDbSetTestOverrideData(csTestParams_t* pTestParams);
+
+/*******************************************************************************
+ * @fn          llCsDbGetTestOverrideData
+ *
+ * @brief       Returns the CS test overrides data
+ *
+ * input parameters
+ *
+ * @param       pCsTestOverrideData - pointer to CS test overrides
+ *
+ * output parameters
+ *
+ * @param       pCsTestOverrideData
+ *
+ * @return      None
+ */
+void llCsDbGetTestOverrideData(csTestOverrideData_t *pCsTestOverrideData);
+
+/*******************************************************************************
+ * @fn          llCsDbGetReportedConnId
+ *
+ * @brief       Get Reported Connection ID
+ * This function is needed because in test mode we assume a connId = 0
+ * However, the spec specifies connID = 0xFFFF
+ * We can't use this value in the rest of the code because the llCs DB
+ * is based on the maxNumConns (1-8). 0xFFFF would create an attempt to
+ * access beyond the boundaries of the llCs
+ * So only when it comes to reporting the connId, it will be reported as 0xFFFF
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      ConnId
+ */
+uint16 llCsDbGetReportedConnId(void);
+
+/*******************************************************************************
+ * @fn          llCsDbGetChanOverrideCfg
+ *
+ * @brief       Returns the bit for channel config in overrideConfig
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Channel Config Bit
+ */
+uint8 llCsDbGetChanOverrideCfg(void);
+
+/*******************************************************************************
+ * @fn          llCsDbGetOverrideCfg
+ *
+ * @brief       Get the CS Override Config
+ * This function checks if CS Test Mode is used, returns TRUE and copies the
+ * content of the test override config into the provided pointer
+ *
+ * input parameters
+ *
+ * @param       pOverrideConfig - Pointer to override config
+ *
+ * output parameters
+ *
+ * @param       pOverrideCfg - Pointer to Override Config
+ *
+ * @return      TRUE - if CS Test Mode is enabled
+ *              FALSE - if CS Test Mode is disabled
+ */
+uint8 llCsDbGetOverrideCfg(csOverrideCfg_t* pOverrideCfg);
+
+/*******************************************************************************
+ * @fn          llCsDbOverrideChanIndexArr
+ *
+ * @brief       Override the shuffled channel index array
+ * This function is to be used when the override config bit 0 is enabled.
+ * It is assumed that the filtered channel map is initialized, namely, the
+ * the function llCsDbInitChanIndexInfo was used.
+ * This function will free the shuflled arrays since they will be overriden.
+ * Instead, they will both point to filteredChanIndex->filteredChanArr which
+ * shall contain the override channels.
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbOverrideChanIndexArr(void);
+
+/*******************************************************************************
+ * @fn          llCsDbGetOverrideToneExt
+ *
+ * @brief       Get Override Tone Extension
+ *
+ * input parameters
+ *
+ * @param       None
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      Override Tone Extension
+ */
+uint8 llCsDbGetOverrideToneExt(void);
+
+/*******************************************************************************
+ * @fn          llCsDbSetNextOverrideToneExt
+ *
+ * @brief       Set Next Override Tone Extension
+ * This function should only be used when the inital override tone extension is
+ * 0x04. In this case since the Tone Extension value shall loop over 0-3.
+ * This function shall help achieve this by storing the value:
+ *     (usedToneExtension+1) | 0x04
+ * When the value is retrieved, the MSB is dropped giving the values 0,1,2,3.
+ *
+ * input parameters
+ *
+ * @param       toneExt - used tone extension
+ *
+ * output parameters
+ *
+ * @param       None
+ *
+ * @return      None
+ */
+void llCsDbSetNextOverrideToneExt(uint8 toneExt);
+
+/*******************************************************************************
+ * @fn          llCsDbGetAAOverride
+ *
+ * @brief       Get the Access Address Override
+ *
+ * input parameters
+ *
+ * @param       initTxAA - pointer to initiator Tx AA
+ * @param       refTxAA - pointer to reflector Tx AA
+ *
+ * output parameters
+ *
+ * @param       initTxAA - pointer to initiator Tx AA
+ * @param       refTxAA - pointer to reflector Tx AA
+ *
+ * @return      None
+ */
+void llCsDbGetAAOverride(uint32_t* initTxAA, uint32_t* refTxAA);
+
+/*******************************************************************************
+ * @fn          llCsDbGetPayloadOverride
+ *
+ * @brief       Get the Payload Override
+ *
+ * input parameters
+ *
+ * @param       pPlTx - pointer to Tx Payload
+ * @param       pPlRx - pointer to Rx Payload
+ *
+ * output parameters
+ *
+ * @param       pPlTx - pointer to Tx Payload
+ * @param       pPlRx - pointer to Rx Payload
+ *
+ * @return      payload Pattern
+ */
+uint8 llCsDbGetPayloadOverride(uint32_t* pPlTx, uint32_t* pPlRx);

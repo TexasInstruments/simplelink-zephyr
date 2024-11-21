@@ -25,13 +25,13 @@
 #include "osal_bufmgr.h"
 #include "map_direct.h"
 
-#ifndef CONFIG_ZEPHYR
+#ifndef ICALL_LITE
+#if !defined(HCI_TL_NONE)
 #include "npi.h"
-#endif // CONFIG_ZEPHYR
+#endif // !HCI_TL_NONE
+#endif // ICALL_LITE
 
-#if defined( CC26XX ) || defined( CC13XX ) || defined( CC23X0 )
 #include "ll_common.h"
-#endif // CC26XX || CC13XX || CC23X0
 
 extern uint8 hciPTMenabled;
 
@@ -229,8 +229,6 @@ hciStatus_t hciLESetConnectionlessIqSamplingEnable ( uint8 *pBuf );
 hciStatus_t hciExtSetRxGain                        ( uint8 *pBuf );
 hciStatus_t hciExtSetTxPower                       ( uint8 *pBuf );
 hciStatus_t hciExtSetTxPowerDbm                    ( uint8 *pBuf );
-hciStatus_t hciExtExtendRfRange                    ( uint8 *pBuf );
-hciStatus_t hciExtHaltDuringRf                     ( uint8 *pBuf );
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
 hciStatus_t hciExtOnePktPerEvt                     ( uint8 *pBuf );
 #endif // ADV_CONN_CFG | INIT_CFG
@@ -448,8 +446,6 @@ cmdPktTable_t hciCmdTable[] =
   {HCI_EXT_SET_RX_GAIN                      , hciExtSetRxGain                  },
   {HCI_EXT_SET_TX_POWER                     , hciExtSetTxPower                 },
   {HCI_EXT_SET_TX_POWER_DBM                 , hciExtSetTxPowerDbm              },
-  {HCI_EXT_EXTEND_RF_RANGE                  , hciExtExtendRfRange              },
-  {HCI_EXT_HALT_DURING_RF                   , hciExtHaltDuringRf               },
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
   {HCI_EXT_ONE_PKT_PER_EVT                  , hciExtOnePktPerEvt               },
 #endif // ADV_CONN_CFG | INIT_CFG
@@ -1106,8 +1102,8 @@ hciStatus_t hciHostBufferSize( uint8 *pBuf )
 hciStatus_t hciHostNumCompletedPkt( uint8 *pBuf )
 {
   return HCI_HostNumCompletedPktCmd( pBuf[0],
-                                     (uint16 *)&pBuf[1],
-                                     (uint16 *)&pBuf[3] );
+                                     BUILD_UINT16(pBuf[1], pBuf[2]),
+                                     BUILD_UINT16(pBuf[3], pBuf[4]));
 }
 #endif // ADV_CONN_CFG | INIT_CFG
 
@@ -3072,52 +3068,6 @@ hciStatus_t hciExtSetTxPowerDbm( uint8 *pBuf )
   return HCI_EXT_SetTxPowerDbmCmd( pBuf[0],
                                    pBuf[1]);
 }
-
-
-/*******************************************************************************
- * @fn          hciExtExtendRfRange
- *
- * @brief       Serial interface translation function for HCI API.
- *
- * input parameters
- *
- * @param       pBuf - Pointer to command parameters and payload.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      hciStatus_t
- */
-hciStatus_t hciExtExtendRfRange( uint8 *pBuf )
-{
-  // unused input parameter; PC-Lint error 715.
-  (void)pBuf;
-
-  return HCI_EXT_ExtendRfRangeCmd();
-}
-
-
-/*******************************************************************************
- * @fn          hciExtHaltDuringRf
- *
- * @brief       Serial interface translation function for HCI API.
- *
- * input parameters
- *
- * @param       pBuf - Pointer to command parameters and payload.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      hciStatus_t
- */
-hciStatus_t hciExtHaltDuringRf( uint8 *pBuf )
-{
-  return HCI_EXT_HaltDuringRfCmd( pBuf[0] );
-}
-
 
 /*******************************************************************************
  * @fn          hciExtSetMaxDtmTxPowerDbm

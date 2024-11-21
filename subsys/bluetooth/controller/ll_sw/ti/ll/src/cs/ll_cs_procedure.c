@@ -30,22 +30,17 @@
 #include "cs/ll_cs_sec.h"
 
 #include "ll_rat.h"
-#include "rom_jt.h"
 #include <math.h>
 
 #include <ti/log/Log.h>
 #include "ll_scheduler.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "cs/ll_cs_logs.h"
+#include "ll_enc.h"
 
 /*******************************************************************************
  * MACROS
  */
-#define CS_REVERSE_BYTES(n)                                                    \
-    ((n << 24) | (((n >> 16) << 24) >> 16) | (((n << 16) >> 24) << 16) |       \
-     (n >> 24))
-#define CS_REVERSE_TONE_EXTENSION_BITS(bits)                                   \
-    ((((bits & 0x01) << 1) | ((bits & 0x02) >> 1)) & 0x3)
 
 /*******************************************************************************
  * CONSTANTS
@@ -92,56 +87,8 @@
     (2 * (tSync + CS_T_GD) + 2 * (tPM + CS_T_SW) * (N_ANTENNA_PATHS + 1) +     \
      2 * CS_T_RD + tIP2)
 
-/*****
- * CS_TEST
- */
-#ifdef CS_TEST
-ble_cs_steps_buffer_t stepBuffHeader1 = {
-    .header = {
-        .__elem__ = {.next = NULL, .prev = NULL},
-        .length = SIZE_OF_BUFFER_DATA(BLE_CS_NUM_STEPS_PER_BUFFER),
-        .tailIndex = SIZE_OF_BUFFER_DATA(4),
-    }};
-
-ble_cs_steps_buffer_t ble_cs_steps_buffer_0 = {
-    .header =
-        {
-            .__elem__ = {.next = NULL, .prev = NULL},
-            .length = SIZE_OF_BUFFER_DATA(BLE_CS_NUM_STEPS_PER_BUFFER),
-            .tailIndex = SIZE_OF_BUFFER_DATA(
-                BLE_CS_NUM_STEPS_PER_BUFFER) // should be num_steps
-        },
-    .steps = {
-#ifdef CS_INITIATOR
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_0, 0x1458F092,
-                                 0xF0921458),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0x1458F092,
-                                 0xF0921458),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0x1458F092,
-                                 0xF0921458),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0x1458F092,
-                                 0xF0921458),
-#else
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_0, 0xF0921458,
-                                 0x1458F092),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0xF0921458,
-                                 0x1458F092),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0xF0921458,
-                                 0x1458F092),
-        BLE_CS_CREATE_BASIC_STEP(RCL_CmdBleCs_StepMode_3, 0xF0921458,
-                                 0x1458F092),
-#endif
-        /*    // ... and so on ... */
-    }};
-
-uint8 ble_cs_step_results_buffer_0[CS_RESULT_BUFF_SIZE] = {0};
-// uint8 ble_cs_step_results_buffer_1[ CS_RESULT_BUFF_SIZE ] = {0};
-uint16 ble_cs_steps_buffer_size = sizeof(ble_cs_steps_buffer_0);
-uint16 ble_cs_step_results_buffer_size = CS_RESULT_BUFF_SIZE;
-#else
 uint16 ble_cs_steps_buffer_size = 0;
 uint16 ble_cs_step_results_buffer_size = CS_RESULT_BUFF_SIZE;
-#endif
 
 /*******************************************************************************
  * EXTERNS
@@ -150,11 +97,7 @@ uint16 ble_cs_step_results_buffer_size = CS_RESULT_BUFF_SIZE;
 /*******************************************************************************
  * TYPEDEFS
  */
-typedef struct stepCarryOver
-{
-    uint8 cM; // main Mode carry over
-    uint8 cS; // sub Mode carry Over
-} stepCarryOver_t;
+typedef void (*pfnSetupStepFunc)(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType);
 
 /*******************************************************************************
  * LOCAL VARIABLES
@@ -175,7 +118,8 @@ uint8 chSelAlg;
 /* Number of Steps in Subevent */
 uint8 csNumSteps = 0;
 
-uint16 rttTypeTbl[N_RTT_TYPES] = {
+/* RTT Type Table */
+const uint16 rttTypeTbl[N_RTT_TYPES] = {
     0,  // RTT_COARSE
     32, // SOUNDING_SEQ_32
     96, // SOUNDING_SEQ_96
@@ -232,60 +176,104 @@ void llCsSetFeatureBit(void)
 /*******************************************************************************
  * Public function defined in ll_cs_procedure.h
  */
-uint8 llCsStartProcedure(llConnState_t* connPtr)
+csStatus_e llCsStartProcedure(llConnState_t* connPtr)
 {
     csProcedureEnable_t csData;
-    uint8 configId = llCsDbGetCurrentConfigId(connPtr->connId);
+    uint8 configId;
+    csStatus_e status;
 
-    if (configId == INVALID_CONFIG_ID)
+    if (connPtr != NULL)
     {
-        return (CS_STATUS_INVALID_CONFIG_ID);
-    }
-
-    /* Check if the procedure connected to this config ID is enabled */
-    if (llCsDbIsProcedureEnabled(connPtr->connId, configId) == CS_DISABLE)
-    {
-        llCsRclFreeTask(connPtr->connId, configId);
-        return (CS_STATUS_PROCEDURE_DISABLED);
-    }
-
-    if (llCsDbIsProcdureCompleted(connPtr->connId, CS_IND))
-    {
-        llCsDbGetProcedureEnableData(connPtr->connId, configId, &csData);
-        /* Is this the connEvent counter to begin the CS procedure? */
-        if ((csData.connEventCount == connPtr->currentEvent) &&
-            (connPtr->currentEvent != 0))
+        configId = llCsDbGetCurrentConfigId(connPtr->connId);
+        if (configId != INVALID_CONFIG_ID)
         {
-            llCsDbSetActiveConnId(llConns.currentConn);
-            // TODO add a check here to make sure that DRBG was initialized
-            if (connPtr->llTask->taskID == LL_TASK_ID_CENTRAL)
+            /* Check if the procedure connected to this config ID is enabled */
+            if (llCsDbIsProcedureEnabled(connPtr->connId, configId) == CS_DISABLE)
             {
-                llCsDbSetBleRole(CS_BLE_ROLE_CENTRAL);
-            }
-            else
-            {
-                llCsDbSetBleRole(CS_BLE_ROLE_PERIPHERAL);
+                llCsRclFreeTask(connPtr->connId);
+                return (CS_STATUS_PROCEDURE_DISABLED);
             }
 
-            llCsSetupSubEvent(connPtr);
-
-            /* Schedule the CS */
-            if (llState == LL_STATE_IDLE)
+            if (llCsDbIsProcdureCompleted(connPtr->connId, CS_IND))
             {
-                MAP_llScheduler();
+                llCsDbGetProcedureEnableData(connPtr->connId, configId, &csData);
+                /* Is this the connEvent counter to begin the CS procedure? */
+                if ((csData.connEventCount == connPtr->currentEvent) &&
+                    (connPtr->currentEvent != 0))
+                {
+                    llCsDbSetActiveConnId(llConns.currentConn);
+                    if (connPtr->llTask->taskID == LL_TASK_ID_CENTRAL)
+                    {
+                        llCsDbSetBleRole(CS_BLE_ROLE_CENTRAL);
+                    }
+                    else
+                    {
+                        llCsDbSetBleRole(CS_BLE_ROLE_PERIPHERAL);
+                    }
+
+                    llCsSetupSubEvent(connPtr->connId);
+
+                    /* Schedule the CS */
+                    if (llState == LL_STATE_IDLE)
+                    {
+                        MAP_llScheduler();
+                    }
+                }
             }
         }
+        status = CS_STATUS_SUCCESS;
     }
-
-    return (CS_STATUS_SUCCESS);
+    else
+    {
+        status = CS_STATUS_UNEXPECTED_PARAMETER;
+    }
+    return status;
 }
 
 /*******************************************************************************
  * Public function defined in ll_cs_procedure.h
  */
-uint8 llCsSetupSubEvent(llConnState_t* connPtr)
+csStatus_e llCsStartTestProcedure(void)
 {
-    if (llCsSetupRcl(connPtr->connId, csRclData) != CS_STATUS_SUCCESS)
+    csStatus_e status = CS_STATUS_SUCCESS;
+
+    status = llCsProcedureInitDrbg( CS_TEST_MODE_CONN_ID,
+                                    CS_TEST_MODE_CONFIG_ID);
+    if (status == CS_STATUS_SUCCESS)
+    {
+        status = llCsInitProcedureStepList(CS_TEST_MODE_CONN_ID,
+                                           CS_TEST_MODE_CONFIG_ID,
+                                           TRUE);
+        if (status == CS_STATUS_SUCCESS)
+        {
+            /* Build the step buffers */
+            llCsSetupStepBuffers(CS_TEST_MODE_CONN_ID,
+                                CS_TEST_MODE_CONFIG_ID,
+                                CS_NEW_SUBEVENT,
+                                csRclData.csStepsBuff0,
+                                csRclData.csStepsBuff1);
+        }
+    }
+
+    if(status == CS_STATUS_SUCCESS)
+    {
+        status = llCsSetupRcl(CS_TEST_MODE_CONN_ID, csRclData);
+    }
+
+    if (status == CS_STATUS_SUCCESS)
+    {
+        status = llCsSubmitTestCmd();
+    }
+
+    return (status);
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_procedure.h
+ */
+uint8 llCsSetupSubEvent(uint16 connId)
+{
+    if (llCsSetupRcl(connId, csRclData) != CS_STATUS_SUCCESS)
     {
         return (CS_STATUS_RCL_SETUP_ERROR);
     }
@@ -296,45 +284,59 @@ uint8 llCsSetupSubEvent(llConnState_t* connPtr)
 /*******************************************************************************
  * Public function defined in ll_cs_procedure.h
  */
-uint8 llCsStartStepListGen(llConnState_t* connPtr)
+uint8 llCsStartStepListGen(uint16 connId)
 {
     uint8 status = CS_STATUS_SUCCESS;
-    uint8 configId = llCsDbGetCurrentConfigId(connPtr->connId);
-    if (llCsDbIsProcdureCompleted(connPtr->connId, CS_START_PROCEDURE))
+    uint8 configId = llCsDbGetCurrentConfigId(connId);
+    if (llCsDbIsProcdureCompleted(connId, CS_START_PROCEDURE))
     {
         /* Initialize the DRBG engine */
-        if (llCsProcedureInitDrbg(connPtr->connId, configId) !=
+        if (llCsProcedureInitDrbg(connId, configId) !=
             CS_STATUS_SUCCESS)
         {
             /* An error occured, disable procedure */
-            llCsDbEnableProcedureParams(connPtr->connId, configId, CS_DISABLE);
+            llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
             return (CS_STATUS_DRBG_INIT_FAIL);
         }
-        status = llCsSetupStepList(connPtr, configId, TRUE);
+        status = llCsInitProcedureStepList(connId, configId, TRUE);
+        if (status == CS_STATUS_SUCCESS)
+        {
+            /* Build the step buffers */
+            llCsSetupStepBuffers(connId, configId, CS_NEW_SUBEVENT,
+                                csRclData.csStepsBuff0,
+                                csRclData.csStepsBuff1);
+        }
+
         if (status != CS_STATUS_SUCCESS)
         {
             /* An error occured, disable procedure */
-            llCsDbEnableProcedureParams(connPtr->connId, configId, CS_DISABLE);
+            llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
         }
-        llCsDbClearProcedureCompleted(connPtr->connId, CS_START_PROCEDURE);
+        llCsDbClearProcedureCompleted(connId, CS_START_PROCEDURE);
     }
-    else if (llCsDbGetNextProcedureFlag(connPtr->connId, configId))
+    else if (llCsDbGetNextProcedureFlag(connId, configId))
     {
-        status = llCsSetupStepList(connPtr, configId, TRUE);
+        status = llCsInitProcedureStepList(connId, configId, TRUE);
+        if ( status == CS_STATUS_SUCCESS)
+        {
+            /* build the step buffers */
+            llCsSetupStepBuffers(connId, configId, CS_NEW_SUBEVENT,
+                                csRclData.csStepsBuff0,
+                                csRclData.csStepsBuff1);
+        }
         if (status != CS_STATUS_SUCCESS)
         {
             /* An error occured, disable procedure */
-            llCsDbEnableProcedureParams(connPtr->connId, configId, CS_DISABLE);
+            llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
         }
-        llCsDbSetNextProcedureFlag(connPtr->connId, FALSE);
+        llCsDbSetNextProcedureFlag(connId, FALSE);
     }
     return status;
 }
 /*******************************************************************************
  * Public function defined in ll_cs_procedure.h
  */
-csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
-                           uint8 isfirstSE)
+csStatus_e llCsInitProcedureStepList(uint16 connId, uint8 configId, uint8 isfirstSE)
 {
     csConfigurationSet_t csConfig;
     csProcedureEnable_t procParams;
@@ -343,8 +345,8 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
     uint16 maxStepsPerSubevent = 0;
     uint16 remSteps = 0;
 
-    llCsDbGetConfiguration(connPtr->connId, configId, &csConfig);
-    llCsDbGetProcedureEnableData(connPtr->connId, configId, &procParams);
+    llCsDbGetConfiguration(connId, configId, &csConfig);
+    llCsDbGetProcedureEnableData(connId, configId, &procParams);
 
     /* Get max number of steps per subevent, based on subevent len */
     maxStepsPerSubevent = llCsNumStepsPerSubEvent(&csConfig, &procParams);
@@ -359,14 +361,14 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
     {
         /* this is the first subevent */
         /* Init Channel Index Array and shuffle it */
-        llCsInitChanIdxArr(configId, connPtr->connId, &csConfig);
-        numChans = llCsDbGetNumChan(connPtr->connId, configId);
+        MAP_llCsInitChanIdxArr(configId, connId, (uint8*)&csConfig);
+        numChans = llCsDbGetNumChan(connId, configId);
         numMainModeSteps = numChans * csConfig.chMRepetition;
     }
     else
     {
         /* not the first subevent, check if more steps are needed */
-        numMainModeSteps = llCsDbGetRemainingMmSteps(connPtr->connId, configId);
+        numMainModeSteps = llCsDbGetRemainingMmSteps(connId, configId);
         /* if all mainMode steps were done
            or, stepCount reached the max.*/
         if ((numMainModeSteps == 0) ||
@@ -374,7 +376,7 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
         {
             /* No more steps are needed! */
             /* set remaining steps to 0 (if not already so) */
-            llCsDbSetRemainingMmSteps(connPtr->connId, configId, 0);
+            llCsDbSetRemainingMmSteps(connId, configId, 0);
             return CS_STATUS_SUCCESS;
         }
     }
@@ -402,14 +404,14 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
         /* no more steps to do since the max-per-procedure is reached */
         remSteps = 0;
     }
-    llCsDbSetRemainingMmSteps(connPtr->connId, configId, remSteps);
+    llCsDbSetRemainingMmSteps(connId, configId, remSteps);
     /* set number of steps for the RCL command data */
     csRclData.numSteps = csNumSteps;
 
     /* set the subevent info counters */
-    llCsDbSetSubeventCount(connPtr->connId, CS_SE_INFO_NUM_STPES, csNumSteps);
-    llCsDbSetSubeventCount(connPtr->connId, CS_SE_INFO_STEP_COUNT, 0);
-    llCsDbSetSubeventCount(connPtr->connId, CS_SE_INFO_REPORT_COUNT, 0);
+    llCsDbSetSubeventCount(connId, CS_SE_INFO_NUM_STPES, csNumSteps);
+    llCsDbSetSubeventCount(connId, CS_SE_INFO_STEP_COUNT, 0);
+    llCsDbSetSubeventCount(connId, CS_SE_INFO_REPORT_COUNT, 0);
 
     /* Initialize the step buffers (allocate, set to zero, etc) */
     if (llCsInitStepBuffers() != CS_STATUS_SUCCESS)
@@ -417,12 +419,6 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
         return (CS_STATUS_INSUFFICIENT_MEMORY);
     }
 
-#ifdef CS_TEST
-    llCsTestStepList();
-#else
-    /* build the step buffers */
-    llCsSetupStepBuffers(connPtr->connId, &csConfig, csNumSteps, isfirstSE);
-#endif
     return (CS_STATUS_SUCCESS);
 }
 
@@ -432,27 +428,32 @@ csStatus_e llCsSetupStepList(llConnState_t* connPtr, uint8 configId,
 csStatus_e llCsInitChanIdxArr(uint8 configId, uint16 connId,
                             csConfigurationSet_t* csConfig)
 {
-    uint8 channelIndexArray[CS_FILTERED_CHAN_MAX_SIZE];
-    uint8 numChans;
-    csChanInfo_t* chanInfo;
-    csStatus_e status;
-    if ((uint8*)&csConfig->channelMap == NULL)
+    csStatus_e status = CS_STATUS_SUCCESS;
+    if (csConfig != NULL)
     {
-        return CS_STATUS_UNEXPECTED_PARAMETER;
+        /* Channel Override is not used, so go ahead and init the channel indes array */
+        uint8 channelIndexArray[CS_FILTERED_CHAN_MAX_SIZE];
+        uint8 numChans;
+        csChanInfo_t* chanInfo;
+        /* Channel Map to Filtered Channel Index Array */
+        numChans =
+            llCsChm2FilteredChanArr((uint8*)&channelIndexArray,
+                                (uint8*)&(csConfig->channelMap), CS_CHM_SIZE);
+        status = llCsDbInitChanIndexInfo(connId, configId, numChans,
+                                        (uint8*)&channelIndexArray);
+        if (status == CS_STATUS_SUCCESS)
+        {
+            chanInfo = llCsDbGetChanInfo(connId, configId);
+            /* shuffle mode 0 */
+            llCsShuffleIndexArray(CS_MODE_0, numChans, &chanInfo->mode0,
+                                (uint8*)&chanInfo->filteredChanArr);
+        }
     }
-    /* Channel Map to Filtered Channel Index Array */
-    numChans =
-        llCsChm2FilteredChanArr((uint8*)&channelIndexArray,
-                            (uint8*)&(csConfig->channelMap), CS_CHM_SIZE);
-    status = llCsDbInitChanIndexInfo(connId, configId, numChans,
-                                     (uint8*)&channelIndexArray);
-    if (status == CS_STATUS_SUCCESS)
+    else
     {
-        chanInfo = llCsDbGetChanInfo(connId, configId);
-        /* shuffle mode 0 */
-        llCsShuffleIndexArray(CS_MODE_0, numChans, &chanInfo->mode0,
-                              (uint8*)&chanInfo->filteredChanArr);
+        status = CS_STATUS_UNEXPECTED_PARAMETER;
     }
+
     return status;
 }
 
@@ -461,44 +462,36 @@ csStatus_e llCsInitChanIdxArr(uint8 configId, uint16 connId,
  */
 csStatus_e llCsInitStepBuffers(void)
 {
-    if (csRclData.buffsAllocated)
+    if (csRclData.buffsAllocated == FALSE)
     {
-        /* Buffers already allocated */
-        return (CS_STATUS_SUCCESS);
-    }
-    /* Allocate Memory for StepList */
-    csRclData.csStepsBuff0 = (ble_cs_steps_buffer_t*)MAP_osal_mem_alloc(
-        sizeof(ble_cs_steps_buffer_t) +
-        sizeof(RCL_CmdBleCs_Step) * CS_STEP_BUFF_MAX_SIZE);
-    if (csRclData.csStepsBuff0 == NULL)
-    {
-        return (CS_STATUS_INSUFFICIENT_MEMORY);
-    }
+        /* Allocate Memory for StepList */
+        csRclData.csStepsBuff0 = (csStepsBuffer_t*)MAP_osal_mem_alloc( sizeof(csStepsBuffer_t) + sizeof(RCL_CmdBleCs_Step) * CS_STEP_BUFF_MAX_SIZE);
+        if (csRclData.csStepsBuff0 == NULL)
+        {
+            return (CS_STATUS_INSUFFICIENT_MEMORY);
+        }
 
-    csRclData.csStepsBuff1 = (ble_cs_steps_buffer_t*)MAP_osal_mem_alloc(
-        sizeof(ble_cs_steps_buffer_t) +
-        sizeof(RCL_CmdBleCs_Step) * CS_STEP_BUFF_MAX_SIZE);
-    if (csRclData.csStepsBuff1 == NULL)
-    {
-        MAP_osal_mem_free(csRclData.csStepsBuff0);
-        return (CS_STATUS_INSUFFICIENT_MEMORY);
-    }
+        csRclData.csStepsBuff1 = (csStepsBuffer_t*)MAP_osal_mem_alloc( sizeof(csStepsBuffer_t) + sizeof(RCL_CmdBleCs_Step) * CS_STEP_BUFF_MAX_SIZE);
+        if (csRclData.csStepsBuff1 == NULL)
+        {
+            llCsFreeStepsAndResults();
+            return (CS_STATUS_INSUFFICIENT_MEMORY);
+        }
 
-    /* Allocate Memory for Step Result List */
-    csRclData.csStepResultsBuff0 =
-        (uint8_t*)MAP_osal_mem_alloc(CS_RESULT_BUFF_SIZE);
-    if (csRclData.csStepResultsBuff0 == NULL)
-    {
-        MAP_osal_mem_free(csRclData.csStepsBuff0);
-        MAP_osal_mem_free(csRclData.csStepsBuff1);
-        return (CS_STATUS_INSUFFICIENT_MEMORY);
-    }
+        /* Allocate Memory for Step Result List */
+        csRclData.csStepResultsBuff0 = (uint8_t*)MAP_osal_mem_alloc(CS_RESULT_BUFF_SIZE);
+        if (csRclData.csStepResultsBuff0 == NULL)
+        {
+            llCsFreeStepsAndResults();
+            return (CS_STATUS_INSUFFICIENT_MEMORY);
+        }
 
-    /* Set Initial Values */
-    MAP_osal_memset(csRclData.csStepResultsBuff0, 0, CS_RESULT_BUFF_SIZE);
-    MAP_osal_memset(&csOutput, 0x00, sizeof(RCL_CmdBleCs_Stats));
-    csRclData.csOutput = &csOutput;
-    csRclData.buffsAllocated = TRUE;
+        /* Set Initial Values */
+        MAP_osal_memset(csRclData.csStepResultsBuff0, 0, CS_RESULT_BUFF_SIZE);
+        MAP_osal_memset(&csOutput, 0x00, sizeof(RCL_CmdBleCs_Stats));
+        csRclData.csOutput = &csOutput;
+        csRclData.buffsAllocated = TRUE;
+    }
 
     return (CS_STATUS_SUCCESS);
 }
@@ -506,50 +499,35 @@ csStatus_e llCsInitStepBuffers(void)
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
  */
-csStatus_e llCsSetupStep(uint8 stepMode, uint16 connId, uint8 isRepetition,
-                       RCL_CmdBleCs_Step* stepData,
-                       csConfigurationSet_t* csConfig)
+csStatus_e llCsSetupStep(uint8 stepMode, uint16 connId,
+                         RCL_CmdBleCs_Step* stepData,
+                         csConfigurationSet_t* csConfig)
 {
+    csStatus_e status = CS_STATUS_SUCCESS;
+    static const pfnSetupStepFunc setupStepFuncs[] = { llCsSetupStep0,
+                                                       llCsSetupStep1,
+                                                       llCsSetupStep2,
+                                                       llCsSetupStep3 };
+
     stepData->antennaPermIdx = 0; // currently irrelevant
-    stepData->channelIdx =
-        llCsSelectStepChannel(stepMode, connId, isRepetition, csConfig);
+    stepData->channelIdx = MAP_llCsSelectStepChannel(connId, (uint8*)csConfig, stepMode);
+
     if (stepData->channelIdx == INVALID_CS_CHANNEL_IDX)
     {
-        return CS_STATUS_INVALID_CHAN_IDX;
+        status = CS_STATUS_INVALID_CHAN_IDX;
     }
-
-    switch (stepMode)
+    else
     {
-        case CS_MODE_0:
+        if (stepMode < (sizeof(setupStepFuncs) / sizeof(setupStepFuncs[0])))
         {
-            stepData->mode = CS_MODE_0;
-            llCsSetupStep0(csConfig->role, stepData, csConfig->rttType);
-            break;
+            setupStepFuncs[stepMode](csConfig->role, stepData, csConfig->rttType);
         }
-        case CS_MODE_1:
+        else
         {
-            stepData->mode = CS_MODE_1;
-            llCsSetupStep1(csConfig->role, stepData, csConfig->rttType);
-            break;
-        }
-        case CS_MODE_2:
-        {
-            stepData->mode = CS_MODE_2;
-            llCsSetupStep2(csConfig->role, stepData);
-            break;
-        }
-        case CS_MODE_3:
-        {
-            stepData->mode = CS_MODE_3;
-            llCsSetupStep3(csConfig->role, stepData, csConfig->rttType);
-            break;
-        }
-        default:
-        {
-            break;
+            status = CS_STATUS_INVALID_STEP_MODE;
         }
     }
-    return CS_STATUS_SUCCESS;
+    return status;
 }
 
 /*******************************************************************************
@@ -557,17 +535,18 @@ csStatus_e llCsSetupStep(uint8 stepMode, uint16 connId, uint8 isRepetition,
  */
 void llCsSetupStep0(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType)
 {
-    /* Select AA */
-    llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
+    if (stepData != NULL)
+    {
+        stepData->mode = CS_MODE_0;
+        /* Select AA */
+        MAP_llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
 
-    stepData->payloadLen = llCsConvertRttType(rttType);
+        /* No Payload for step 0*/
+        stepData->payloadLen = 0;
 
-    /* Get Random Sequence (optional) */
-    llCsGetRandomSequence(role, &(stepData->payloadRx[0]),
-                          &(stepData->payloadTx[0]), CS_GET_PL_LEN(rttType));
-
-    /* No Extension Bit for mode 0 */
-    stepData->toneExtension = 0;
+        /* No Extension Bit for mode 0 */
+        stepData->toneExtension = 0;
+    }
 }
 
 /*******************************************************************************
@@ -575,36 +554,42 @@ void llCsSetupStep0(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType)
  */
 void llCsSetupStep1(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType)
 {
-    /* Select AA */
-    llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
+    if (stepData != NULL)
+    {
+        stepData->mode = CS_MODE_1;
+        /* Select AA */
+        MAP_llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
 
-    /* Set Payload Len */
-    stepData->payloadLen = llCsConvertRttType(rttType);
+        /* Set Payload Len */
+        stepData->payloadLen = llCsConvertRttType(rttType);
+        /* Get Random Sequence (optional) */
+        MAP_llCsGetRandomSequence(role, &stepData->payloadTx[0],
+                            &stepData->payloadRx[0], CS_GET_PL_LEN(rttType));
 
-    /* Get Random Sequence (optional) */
-    llCsGetRandomSequence(role, &stepData->payloadRx[0],
-                          &stepData->payloadTx[0], CS_GET_PL_LEN(rttType));
-
-    /* No extension bit for stepMode 1 */
-    stepData->toneExtension = 0;
+        /* No extension bit for stepMode 1 */
+        stepData->toneExtension = 0;
+    }
 }
 
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
  */
-void llCsSetupStep2(uint8 role, RCL_CmdBleCs_Step* stepData)
+void llCsSetupStep2(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType)
 {
-    /* Set Tone Extention Bit */
-    stepData->toneExtension = llCsGetToneExtention();
+    if (stepData != NULL)
+    {
+        stepData->mode = CS_MODE_2;
+        /* Set Tone Extention Bit */
+        stepData->toneExtension = MAP_llCsGetToneExtention();
 
-    /* Set Mode-2 irrelevant step info to 0 */
-    stepData->aaRx = 0;
-    stepData->aaTx = 0;
-    stepData->payloadLen = 0;
-    MAP_osal_memset(stepData->payloadRx, 0, RCL_BLE_CS_MAX_PAYLOAD_SIZE);
-    MAP_osal_memset(stepData->payloadTx, 0, RCL_BLE_CS_MAX_PAYLOAD_SIZE);
-    // TODO when working with multiple antennas #BLE_LOKI-1366
-    // llCsRandomizeAntennaPaths
+        /* Set Mode-2 irrelevant step info to 0 */
+        stepData->aaRx = 0;
+        stepData->aaTx = 0;
+        stepData->payloadLen = 0;
+        // TODO when working with multiple antennas #BLE_LOKI-1366
+        // llCsRandomizeAntennaPaths
+        VOID rttType;
+    }
 }
 
 /*******************************************************************************
@@ -612,22 +597,23 @@ void llCsSetupStep2(uint8 role, RCL_CmdBleCs_Step* stepData)
  */
 void llCsSetupStep3(uint8 role, RCL_CmdBleCs_Step* stepData, uint8 rttType)
 {
-    /* Select AA */
-    llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
+    if (stepData != NULL)
+    {
+        stepData->mode = CS_MODE_3;
+        /* Select AA */
+        MAP_llCsSelectAA(role, &stepData->aaRx, &stepData->aaTx);
 
-    /* Set Payload Len */
-    stepData->payloadLen = llCsConvertRttType(rttType);
+        /* Set Payload Len */
+        stepData->payloadLen = llCsConvertRttType(rttType);
 
-    /* Get Random Sequence (optional) */
-    llCsGetRandomSequence(role, &(stepData->payloadRx[0]),
-                          &(stepData->payloadTx[0]), CS_GET_PL_LEN(rttType));
+        /* Get Random Sequence (optional) */
+        MAP_llCsGetRandomSequence(role, &(stepData->payloadTx[0]),
+                            &(stepData->payloadRx[0]), CS_GET_PL_LEN(rttType));
 
-    /* Set Tone Extention Bit */
-    stepData->toneExtension = llCsGetToneExtention();
-    // TODO when working with multiple antennas #BLE_LOKI-1366
-    // llCsRandomizeAntennaPaths
+        /* Set Tone Extention Bit */
+        stepData->toneExtension = MAP_llCsGetToneExtention();
+    }
 }
-
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
  */
@@ -681,12 +667,21 @@ uint16 llCsConvertRttType(uint8 rttType)
 uint8 llCsSelectStepChannel(uint8 stepMode, uint16 connId, uint8 isRepetition,
                             csConfigurationSet_t* csConfig)
 {
-    /* Return the channel index */
-    if (stepMode != CS_MODE_0)
+    uint8 chan;
+    if (csConfig != NULL)
     {
-        llCsShuffleMainModeChannelIndexArray(TRUE, connId, csConfig);
+        /* Return the channel index */
+        if (stepMode != CS_MODE_0)
+        {
+            llCsShuffleMainModeChannelIndexArray(TRUE, connId, csConfig);
+        }
+        chan = llCsDbGetChannelIndex(connId, csConfig->configId, stepMode);
     }
-    return llCsDbGetChannelIndex(connId, csConfig->configId, stepMode);
+    else
+    {
+        chan = INVALID_CS_CHANNEL_IDX;
+    }
+    return chan;
 }
 
 /*******************************************************************************
@@ -695,16 +690,21 @@ uint8 llCsSelectStepChannel(uint8 stepMode, uint16 connId, uint8 isRepetition,
 void llCsShuffleMainModeChannelIndexArray(uint8 isFirstSE, uint16 connId,
                                       csConfigurationSet_t* csConfig)
 {
-    csChanInfo_t* chanInfo = llCsDbGetChanInfo(connId, csConfig->configId);
-    uint8 numChan = chanInfo->numChans;
-    modeSpecificChanInfo_t chanArr = chanInfo->nonMode0;
-    if ((chanArr.numChanUsed == 0) ||
-        ((chanArr.numChanUsed == numChan) &&
-         (chanArr.numRepetitions < csConfig->chMRepetition)))
+    // Check if Channel Override is used
+    if (csConfig != NULL)
     {
+        // Channel Override is not used, so shuffle main mode index array
+        csChanInfo_t* chanInfo = llCsDbGetChanInfo(connId, csConfig->configId);
+        uint8 numChan = chanInfo->numChans;
+        modeSpecificChanInfo_t chanArr = chanInfo->nonMode0;
+        if ((chanArr.numChanUsed == 0) ||
+            ((chanArr.numChanUsed == numChan) &&
+            (chanArr.numRepetitions < csConfig->chMRepetition)))
+        {
 
-        llCsShuffleIndexArray(CS_NON_MODE_0, numChan, &chanArr,
-                              (uint8*)&chanInfo->filteredChanArr);
+            llCsShuffleIndexArray(CS_NON_MODE_0, numChan, &chanArr,
+                                (uint8*)&chanInfo->filteredChanArr);
+        }
     }
 }
 
@@ -739,9 +739,9 @@ uint8 llCsShuffleIndexArray(uint8 mode, uint8 numChan,
 /*******************************************************************************
  * Public function defined in ll_cs_procedure.h
  */
-void freeCsStepsAndResults(void)
+void llCsFreeStepsAndResults(void)
 {
-    if (csRclData.buffsAllocated)
+    if (csRclData.buffsAllocated == TRUE)
     {
         if (csRclData.csStepsBuff0 != NULL)
         {
@@ -782,12 +782,12 @@ uint8 llCsGetNumMainModeSteps(uint8 mainModeMaxSteps, uint8 mainModeMinSteps)
 uint8 llCsNumStepsPerSubEvent(csConfigurationSet_t* config,
                               csProcedureEnable_t* procParams)
 {
-    uint16 t0 = GET_TFCS(config->tFCs) +
+    uint16 t0 = llCsDbGetTfcs(config->tFCs) +
                 CS_MODE0_DUR(CS_GET_T_SYNC(config->csSyncPhy,
-                                           CS_GET_PL_LEN(config->rttType)),
-                             GET_TIP(config->tIP1));
+                             CS_GET_PL_LEN(config->rttType)),
+                             llCsDbGetTip(config->tIP1));
     uint16 mainModeTime = llCsMainModeDur(config->mainMode, config);
-    uint16 timeLeft = 0; // time left for mainMode Steps
+    uint32 timeLeft = 0; // time left for mainMode Steps
     uint8 numSteps = config->modeZeroSteps;
 
     /* time left after mode0Steps are done */
@@ -805,95 +805,94 @@ uint8 llCsNumStepsPerSubEvent(csConfigurationSet_t* config,
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
  */
-uint16 llCsMainModeDur(uint8 mode, csConfigurationSet_t* config)
+uint16 llCsMainModeDur(uint8 mode, csConfigurationSet_t* pConfig)
 {
-    uint8 tFCs = GET_TFCS(config->tFCs);
-    uint16 csPlSize = CS_GET_PL_LEN(config->rttType);
-    switch (mode)
+    uint16 retVal = 0;
+    if (pConfig != NULL)
     {
-        case CS_MODE_1:
-            return tFCs +
-                   CS_MODE1_DUR(CS_GET_T_SYNC(config->csSyncPhy, csPlSize),
-                                GET_TIP(config->tIP1));
-        case CS_MODE_2:
-            return tFCs +
-                   CS_MODE2_DUR(GET_TPM(config->tPM), GET_TIP(config->tIP2));
-        case CS_MODE_3:
-            return tFCs +
-                   CS_MODE3_DUR(CS_GET_T_SYNC(config->csSyncPhy, csPlSize),
-                                GET_TPM(config->tPM), GET_TIP(config->tIP2));
+        uint16 csPlSize = CS_GET_PL_LEN(pConfig->rttType);
+        uint8 tFCs = llCsDbGetTfcs(pConfig->tFCs);
+        switch (mode)
+        {
+            case CS_MODE_1:
+            {
+                retVal = tFCs +
+                        CS_MODE1_DUR(CS_GET_T_SYNC(pConfig->csSyncPhy, csPlSize),
+                                    llCsDbGetTip(pConfig->tIP1));
+                break;
+            }
+            case CS_MODE_2:
+            {
+                retVal = tFCs +
+                        CS_MODE2_DUR(llCsDbGetTpm(pConfig->tPM),
+                                    llCsDbGetTip(pConfig->tIP2));
+                break;
+            }
+            case CS_MODE_3:
+            {
+                retVal =  tFCs +
+                        CS_MODE3_DUR(CS_GET_T_SYNC(pConfig->csSyncPhy, csPlSize),
+                        llCsDbGetTpm(pConfig->tPM), llCsDbGetTip(pConfig->tIP2));
+                break;
+            }
+            default:
+            {
+                retVal = 0;
+            }
+        }
     }
-    return 0;
+    return retVal;
 }
 
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
  */
-void llCsSetupStepBuffers(uint16 connId, csConfigurationSet_t* csConfig,
-                          uint8 nSubeventSteps, uint8 isFirstSE)
+void llCsSetupStepBuffers(uint16 connId, uint8 configId,
+                          csNewSubevent_e isNewSubevent,
+                          csStepsBuffer_t* csStepsBuff0,
+                          csStepsBuffer_t* csStepsBuff1 )
 {
-    /* Setup mode-0 steps */
-    uint16 stepCount;
-    uint8 stepListSize = nSubeventSteps > CS_STEP_BUFF_MAX_SIZE
-                             ? CS_STEP_BUFF_MAX_SIZE
-                             : nSubeventSteps;
+    csConfigurationSet_t csConfig;
+    uint8 nSubeventSteps = llCsDbGetSubeventInfo(connId, CS_SE_INFO_NUM_STPES);
+    uint8 stepListSize = CS_NUM_BUFF_STEPS(nSubeventSteps);
 
-    for (stepCount = 0; stepCount < csConfig->modeZeroSteps; stepCount++)
+    VOID llCsDbGetConfiguration(connId, configId, &csConfig);
+
+    /* Setup first buffer of a new subevent */
+    if ( (csStepsBuff0 != NULL) && (isNewSubevent == CS_NEW_SUBEVENT) )
     {
-        llCsSetupStep(CS_MODE_0, connId, FALSE,
-                      &csRclData.csStepsBuff0->steps[stepCount], csConfig);
-        llCsSecIncreaseStepCount();
-        llCsDbIncrementSubeventInfoCounter(connId, CS_SE_INFO_STEP_COUNT, 1);
-        llCsLogStep(&csRclData.csStepsBuff0->steps[stepCount], stepCount);
+        /* Setup mode-0 steps */
+        llCsFillBuffer( connId, CS_MODE_0, csConfig.modeZeroSteps, &csStepsBuff0->steps[0]);
+
+        /* Setup the first buffer */
+        llCsFillBuffer( connId, csConfig.mainMode, stepListSize - csConfig.modeZeroSteps, &csStepsBuff0->steps[csConfig.modeZeroSteps]);
     }
 
-    /* Setup the first buffer */
-    for (stepCount = csConfig->modeZeroSteps; stepCount < stepListSize;
-         stepCount++)
+    /* Either setup second buffer of a new subevent
+    *  Or, setup the provided buffer of an ongoing subevent */
+    if ((csStepsBuff1 != NULL) &&
+        (((isNewSubevent == CS_NEW_SUBEVENT) && (stepListSize < nSubeventSteps)) ||
+         ((isNewSubevent == CS_CONTINUE_SUBEVENT) && (nSubeventSteps > 0U))))
     {
-        llCsSetupStep(csConfig->mainMode, connId, FALSE,
-                      &csRclData.csStepsBuff0->steps[stepCount], csConfig);
-        llCsSecIncreaseStepCount();
-        llCsDbIncrementSubeventInfoCounter(connId, CS_SE_INFO_STEP_COUNT, 1);
-        llCsLogStep(&csRclData.csStepsBuff0->steps[stepCount], stepCount);
-    }
-    /* Setup the second buffer, if needed */
-    if (stepCount < nSubeventSteps)
-    {
+        uint16 stepCount = llCsDbGetSubeventInfo(connId, CS_SE_INFO_STEP_COUNT);
         uint8 nBuffSteps = nSubeventSteps - stepCount;
-        stepListSize = nBuffSteps > CS_STEP_BUFF_MAX_SIZE
-                           ? CS_STEP_BUFF_MAX_SIZE
-                           : nBuffSteps;
-        for (stepCount = 0; stepCount < stepListSize; stepCount++)
-        {
-            llCsSetupStep(csConfig->mainMode, connId, FALSE,
-                          &csRclData.csStepsBuff1->steps[stepCount], csConfig);
-            llCsSecIncreaseStepCount();
-            llCsDbIncrementSubeventInfoCounter(connId, CS_SE_INFO_STEP_COUNT,
-                                               1);
-            llCsLogStep(&csRclData.csStepsBuff1->steps[stepCount], stepCount);
-        }
+        stepListSize = CS_NUM_BUFF_STEPS(nBuffSteps);
+        llCsFillBuffer(connId, csConfig.mainMode, stepListSize, &csStepsBuff1->steps[0]);
     }
 }
 
 /*******************************************************************************
- * Public function defined in ll_cs_rcl.h
+ * Public function defined in ll_cs_procedure.h
  */
-void llCsGenerateMoreSteps(uint16 connId, uint8 numSteps,
-                           ble_cs_steps_buffer_t* stepListBuf)
+void llCsFillBuffer(uint16 connId, uint8 mode, uint8 numSteps, RCL_CmdBleCs_Step* steps)
 {
-    csConfigurationSet_t csConfig;
     uint8 configId = llCsDbGetCurrentConfigId(connId);
-    llCsDbGetConfiguration(connId, configId, &csConfig);
+    csConfigurationSet_t csConfig;
+    VOID llCsDbGetConfiguration(connId, configId, &csConfig);
 
-    if (numSteps > CS_STEP_BUFF_MAX_SIZE)
-    {
-        numSteps = CS_STEP_BUFF_MAX_SIZE;
-    }
     for (uint8 i = 0; i < numSteps; i++)
     {
-        llCsSetupStep(csConfig.mainMode, connId, FALSE, &stepListBuf->steps[i],
-                      &csConfig);
+        llCsSetupStep(mode, connId, &steps[i], &csConfig);
         llCsSecIncreaseStepCount();
         llCsDbIncrementSubeventInfoCounter(connId, CS_SE_INFO_STEP_COUNT, 1);
     }
@@ -902,92 +901,84 @@ void llCsGenerateMoreSteps(uint16 connId, uint8 numSteps,
 /*******************************************************************************
  * function defined in ll_cs_procedure.h.
  */
-uint8 llCsSelectAA(uint8 csRole, uint32_t* aaRx, uint32_t* aaTx)
+void llCsSelectAA(uint8 csRole, uint32_t* aaRx, uint32_t* aaTx)
 {
-    uint8 csDrbgRes[CS_RNDM_SIZE];
-    uint32_t s0, s1, s2, s3;
-
-    /* Get 128 bit vector from DRBG */
-    csDrbg(128, csDrbgRes, CS_TID_AA_GENERATION);
-
-    /* Split vector into 4 32bit sections */
-    MAP_osal_memcpy(&s0, &csDrbgRes[0], 4);
-    s0 = CS_REVERSE_BYTES(s0);
-    MAP_osal_memcpy(&s1, &csDrbgRes[4], 4);
-    s1 = CS_REVERSE_BYTES(s1);
-    MAP_osal_memcpy(&s2, &csDrbgRes[8], 4);
-    s2 = CS_REVERSE_BYTES(s2);
-    MAP_osal_memcpy(&s3, &csDrbgRes[12], 4);
-    s3 = CS_REVERSE_BYTES(s3);
-
-    /* Select the AAs */
-    if (csRole == CS_ROLE_INITIATOR)
+    if (aaRx && aaTx)
     {
-        *aaTx = llCsAASelectionRules(s0, s1);
-        *aaRx = llCsAASelectionRules(s2, s3);
+        uint8 csDrbgRes[CS_RNDM_SIZE];
+        uint32_t s0, s1, s2, s3;
+
+        /* Get 128 bit vector from DRBG */
+        csDrbg(128, csDrbgRes, CS_TID_AA_GENERATION);
+
+        /* Split vector into 4 32bit sections */
+        MAP_osal_memcpy(&s0, &csDrbgRes[0], 4);
+        s0 = CS_REVERSE_BYTES(s0);
+        MAP_osal_memcpy(&s1, &csDrbgRes[4], 4);
+        s1 = CS_REVERSE_BYTES(s1);
+        MAP_osal_memcpy(&s2, &csDrbgRes[8], 4);
+        s2 = CS_REVERSE_BYTES(s2);
+        MAP_osal_memcpy(&s3, &csDrbgRes[12], 4);
+        s3 = CS_REVERSE_BYTES(s3);
+
+        /* Select the AAs */
+        if (csRole == CS_ROLE_INITIATOR)
+        {
+            *aaTx = llCsAASelectionRules(s0, s1);
+            *aaRx = llCsAASelectionRules(s2, s3);
+        }
+        else
+        {
+            *aaRx = llCsAASelectionRules(s0, s1);
+            *aaTx = llCsAASelectionRules(s2, s3);
+        }
+        llCsLogSelectedAccessAddress(aaTx, aaRx);
     }
-    else
-    {
-        *aaRx = llCsAASelectionRules(s0, s1);
-        *aaTx = llCsAASelectionRules(s2, s3);
-    }
-    llCsLogSelectedAccessAddress(aaTx, aaRx);
-    return TRUE;
 }
 
 /*******************************************************************************
  * Public function defined in ll_cs_procedure_internal.h.
  */
-uint8 llCsGetRandomSequence(uint8 csRole, uint32_t* pTx, uint32_t* pRx,
+void llCsGetRandomSequence(uint8 csRole, uint32_t* pTx, uint32_t* pRx,
                             uint8 payloadLen)
 {
-    if (payloadLen == 0)
+    if (pTx && pRx)
     {
-        MAP_osal_memset(pTx, 0, RCL_BLE_CS_MAX_PAYLOAD_SIZE);
-        MAP_osal_memset(pRx, 0, RCL_BLE_CS_MAX_PAYLOAD_SIZE);
+        // There ar eno overrides, so generate payload
+        if (payloadLen > 0U)
+        {
+            if (csRole == CS_ROLE_INITIATOR)
+            {
+                csDrbg(payloadLen, (uint8*)pTx, CS_TID_RANDOM_SEQUENCE_GENERATION);
+                csDrbg(payloadLen, (uint8*)pRx, CS_TID_RANDOM_SEQUENCE_GENERATION);
+            }
+            else
+            {
+                csDrbg(payloadLen, (uint8*)pRx, CS_TID_RANDOM_SEQUENCE_GENERATION);
+                csDrbg(payloadLen, (uint8*)pTx, CS_TID_RANDOM_SEQUENCE_GENERATION);
+            }
+            /* The DRBG output is transmitted in reverse */
+            llCsReversePayload((uint8*)pRx, (uint8*)pTx, payloadLen >> 3);
+        }
+        llCsLogRandomSequence(pTx, pRx, payloadLen);
     }
-    if (csRole == CS_ROLE_INITIATOR)
-    {
-        csDrbg(payloadLen, (uint8*)pTx, CS_TID_RANDOM_SEQUENCE_GENERATION);
-        csDrbg(payloadLen, (uint8*)pRx, CS_TID_RANDOM_SEQUENCE_GENERATION);
-    }
-    else
-    {
-        csDrbg(payloadLen, (uint8*)pRx, CS_TID_RANDOM_SEQUENCE_GENERATION);
-        csDrbg(payloadLen, (uint8*)pTx, CS_TID_RANDOM_SEQUENCE_GENERATION);
-    }
-    llCsLogRandomSequence(pTx, pRx, payloadLen);
-    return TRUE;
 }
 
 /*******************************************************************************
  * Public function defined in ll_cs_procedure_internal.h.
  */
-uint8 llCsGetToneExtention()
+uint8 llCsGetToneExtention(void)
 {
-    uint8 drbgBits = 0;
     uint8 toneExtension = 0;
 
-    /* Get Tone Bits from DRBG */
-    csDrbg(CS_TONE_EXTENSION_BITS_NUM, &drbgBits, CS_TID_CS_TONE_SLOT);
+    /* Override is not used so get Tone Bits from DRBG */
+    csDrbg(CS_TONE_EXTENSION_BITS_NUM, &toneExtension, CS_TID_CS_TONE_SLOT);
 
-    /* Reverse bits */
-    toneExtension = CS_REVERSE_TONE_EXTENSION_BITS(drbgBits);
+    /* Consider only 2 bits and reverse */
+    toneExtension = CS_REVERSE_TONE_EXTENSION_BITS(toneExtension & 0x03U);
 
     return toneExtension;
 }
-
-#ifdef CS_TEST
-/*******************************************************************************
- * Internal function defined in ll_cs_procedure_internal.h
- */
-void llCsTestStepList(void)
-{
-    MAP_osal_memcpy(csRclData.csStepsBuff0, &ble_cs_steps_buffer_0,
-                    sizeof(RCL_CmdBleCs_Step) * BLE_CS_NUM_STEPS_PER_BUFFER +
-                        sizeof(ble_cs_steps_buffer_t));
-}
-#endif // cs test
 
 /*******************************************************************************
  * Internal function defined in ll_cs_procedure_internal.h
@@ -1091,4 +1082,16 @@ uint8 llCsChm2FilteredChanArr(uint8* pDecimalArray, uint8* pBitMapArray,
         }
     }
     return channelCounter;
+}
+
+/*******************************************************************************
+ * Internal function defined in ll_cs_procedure_internal.h.
+ */
+void llCsReversePayload(uint8* pl1, uint8* pl2, uint8 size)
+{
+    if (pl1 && pl2)
+    {
+        MAP_LL_ENC_ReverseBytes(pl1, size);
+        MAP_LL_ENC_ReverseBytes(pl2, size);
+    }
 }

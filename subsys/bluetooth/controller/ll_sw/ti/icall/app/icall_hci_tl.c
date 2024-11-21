@@ -133,48 +133,6 @@
 #define HOST_OPCODE(csg, opcode)                  ((((csg) & 0x7) << 7) | ((opcode) & 0x7F))
 
 
-#ifdef STACK_LIBRARY
-#define HCI_EXTENDED_ENTRY(op, idx, ruleBuffer) \
-{(op), 1, ((uint32_t) idx), (uint32_t)(ruleBuffer)}
-// Abstraction of a HCI translation table entry.
-#define HCI_TRANSLATION_ENTRY(op, idx, r0, r1, r2, r3, r4, r5, r6, r7) \
-{ (op), 0,  ((uint32_t)idx), HPARAMS(r0, r1, r2, r3, r4, r5, r6, r7) }
-
-#else
-
-#define HCI_EXTENDED_ENTRY(op, idx, ruleBuffer) \
-{(op), EXTENDED_PARAMS_CMD_IDX_GROUP(idx), (uint32_t)(ruleBuffer)}
-// Abstraction of a HCI translation table entry.
-#define HCI_TRANSLATION_ENTRY(op, idx, r0, r1, r2, r3, r4, r5, r6, r7) \
-{ (op), (idx), HPARAMS(r0, r1, r2, r3, r4, r5, r6, r7) }
-
-#endif
-
-// HCI Rule Codes.
-#define HLEN                                      0x8 // buffer len type.
-#define HPTR                                      0x4 // pointer type.
-#define HU32                                      0x3 // 4 octets. Intentionally uses 2 bits.
-#define HU16                                      0x2 // 2 octets.
-#define HU8                                       0x1 // 1 octet.
-#define HNP                                       0x0 // No Parameter. Encountering this rule ends the
-                                                      // translation a call to the stack is made.
-
-// Pointers.
-#define HU8PTR                                    (HPTR | HU8)  // Pointer to buffer of 1 byte values.
-#define HU16PTR                                   (HPTR | HU16) // Pointer to buffer of 2 byte values.
-
-// Pointer mask.
-#define HPTRMASK                                  0xB
-
-// Buf counters.
-#define HU8LEN                                    (HLEN | HU8)         // 1 byte parameter buffer length counter.
-#define H2B                                       (HLEN | HPTR)        // implicit  2 byte count.
-#define HAB                                       (HLEN | HPTR | HU8)  // implicit  6 byte count.
-#define H8B                                       (HLEN | HPTR | HU16) // implicit  8 byte count.
-#define HKB                                       (HLEN | HPTR | HU32) // implicit 16 byte count.
-
-#define HCI_TL_LE_CREATE_CONN_NUM_PARAMS          12
-
 #define RSP_PAYLOAD_IDX                           6
 #define MAX_RSP_DATA_LEN                          100
 #define MAX_RSP_BUF                               (RSP_PAYLOAD_IDX + MAX_RSP_DATA_LEN)
@@ -225,29 +183,7 @@
 /*********************************************************************
  * TYPEDEFS
  */
-#ifdef STACK_LIBRARY
-typedef struct
-{
-  uint16_t opcode;
-  uint8_t  extFlag;
-  uint32_t cmdIdx;
-  uint32_t paramRules;
-} hciTranslatorEntry_t;
-#define IDX_CAST (uint32_t)
 
-#else
-typedef struct
-{
-  uint16_t opcode;
-  uint16_t cmdIdx;
-  uint32_t paramRules;
-} hciTranslatorEntry_t;
-#define IDX_CAST
-#endif
-
-typedef const hciTranslatorEntry_t hciEntry_t;
-
-typedef uint32_t hci_arg_t;
 
 typedef struct
 {
@@ -316,7 +252,6 @@ typedef struct
  */
 
 extern const uint16_t ll_buildRevision;
-extern uint32         lastAppOpcodeIdxSent;
 #ifndef CONTROLLER_ONLY
 extern gattAttribute_t gattAttrTbl[];
 #endif // !CONTROLLER_ONLY
@@ -382,322 +317,10 @@ static const gapBondCBs_t host_tl_bondCB =
 };
 
 #endif //GAP_BOND_MGR
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-#ifndef LEGACY_CMD
-static uint8_t hci_tl_le_create_conn_params[] =
-{
-  HCI_TL_LE_CREATE_CONN_NUM_PARAMS,
-  HPARAMS_DUPLE(HU16, HU16),
-  HPARAMS_DUPLE(HU8, HU8),
-  HPARAMS_DUPLE(HAB, HU8),
-  HPARAMS_DUPLE(HU16, HU16),
-  HPARAMS_DUPLE(HU16, HU16),
-  HPARAMS_DUPLE(HU16, HU16)
-};
-#endif // LEGACY_CMD
-#endif /* defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG) */
-
-static hciEntry_t hciTranslationTable[] =
-{
-  // Opcode                                                            Command function index                               Param 0        1        2        3        4        5        6        7
-  HCI_TRANSLATION_ENTRY(HCI_READ_RSSI,                                 IDX_CAST IDX_HCI_ReadRssiCmd,                              HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_SET_EVENT_MASK,                            IDX_CAST IDX_HCI_SetEventMaskCmd,                          HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_SET_EVENT_MASK_PAGE_2,                     IDX_CAST IDX_HCI_SetEventMaskPage2Cmd,                     HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#ifndef LEGACY_CMD
-  HCI_TRANSLATION_ENTRY(HCI_RESET,                                     IDX_CAST IDX_HCI_ResetCmd,                                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // LEGACY_CMD
-  HCI_TRANSLATION_ENTRY(HCI_READ_LOCAL_VERSION_INFO,                   IDX_CAST IDX_HCI_ReadLocalVersionInfoCmd,                  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_LOCAL_SUPPORTED_COMMANDS,             IDX_CAST IDX_HCI_ReadLocalSupportedCommandsCmd,            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_LOCAL_SUPPORTED_FEATURES,             IDX_CAST IDX_HCI_ReadLocalSupportedFeaturesCmd,            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_BDADDR,                               IDX_CAST IDX_HCI_ReadBDADDRCmd,                            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_RECEIVER_TEST,                          IDX_CAST IDX_HCI_LE_ReceiverTestCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_TRANSMITTER_TEST,                       IDX_CAST IDX_HCI_LE_TransmitterTestCmd,                    HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_TEST_END,                               IDX_CAST IDX_HCI_LE_TestEndCmd,                            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ENCRYPT,                                IDX_CAST IDX_HCI_LE_EncryptCmd,                            HKB,     HKB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_RAND,                                   IDX_CAST IDX_HCI_LE_RandCmd,                               HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_SUPPORTED_STATES,                  IDX_CAST IDX_HCI_LE_ReadSupportedStatesCmd,                HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_ACCEPT_LIST_SIZE,                  IDX_CAST IDX_HCI_LE_ReadAcceptListSizeCmd,                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CLEAR_ACCEPT_LIST,                      IDX_CAST IDX_HCI_LE_ClearAcceptListCmd,                    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ADD_ACCEPT_LIST,                        IDX_CAST IDX_HCI_LE_AddAcceptListCmd,                      HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_REMOVE_ACCEPT_LIST,                     IDX_CAST IDX_HCI_LE_RemoveAcceptListCmd,                   HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_EVENT_MASK,                         IDX_CAST IDX_HCI_LE_SetEventMaskCmd,                       HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,          IDX_CAST IDX_HCI_LE_ReadLocalSupportedFeaturesCmd,         HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_BUFFER_SIZE,                       IDX_CAST IDX_HCI_LE_ReadBufSizeCmd,                        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_RANDOM_ADDR,                        IDX_CAST IDX_HCI_LE_SetRandomAddressCmd,                   HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_HOST_FEATURE,                       IDX_CAST IDX_HCI_LE_SetHostFeature,                        HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_ADV_CHANNEL_TX_POWER,              IDX_CAST IDX_HCI_LE_ReadAdvChanTxPowerCmd,                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && ((CTRL_CONFIG & ADV_NCONN_CFG) || (CTRL_CONFIG & ADV_CONN_CFG)))
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_DISCONNECT,                                IDX_CAST IDX_HCI_DisconnectCmd,                            HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_CHANNEL_MAP,                       IDX_CAST IDX_HCI_LE_ReadChannelMapCmd,                     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_REMOTE_USED_FEATURES,              IDX_CAST IDX_HCI_LE_ReadRemoteUsedFeaturesCmd,             HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_REMOTE_VERSION_INFO,                  IDX_CAST IDX_HCI_ReadRemoteVersionInfoCmd,                 HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_TRANSMIT_POWER,                       IDX_CAST IDX_HCI_ReadTransmitPowerLevelCmd,                HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_SET_CONTROLLER_TO_HOST_FLOW_CONTROL,       IDX_CAST IDX_HCI_SetControllerToHostFlowCtrlCmd,           HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_HOST_BUFFER_SIZE,                          IDX_CAST IDX_HCI_HostBufferSizeCmd,                        HU16,    HU8,     HU16,    HU16,    HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_HOST_NUM_COMPLETED_PACKETS,                IDX_CAST IDX_HCI_HostNumCompletedPktCmd,                   HU8LEN,  HU16PTR, HU16PTR, HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_HOST_CHANNEL_CLASSIFICATION,        IDX_CAST IDX_HCI_LE_SetHostChanClassificationCmd,          HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG)))
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_HOST_DEFAULT_CHANNEL_CLASSIFICATION,    IDX_CAST IDX_HCI_EXT_SetHostDefChanClassificationCmd, HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_HOST_CONNECTION_CHANNEL_CLASSIFICATION, IDX_CAST IDX_HCI_EXT_SetHostConnChanClassificationCmd,HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-
-  // V4.2 - Extended Data Length
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_MAX_DATA_LENGTH,                   IDX_CAST IDX_HCI_LE_ReadMaxDataLenCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_DATA_LENGTH,                        IDX_CAST IDX_HCI_LE_SetDataLenCmd,                         HU16,    HU16,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_WRITE_SUGGESTED_DEFAULT_DATA_LENGTH,    IDX_CAST IDX_HCI_LE_WriteSuggestedDefaultDataLenCmd,       HU16,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_SUGGESTED_DEFAULT_DATA_LENGTH,     IDX_CAST IDX_HCI_LE_ReadSuggestedDefaultDataLenCmd,        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-
-  // V4.1
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_READ_AUTH_PAYLOAD_TIMEOUT,                 IDX_CAST IDX_HCI_ReadAuthPayloadTimeoutCmd,                HU16,    HU16PTR, HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_WRITE_AUTH_PAYLOAD_TIMEOUT,                IDX_CAST IDX_HCI_WriteAuthPayloadTimeoutCmd,               HU16,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_REMOTE_CONN_PARAM_REQ_REPLY,            IDX_CAST IDX_HCI_LE_RemoteConnParamReqReplyCmd,            HU16,    HU16,    HU16,    HU16,    HU16,    HU16,    HU16,    HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_REMOTE_CONN_PARAM_REQ_NEG_REPLY,        IDX_CAST IDX_HCI_LE_RemoteConnParamReqNegReplyCmd,         HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-  // V4.2 - Privacy 1.2
-  HCI_TRANSLATION_ENTRY(HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,           IDX_CAST IDX_HCI_LE_AddDeviceToResolvingListCmd,           HU8,     HAB,     HKB,     HKB,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_REMOVE_DEVICE_FROM_RESOLVING_LIST,      IDX_CAST IDX_HCI_LE_RemoveDeviceFromResolvingListCmd,      HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CLEAR_RESOLVING_LIST,                   IDX_CAST IDX_HCI_LE_ClearResolvingListCmd,                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_RESOLVING_LIST_SIZE,               IDX_CAST IDX_HCI_LE_ReadResolvingListSizeCmd,              HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_PEER_RESOLVABLE_ADDRESS,           IDX_CAST IDX_HCI_LE_ReadPeerResolvableAddressCmd,          HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_LOCAL_RESOLVABLE_ADDRESS,          IDX_CAST IDX_HCI_LE_ReadLocalResolvableAddressCmd,         HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,          IDX_CAST IDX_HCI_LE_SetAddressResolutionEnableCmd,         HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_RESOLVABLE_PRIVATE_ADDRESS_TIMEOUT, IDX_CAST IDX_HCI_LE_SetResolvablePrivateAddressTimeoutCmd, HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PRIVACY_MODE,                       IDX_CAST IDX_HCI_LE_SetPrivacyModeCmd,                     HU8,     HAB,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // V4.2 - Secure Connections
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_LOCAL_P256_PUBLIC_KEY,             IDX_CAST IDX_HCI_LE_ReadLocalP256PublicKeyCmd,             HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_GENERATE_DHKEY,                         IDX_CAST IDX_HCI_LE_GenerateDHKeyCmd,                      HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // V5.0 - 2M and Coded PHY
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_PHY,                               IDX_CAST IDX_HCI_LE_ReadPhyCmd,                            HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_DEFAULT_PHY,                        IDX_CAST IDX_HCI_LE_SetDefaultPhyCmd,                      HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PHY,                                IDX_CAST IDX_HCI_LE_SetPhyCmd,                             HU16,    HU8,     HU8,     HU8,     HU16,    HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ENHANCED_RECEIVER_TEST,                 IDX_CAST IDX_HCI_LE_EnhancedRxTestCmd,                     HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ENHANCED_TRANSMITTER_TEST,              IDX_CAST IDX_HCI_LE_EnhancedTxTestCmd,                     HU8,     HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ENHANCED_CTE_RECEIVER_TEST,             IDX_CAST IDX_HCI_LE_EnhancedCteRxTestCmd,                  HU8,     HU8,     HU8,     HU8,     HU8,     HU8,     HU8,     HU8PTR),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ENHANCED_CTE_TRANSMITTER_TEST,          IDX_CAST IDX_HCI_LE_EnhancedCteTxTestCmd,                  HU8,     HU8,     HU8,     HU8,     HU8,     HU8,     HU8,     HU8PTR),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-  // V5.2 - Secure Connections
-  HCI_TRANSLATION_ENTRY(HCI_LE_GENERATE_DHKEY_V2,                      IDX_CAST IDX_HCI_LE_GenerateDHKeyV2Cmd,                    HU8PTR,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // Advertiser
-#ifndef LEGACY_CMD
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_ADV_PARAM,                          IDX_CAST IDX_HCI_LE_SetAdvParamCmd,                        HU16,    HU16,    HU8,     HU8,     HU8,     HAB,     HU8,     HU8),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_ADV_DATA,                           IDX_CAST IDX_HCI_LE_SetAdvDataCmd,                         HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_SCAN_RSP_DATA,                      IDX_CAST IDX_HCI_LE_SetScanRspDataCmd,                     HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_ADV_ENABLE,                         IDX_CAST IDX_HCI_LE_SetAdvEnableCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG)))
-
-  // Scanner
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_SCAN_PARAM,                         IDX_CAST IDX_HCI_LE_SetScanParamCmd,                       HU8,     HU16,    HU16,    HU8,     HU8,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_SCAN_ENABLE,                        IDX_CAST IDX_HCI_LE_SetScanEnableCmd,                      HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG))
-#endif // LEGACY_CMD
-
-  // Initiator
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG)
-#ifndef LEGACY_CMD
-  HCI_EXTENDED_ENTRY(HCI_LE_CREATE_CONNECTION,                         IDX_CAST IDX_HCI_LE_CreateConnCmd,                         hci_tl_le_create_conn_params),
-#endif // LEGACY_CMD
-  HCI_TRANSLATION_ENTRY(HCI_LE_CREATE_CONNECTION_CANCEL,               IDX_CAST IDX_HCI_LE_CreateConnCancelCmd,                   HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_START_ENCRYPTION,                       IDX_CAST IDX_HCI_LE_StartEncyptCmd,                        HU16,    H8B,     H2B,     HKB,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & INIT_CFG))
-
-  // Connection Updates
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_CONNECTION_UPDATE,                      IDX_CAST IDX_HCI_LE_ConnUpdateCmd,                         HU16,    HU16,    HU16,    HU16,    HU16,    HU16,    HU16,    HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-  // Security Responder
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  HCI_TRANSLATION_ENTRY(HCI_LE_LTK_REQ_REPLY,                          IDX_CAST IDX_HCI_LE_LtkReqReplyCmd,                        HU16,    HKB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_LTK_REQ_NEG_REPLY,                      IDX_CAST IDX_HCI_LE_LtkReqNegReplyCmd,                     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG))
-
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_TX_POWER,                          IDX_CAST IDX_HCI_LE_ReadTxPowerCmd,                        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_RF_PATH_COMPENSATION,              IDX_CAST IDX_HCI_LE_ReadRfPathCompCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_WRITE_RF_PATH_COMPENSATION,             IDX_CAST IDX_HCI_LE_WriteRfPathCompCmd,                    HU16,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // CTE Connection commands
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTION_CTE_RECEIVE_PARAMS,      IDX_CAST IDX_HCI_LE_SetConnectionCteReceiveParamsCmd,      HU16,    HU8,     HU8,     HU8,     HU8PTR,  HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTION_CTE_TRANSMIT_PARAMS,     IDX_CAST IDX_HCI_LE_SetConnectionCteTransmitParamsCmd,     HU16,    HU8,     HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTION_CTE_REQUEST_ENABLE,      IDX_CAST IDX_HCI_LE_SetConnectionCteRequestEnableCmd,      HU16,    HU8,     HU16,    HU8,     HU8,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTION_CTE_RESPONSE_ENABLE,     IDX_CAST IDX_HCI_LE_SetConnectionCteResponseEnableCmd,     HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_ANTENNA_INFORMATION,               IDX_CAST IDX_HCI_LE_ReadAntennaInformationCmd,             HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PERIODIC_ADV_PARAMETERS,            IDX_CAST IDX_HCI_LE_SetPeriodicAdvParamsCmd,               HU8,     HU16,    HU16,    HU16,    HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PERIODIC_ADV_DATA,                  IDX_CAST IDX_HCI_LE_SetPeriodicAdvDataCmd,                 HU8,     HU8,     HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PERIODIC_ADV_ENABLE,                IDX_CAST IDX_HCI_LE_SetPeriodicAdvEnableCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTIONLESS_CTE_TRANSMIT_PARAMS, IDX_CAST IDX_HCI_LE_SetConnectionlessCteTransmitParamsCmd, HU8,     HU8,     HU8,     HU8,     HU8,     HU8PTR,  HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTIONLESS_CTE_TRANSMIT_ENABLE, IDX_CAST IDX_HCI_LE_SetConnectionlessCteTransmitEnableCmd, HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
-  HCI_TRANSLATION_ENTRY(HCI_LE_PERIODIC_ADV_CREATE_SYNC,               IDX_CAST IDX_HCI_LE_PeriodicAdvCreateSyncCmd,              HU8,     HU8,     HU8,     HAB,     HU16,    HU16,    HU8,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_PERIODIC_ADV_CREATE_SYNC_CANCEL,        IDX_CAST IDX_HCI_LE_PeriodicAdvCreateSyncCancelCmd,        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_PERIODIC_ADV_TERMINATE_SYNC,            IDX_CAST IDX_HCI_LE_PeriodicAdvTerminateSyncCmd,           HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_ADD_DEVICE_TO_PERIODIC_ADV_LIST,        IDX_CAST IDX_HCI_LE_AddDeviceToPeriodicAdvListCmd,         HU8,     HAB,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_REMOVE_DEVICE_FROM_PERIODIC_ADV_LIST,   IDX_CAST IDX_HCI_LE_RemoveDeviceFromPeriodicAdvListCmd,    HU8,     HAB,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CLEAR_PERIODIC_ADV_LIST,                IDX_CAST IDX_HCI_LE_ClearPeriodicAdvListCmd,               HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_PERIODIC_ADV_LIST_SIZE,            IDX_CAST IDX_HCI_LE_ReadPeriodicAdvListSizeCmd,            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_PERIODIC_ADV_RECEIVE_ENABLE,        IDX_CAST IDX_HCI_LE_SetPeriodicAdvReceiveEnableCmd,        HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_SET_CONNECTIONLESS_IQ_SAMPLING_ENABLE,  IDX_CAST IDX_HCI_LE_SetConnectionlessIqSamplingEnableCmd,  HU16,    HU8,     HU8,     HU8,     HU8,     HU8PTR,  HNP,     HNP),
-#endif
-
-  // Vendor Specific HCI Commands
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER_DBM,                      IDX_CAST IDX_HCI_EXT_SetTxPowerDbmCmd,                     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_BUILD_REVISION,                        IDX_CAST IDX_HCI_EXT_BuildRevisionCmd,                     HU8,     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_DELAY_SLEEP,                           IDX_CAST IDX_HCI_EXT_DelaySleepCmd,                        HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_DECRYPT,                               IDX_CAST IDX_HCI_EXT_DecryptCmd,                           HKB,     HKB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENABLE_PTM,                            IDX_CAST IDX_HCI_EXT_EnablePTMCmd,                         HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_TEST_TX,                         IDX_CAST IDX_HCI_EXT_ModemTestTxCmd,                       HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_HOP_TEST_TX,                     IDX_CAST IDX_HCI_EXT_ModemHopTestTxCmd,                    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_TEST_RX,                         IDX_CAST IDX_HCI_EXT_ModemTestRxCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_TEST_TX,                IDX_CAST IDX_HCI_EXT_EnhancedModemTestTxCmd,               HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX,            IDX_CAST IDX_HCI_EXT_EnhancedModemHopTestTxCmd,            HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_TEST_RX,                IDX_CAST IDX_HCI_EXT_EnhancedModemTestRxCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_END_MODEM_TEST,                        IDX_CAST IDX_HCI_EXT_EndModemTestCmd,                      HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_BDADDR,                            IDX_CAST IDX_HCI_EXT_SetBDADDRCmd,                         HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_RESET_SYSTEM,                          IDX_CAST IDX_HCI_EXT_ResetSystemCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_LOCAL_SUPPORTED_FEATURES,          IDX_CAST IDX_HCI_EXT_SetLocalSupportedFeaturesCmd,         H8B,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER_DBM,              IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_RX_GAIN,                           IDX_CAST IDX_HCI_EXT_SetRxGainCmd,                         HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_EXTEND_RF_RANGE,                       IDX_CAST IDX_HCI_EXT_ExtendRfRangeCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_HALT_DURING_RF,                        IDX_CAST IDX_HCI_EXT_HaltDuringRfCmd,                      HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_CLK_DIVIDE_ON_HALT,                    IDX_CAST IDX_HCI_EXT_ClkDivOnHaltCmd,                      HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_DECLARE_NV_USAGE,                      IDX_CAST IDX_HCI_EXT_DeclareNvUsageCmd,                    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MAP_PM_IO_PORT,                        IDX_CAST IDX_HCI_EXT_MapPmIoPortCmd,                       HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_FREQ_TUNE,                         IDX_CAST IDX_HCI_EXT_SetFreqTuneCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SAVE_FREQ_TUNE,                        IDX_CAST IDX_HCI_EXT_SaveFreqTuneCmd,                      HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_QOS_PARAMETERS,                    IDX_CAST IDX_HCI_EXT_SetQOSParameters,                     HU8,     HU8,     HU32,    HU16,    HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_QOS_DEFAULT_PARAMETERS,            IDX_CAST IDX_HCI_EXT_SetQOSDefaultParameters,              HU32,    HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-#ifndef HOST_CONFIG
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_NCONN_CFG )
-  HCI_TRANSLATION_ENTRY(HCI_EXT_LE_SET_EXT_VIRTUAL_ADV_ADDRESS,        IDX_CAST IDX_HCI_EXT_SetVirtualAdvAddrCmd,                 HU8,     HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif
-#endif
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_EXT_DISCONNECT_IMMED,                      IDX_CAST IDX_HCI_EXT_DisconnectImmedCmd,                   HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_PER,                                   IDX_CAST IDX_HCI_EXT_PacketErrorRateCmd,                   HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_NUM_COMPLETED_PKTS_LIMIT,              IDX_CAST IDX_HCI_EXT_NumComplPktsLimitCmd,                 HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ONE_PKT_PER_EVT,                       IDX_CAST IDX_HCI_EXT_OnePktPerEvtCmd,                      HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_SCA,                               IDX_CAST IDX_HCI_EXT_SetSCACmd,                            HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_GET_CONNECTION_INFO,                   IDX_CAST IDX_HCI_EXT_GetConnInfoCmd,                       HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_GET_ACTIVE_CONNECTION_INFO,            IDX_CAST IDX_HCI_EXT_GetActiveConnInfoCmd,                 HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_OVERLAPPED_PROCESSING,                 IDX_CAST IDX_HCI_EXT_OverlappedProcessingCmd,              HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_FAST_TX_RESP_TIME,                 IDX_CAST IDX_HCI_EXT_SetFastTxResponseTimeCmd,             HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_OVERRIDE_PL,                           IDX_CAST IDX_HCI_EXT_SetPeripheralLatencyOverrideCmd,           HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // (defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG)))
-
-  // Set max data len
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DATA_LENGTH,                   IDX_CAST IDX_HCI_EXT_SetMaxDataLenCmd,                     HU16,    HU16,    HU16,    HU16,    HNP,     HNP,     HNP,     HNP),
-#endif // defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
-
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_DTM_TX_PKT_CNT,                    IDX_CAST IDX_HCI_EXT_SetDtmTxPktCntCmd,                    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_PIN_OUTPUT,                        IDX_CAST IDX_HCI_EXT_SetPinOutputCmd,                      HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_LOCATIONING_ACCURACY,              IDX_CAST IDX_HCI_EXT_SetLocationingAccuracyCmd,            HU16,    HU8,     HU8,     HU8,     HU8,     HU8,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_COEX_ENABLE,                           IDX_CAST IDX_HCI_EXT_CoexEnableCmd,                        HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // Get Statistics
-  HCI_TRANSLATION_ENTRY(HCI_EXT_GET_RX_STATS,                          IDX_CAST IDX_HCI_EXT_GetRxStatisticsCmd,                   HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_GET_TX_STATS,                          IDX_CAST IDX_HCI_EXT_GetTxStatisticsCmd,                   HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_GET_COEX_STATS,                        IDX_CAST IDX_HCI_EXT_GetCoexStatisticsCmd,                 HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_LOCAL_SUPPORTED_CAPABILITIES,   IDX_CAST IDX_HCI_LE_CS_ReadLocalSupportedCapabilities,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES,  IDX_CAST IDX_HCI_LE_CS_ReadRemoteSupportedCapabilities,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_CREATE_CONFIG,                       IDX_CAST IDX_HCI_LE_CS_CreateConfig,                       HU16,    HU8,     HU8,     HU8PTR,  HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_REMOVE_CONFIG,                       IDX_CAST IDX_HCI_LE_CS_RemoveConfig,                       HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SECURITY_ENABLE,                     IDX_CAST IDX_HCI_LE_CS_SecurityEnable,                     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_DEFAULT_SETTINGS,                IDX_CAST IDX_HCI_LE_CS_SetDefaultSettings,                 HU16,    HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_LOCAL_FAE_TABLE,                IDX_CAST IDX_HCI_LE_CS_ReadLocalFAETable,                  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_READ_REMOTE_FAE_TABLE,               IDX_CAST IDX_HCI_LE_CS_ReadRemoteFAETable,                 HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_WRITE_REMOTE_FAE_TABLE,              IDX_CAST IDX_HCI_LE_CS_WriteRemoteFAETable,                HU16,    HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_CHANNEL_CLASSIFICATION,          IDX_CAST IDX_HCI_LE_CS_SetChannelClassification,           HU8PTR,  HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_SET_PROCEDURE_PARAMS,                IDX_CAST IDX_HCI_LE_CS_SetProcedureParameters,             HU16,    HU8,  HU8PTR,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_PROCEDURE_ENABLE,                    IDX_CAST IDX_HCI_LE_CS_ProcedureEnable,                    HU16,    HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  // The next two commands will be completed at later stage of the implementation.
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_TEST,                                IDX_CAST IDX_HCI_LE_CS_Test,                               HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_CS_TEST_END,                            IDX_CAST IDX_HCI_LE_CS_TestEnd,                            HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  // LL Test Mode
-#ifdef LL_TEST_MODE
-  HCI_TRANSLATION_ENTRY(HCI_EXT_LL_TEST_MODE,                          IDX_CAST IDX_HCI_EXT_LLTestModeCmd,                        HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP)
-#endif
-};
-
-#elif defined (PTM_MODE)
-static hciEntry_t hciTranslationTable[] =
-{
-#ifndef LEGACY_CMD
-  // Controller and Baseband Commands
-  HCI_TRANSLATION_ENTRY(HCI_RESET,                                     IDX_CAST IDX_HCI_ResetCmd,                                 HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-#endif // LEGACY_CMD
-
-  // LE Commands - Direct Test Mode
-  HCI_TRANSLATION_ENTRY(HCI_LE_RECEIVER_TEST,                          IDX_CAST IDX_HCI_LE_ReceiverTestCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_TRANSMITTER_TEST,                       IDX_CAST IDX_HCI_LE_TransmitterTestCmd,                    HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_TEST_END,                               IDX_CAST IDX_HCI_LE_TestEndCmd,                            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_TEST_TX,                         IDX_CAST IDX_HCI_EXT_ModemTestTxCmd,                       HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_HOP_TEST_TX,                     IDX_CAST IDX_HCI_EXT_ModemHopTestTxCmd,                    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_MODEM_TEST_RX,                         IDX_CAST IDX_HCI_EXT_ModemTestRxCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_TEST_TX,                IDX_CAST IDX_HCI_EXT_EnhancedModemTestTxCmd,               HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_HOP_TEST_TX,            IDX_CAST IDX_HCI_EXT_EnhancedModemHopTestTxCmd,            HU8,     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENHANCED_MODEM_TEST_RX,                IDX_CAST IDX_HCI_EXT_EnhancedModemTestRxCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_END_MODEM_TEST,                        IDX_CAST IDX_HCI_EXT_EndModemTestCmd,                      HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_DTM_TX_PKT_CNT,                    IDX_CAST IDX_HCI_EXT_SetDtmTxPktCntCmd,                    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // LE Commands - General
-  HCI_TRANSLATION_ENTRY(HCI_READ_BDADDR,                               IDX_CAST IDX_HCI_ReadBDADDRCmd,                            HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_BDADDR,                            IDX_CAST IDX_HCI_EXT_SetBDADDRCmd,                         HAB,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_TX_POWER_DBM,                      IDX_CAST IDX_HCI_EXT_SetTxPowerDbmCmd,                     HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_MAX_DTM_TX_POWER_DBM,              IDX_CAST IDX_HCI_EXT_SetMaxDtmTxPowerDbmCmd,               HU8,     HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_EXTEND_RF_RANGE,                       IDX_CAST IDX_HCI_EXT_ExtendRfRangeCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_HALT_DURING_RF,                        IDX_CAST IDX_HCI_EXT_HaltDuringRfCmd,                      HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_READ_TRANSMIT_POWER,                       IDX_CAST IDX_HCI_ReadTransmitPowerLevelCmd,                HU16,    HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_BUILD_REVISION,                        IDX_CAST IDX_HCI_EXT_BuildRevisionCmd,                     HU8,     HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_TX_POWER,                          IDX_CAST IDX_HCI_LE_ReadTxPowerCmd,                        HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_READ_RF_PATH_COMPENSATION,              IDX_CAST IDX_HCI_LE_ReadRfPathCompCmd,                     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_LE_WRITE_RF_PATH_COMPENSATION,             IDX_CAST IDX_HCI_LE_WriteRfPathCompCmd,                    HU16,    HU16,    HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-  // LE Commands - Production Test Mode
-  HCI_TRANSLATION_ENTRY(HCI_EXT_ENABLE_PTM,                            IDX_CAST IDX_HCI_EXT_EnablePTMCmd,                         HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SET_FREQ_TUNE,                         IDX_CAST IDX_HCI_EXT_SetFreqTuneCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_SAVE_FREQ_TUNE,                        IDX_CAST IDX_HCI_EXT_SaveFreqTuneCmd,                      HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-  HCI_TRANSLATION_ENTRY(HCI_EXT_RESET_SYSTEM,                          IDX_CAST IDX_HCI_EXT_ResetSystemCmd,                       HU8,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP,     HNP),
-
-};
-
-#else // !defined (PTM_MODE) or !defined (HCI_TL_FULL)
-static hciEntry_t hciTranslationTable[] = { 0 };
-#endif // defined (PTM_MODE) or defined (HCI_TL_FULL)
-
-// Callback for overriding contents of serial buffer.
-static HCI_TL_ParameterOverwriteCB_t HCI_TL_ParameterOverwriteCB = NULL;
+#endif //HCI_TL_FULL
 
 #if (defined(HCI_TL_FULL) || defined(PTM_MODE))  && defined(HOST_CONFIG)
 static ICall_EntityID appTaskID;
-
 
 #ifdef HCI_TL_FULL
 // Outgoing response
@@ -726,50 +349,6 @@ uint8_t legacyCmdStatusScan = HCI_LEGACY_CMD_STATUS_UNDEFINED;
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
-
-// Check if data len is smaller from the max data len,
-// max data len configure as function of:  max_interval,
-//                                         properties,
-//                                         primary_PHY,
-//                                         skip.
-uint8 isDataLenLessThanMaxDataSize( hci_tl_advSet_t *pAdvSet )
-{
-    uint32 intMax;
-    uint16 eventprops;
-
-    // Check that adv set exists
-    if( pAdvSet == NULL )
-    {
-      return TRUE;
-    }
-
-    // Construct integer variables that contains max interval and event properties
-    intMax = BUILD_UINT32(pAdvSet->advCmdParams.primIntMax[0], pAdvSet->advCmdParams.primIntMax[1], pAdvSet->advCmdParams.primIntMax[2], 0);
-    eventprops = BUILD_UINT16(pAdvSet->advCmdParams.eventProps[0], pAdvSet->advCmdParams.eventProps[1]);
-
-    // TO_DO:
-    // Need to check the rate of sending data
-    // with consider the parameter: max_interval,
-    //                              properties,
-    //                              primary_PHY,
-    //                              primary_PHY,
-    //                              skip.
-    // To check if the device can advertise the data.
-
-    // For now this function check only specific case that required
-    // in the spec (test: HCI/DDI/BI-62-C), only to pass hci qual.
-
-    if ( ( pAdvSet->advCmdData.dataLen >= 0xFB )              &&   // dataLen >=251
-         ( eventprops == 0 )                                  &&   // properties = 0
-         ( pAdvSet->advCmdParams.secMaxSkip == 0 )            &&   // skip = 0
-         ( pAdvSet->advCmdParams.primPhy == AE_PHY_CODED )    &&   // primary_PHY = CODED
-         ( intMax == 0x20 )                                        // max_interval = 32(0x20)
-       )
-    {
-      return FALSE;
-    }
-    return TRUE;
-}
 
 #if (defined(HCI_TL_FULL) || defined(PTM_MODE))
 static void HCI_TL_SendCommandPkt(hciPacket_t *pMsg);
@@ -860,11 +439,7 @@ static void HCI_TL_getMemStats(uint8_t mask, uint8_t* pData, uint8_t *len);
 #ifndef PTM_MODE
 #if ( HOST_CONFIG & ( PERIPHERAL_CFG | BROADCASTER_CFG ) )
 
-#ifdef CC23X0
 static void      host_tl_advEvtCallback(uint32_t event, void *pData, uint32_t arg);
-#else
-static void      host_tl_advEvtCallback(uint32_t event, void *pData, uintptr_t arg);
-#endif
 static void      host_tl_advEvtCallbackProcess(advEvtCallback_t *advEvtCallback);
 #endif // PERIPHERAL_CFG | BROADCASTER_CFG
 
@@ -882,7 +457,7 @@ static void      host_tl_connEvtCallbackProcess(Gap_ConnEventRpt_t *pReport);
 
 #else //!HOST_CONFIG
 
-static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param);
+static uint8_t processExtraHCICmd(hciPacket_t *pMsg);
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
 static hci_tl_advSet_t *hci_tl_GetAdvSet(uint8_t handle);
@@ -931,8 +506,6 @@ void HCI_TL_Init(HCI_TL_ParameterOverwriteCB_t overwriteCB,
                  HCI_TL_CalllbackEvtProcessCB_t evtCB,
                  ICall_EntityID taskID)
 {
-  HCI_TL_ParameterOverwriteCB = overwriteCB;
-
   HCI_TL_CommandStatusCB = csCB;
   (void) HCI_TL_CommandStatusCB;
 
@@ -1072,45 +645,6 @@ static void HCI_TL_getMemStats(uint8_t memStatCmd, uint8_t* rspBuf, uint8_t *len
 #endif /* (defined(HCI_TL_FULL) || defined(PTM_MODE)) */
 
 /*********************************************************************
- * @fn      HCI_TL_compareAppLastOpcodeSent
- *
- * @brief   check if the opcode of an event received matches the last
- *          opcode of an HCI command called from the embedded application.
- *
- * @param   opcode - opcode of the received Stack event.
- *
- * @return  TRUE if opcode matches, FALSE otherwise.
- */
-uint8_t HCI_TL_compareAppLastOpcodeSent(uint16_t opcode)
-{
-  uint8_t isMatch = FALSE;
-
-  // See if the opcode received matches the ICall LITE ID last sent from the stack.
-  // Last last ICall ID sent from the stack should be invalid if it was already matched.
-
-  // If the application is looking for an event
-  if (lastAppOpcodeIdxSent != 0xFFFFFFFF)
-  {
-    // Iterate over the hci table.
-    for (uint16_t idx = 0;
-         idx < sizeof(hciTranslationTable)/sizeof(hciEntry_t);
-         idx++)
-    {
-      // If an entry matching the opcode event is found and the ICall Lite ID matches that of the last we sent
-      if (hciTranslationTable[idx].opcode == opcode &&
-          GET_CMD_IDX(hciTranslationTable[idx].cmdIdx) == lastAppOpcodeIdxSent)
-      {
-        // A match is found.
-        isMatch = TRUE;
-        break;
-      }
-    }
-  }
-
-  return(isMatch);
-}
-
-/*********************************************************************
  * @fn      HCI_TL_SendToStack
  *
  * @brief   Translate serial buffer into it's corresponding function and
@@ -1151,7 +685,7 @@ void HCI_TL_SendToStack(uint8_t *pHciMsg)
 }
 
 /*********************************************************************
- * @fn      HCI_HostToController
+ * @fn      HCI_HostToControllerSend
  *
  * @brief   Translate HCI raw packet buffer into it's corresponding function and
  *          parameterize the arguments to send to the controller only.
@@ -1161,7 +695,7 @@ void HCI_TL_SendToStack(uint8_t *pHciMsg)
  *
  * @return  0 for success, negative number for error.
  */
-int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
+int HCI_HostToControllerSend(uint8_t *pHciPkt, uint16_t pktLen)
 {
     int status = HCI_STATUS_ERROR_OUT_OF_MEMORY;
     uint8 pktType = 0;
@@ -1324,211 +858,60 @@ int HCI_HostToController(uint8_t *pHciPkt, uint16_t pktLen)
  *
  * @return  none.
  */
-static void HCI_TL_SendCommandPkt(hciPacket_t *pMsg)
+static void HCI_TL_SendCommandPkt( hciPacket_t *pMsg )
 {
+  uint8_t status = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
   uint16_t cmdOpCode;
-  uint8_t  packetType;
-  uint32_t  i = 0;
-  uint8_t *param; // pointer into HCI command parameters.
 
-  // retrieve packetType
-  packetType = pMsg->pData[0];
+  // Retrieve opcode
+  cmdOpCode = BUILD_UINT16( pMsg->pData[1], pMsg->pData[2] );
 
-  // retrieve opcode
-  cmdOpCode = BUILD_UINT16(pMsg->pData[1], pMsg->pData[2]);
+#ifdef HOST_CONFIG
 
-  // retrieve pointer to parameter
-  if (packetType == HCI_EXTENDED_CMD_PACKET)
-  {
-    param = &pMsg->pData[5];
-  }
-  else
-  {
-    param = &pMsg->pData[4];
-  }
+  (void)cmdOpCode;
+  status = HCI_CMD_Parser( pMsg->pData );
 
-  // If this is a command which the embedded "Host" must modify the parameters
-  // to handle properly (e.g. taskEvent, taskID), it is handled here.
-  if (HCI_TL_ParameterOverwriteCB)
-  {
-    HCI_TL_ParameterOverwriteCB(pMsg->pData);
-  }
-
-  // Loop over table to find a matching opcode
-  for(; i < sizeof(hciTranslationTable) / sizeof(hciEntry_t) ; i++)
-  {
-    // Search for opcode that matches cmdOpCode
-    if (hciTranslationTable[i].opcode == cmdOpCode)
-    {
-      // Found it.
-      break;
-    }
-  }
-
-  // If we found a matching opcode
-  if (i != sizeof(hciTranslationTable) / sizeof(hciEntry_t))
-  {
-    uint8_t numRules;
-    uint8_t *pRules;
-    hci_arg_t args[HCI_MAX_NUM_ARGS] = {0,};
-    uint8_t bufCount = 1;
-
-    // Determine where the rules are and number of rules
-#ifdef STACK_LIBRARY
-    if (hciTranslationTable[i].extFlag)
-#else
-    if (IS_EXTENDED_PARAMS(hciTranslationTable[i].cmdIdx))
-#endif
-    {
-      pRules = ((uint8_t *)(hciTranslationTable[i].paramRules)) + 1;
-      numRules = *(pRules - 1);
-    }
-    else
-    {
-      pRules = (uint8_t *)(&hciTranslationTable[i].paramRules);
-      numRules = HCI_DEFAULT_NUM_RULES;
-    }
-
-    // Parse the arguments according to the rules of the matching opcode
-    for (uint8_t arg_i = 0; arg_i < numRules; arg_i++)
-    {
-      // Get this parameter's rule.
-      uint8_t rule  = GET_RULE(pRules, arg_i);
-
-      // If this a buffer counter
-      if (rule & HLEN)
-      {
-        // What type of buffer counter is this?
-        switch(rule)
-        {
-          // Check implicit counts.
-          case H2B:
-            bufCount = 2;
-            break;
-
-          case HAB:
-            bufCount = 6;
-            break;
-
-          case H8B:
-            bufCount = 8;
-            break;
-
-          case HKB:
-            bufCount = 16;
-            break;
-
-          // Default to explicit count.
-          default:
-            bufCount = *param;
-            break;
-        }
-      }
-
-      // If this is a pointer
-      if (rule & HPTR)
-      {
-        // Note that a pointer means the argument is the address of the byte at
-        // offset 0 from param.
-
-        // Store the address.
-        args[arg_i] = (hci_arg_t)param;
-
-        // Because the argument is stored in the buffer, param is moved forward
-        // by the byte width of the argument stored there.
-        switch (rule & HPTRMASK)
-        {
-          case HU32:
-            param += 4 * bufCount;
-            break;
-
-          case HU16:
-            param += 2 * bufCount;
-            break;
-
-          case HU8:
-            param += 1 * bufCount;
-            break;
-
-          // Implicit buffer counters fall into here.
-          default:
-            param += bufCount;
-            break;
-        }
-      }
-      else if (rule == HU32)
-      {
-        // 32 bit value
-        args[arg_i] = BUILD_UINT32(param[0], param[1], param[2], param[3]);
-        param += 4;
-      }
-      else if (rule == HU16)
-      {
-        // 16 bit value
-        args[arg_i] = BUILD_UINT16(param[0], param[1]);
-        param += 2;
-      }
-      else if (rule == HU8)
-      {
-        // 8 bit value
-        args[arg_i] = *param++;
-      }
-      else if (rule == HNP)
-      {
-        // No parameters remaining.
-        break;
-      }
-    }
-
-    // Call the function using the translated parameters.
-    icall_directAPI(ICALL_SERVICE_CLASS_BLE,
-                    (uint32_t) GET_CMD_IDX(hciTranslationTable[i].cmdIdx),
-                    args[0],
-                    args[1],
-                    args[2],
-                    args[3],
-                    args[4],
-                    args[5],
-                    args[6],
-                    args[7],
-                    args[8],
-                    args[9],
-                    args[10],
-                    args[11]);
-  }
 #ifdef BLE3_CMD
-  else
+
+  // adv and scan notice hci command doesn't return command complete or command status event.
+  if( cmdOpCode == HCI_EXT_ADV_EVENT_NOTICE )
   {
-    // adv and scan notice hci command doesn't return command complete or command status event.
-    if( cmdOpCode == HCI_EXT_ADV_EVENT_NOTICE )
-    {
-      advNotice = 1;
-    }
-    else if( cmdOpCode == HCI_EXT_SCAN_EVENT_NOTICE )
-    {
-      scanNotice = 1;
-    }
+    advNotice = 1;
+    status = HCI_SUCCESS;
+  }
+  else if( cmdOpCode == HCI_EXT_SCAN_EVENT_NOTICE )
+  {
+    scanNotice = 1;
+    status = HCI_SUCCESS;
   }
 #endif // BLE3_CMD
-#ifndef HOST_CONFIG
-  else
+
+#else //!HOST_CONFIG
+
+#ifdef LEGACY_CMD
+  //For Legacy command revert the call order
+  status = processExtraHCICmd(pMsg);
+
+  if ( status == HCI_ERROR_CODE_UNKNOWN_HCI_CMD )
   {
-    if(cmdOpCode == HCI_EXT_HOST_TO_CONTROLLER)
-    {
-      // This is a testing hook to activate the direct HCI_HostToController API.
-      // In order to activate it, The external host should create a raw
-      // HCI buffer with the HCI_EXT_HOST_TO_CONTROLLER prefix set in the
-      // first two bytes.
-      uint16 hciPktLen = BUILD_UINT16(param[0], param[1]);
-      uint8* pHciPkt = param + 2;
-      HCI_HostToController(pHciPkt, hciPktLen);
-    }
-    else
-    {
-        processExtraHCICmd(cmdOpCode, param);
-    }
+    status = HCI_CMD_Parser( pMsg->pData );
   }
-#endif //!HOST_CONFIG
+#else//LEGACY_CMD
+
+  status = HCI_CMD_Parser( pMsg->pData );
+
+  if ( status == HCI_ERROR_CODE_UNKNOWN_HCI_CMD )
+  {
+    status = processExtraHCICmd(pMsg);
+  }
+#endif //LEGACY_CMD
+
+#endif //HOST_CONFIG
+
+  if ( status == HCI_ERROR_CODE_UNKNOWN_HCI_CMD )
+  {
+    MAP_HCI_CommandCompleteEvent( cmdOpCode, sizeof(status), &status );
+  }
 }
 
 #ifdef LEGACY_CMD
@@ -1543,23 +926,63 @@ static void HCI_TL_SendCommandPkt(hciPacket_t *pMsg)
  */
 static uint8_t checkLegacyHCICmdMode(uint16_t opcode)
 {
-  if ((opcode >= HCI_LE_SET_ADV_PARAM) && (opcode <= HCI_LE_SET_ADV_ENABLE)) {
-    return HCI_LEGACY_CMD_STATUS_BT4_ADV;
+  uint8_t rtnVal = HCI_LEGACY_CMD_STATUS_UNDEFINED;
+
+  switch(opcode)
+  {
+    case HCI_LE_SET_ADV_PARAM:
+    case HCI_LE_READ_ADV_CHANNEL_TX_POWER:
+    case HCI_LE_SET_ADV_DATA:
+    case HCI_LE_SET_SCAN_RSP_DATA:
+    case HCI_LE_SET_ADV_ENABLE:
+    {
+      rtnVal = HCI_LEGACY_CMD_STATUS_BT4_ADV;
+      break;
+    }
+    case HCI_LE_SET_EXT_ADV_PARAMETERS:
+    case HCI_LE_SET_EXT_ADV_DATA:
+    case HCI_LE_SET_EXT_SCAN_RESPONSE_DATA:
+    case HCI_LE_SET_EXT_ADV_ENABLE:
+    case HCI_LE_READ_MAX_ADV_DATA_LENGTH:
+    case HCI_LE_READ_NUM_SUPPORTED_ADV_SETS:
+    case HCI_LE_REMOVE_ADV_SET:
+    case HCI_LE_CLEAR_ADV_SETS:
+    case HCI_LE_SET_PERIODIC_ADV_PARAMETERS:
+    case HCI_LE_SET_PERIODIC_ADV_DATA:
+    case HCI_LE_SET_PERIODIC_ADV_ENABLE:
+    case HCI_EXT_LE_SET_EXT_ADV_DATA:
+    {
+      rtnVal = HCI_LEGACY_CMD_STATUS_BT5_ADV;
+      break;
+    }
+    case HCI_LE_SET_SCAN_PARAM:
+    case HCI_LE_SET_SCAN_ENABLE:
+    case HCI_LE_CREATE_CONNECTION:
+    {
+      rtnVal = HCI_LEGACY_CMD_STATUS_BT4_SCAN;
+      break;
+    }
+    case HCI_LE_SET_EXT_SCAN_PARAMETERS:
+    case HCI_LE_SET_EXT_SCAN_ENABLE:
+    case HCI_LE_EXT_CREATE_CONN:
+    case HCI_LE_PERIODIC_ADV_CREATE_SYNC:
+    case HCI_LE_PERIODIC_ADV_CREATE_SYNC_CANCEL:
+    case HCI_LE_PERIODIC_ADV_TERMINATE_SYNC:
+    case HCI_LE_ADD_DEVICE_TO_PERIODIC_ADV_LIST:
+    case HCI_LE_REMOVE_DEVICE_FROM_PERIODIC_ADV_LIST:
+    case HCI_LE_CLEAR_PERIODIC_ADV_LIST:
+    case HCI_LE_READ_PERIODIC_ADV_LIST_SIZE:
+    {
+      rtnVal = HCI_LEGACY_CMD_STATUS_BT5_SCAN;
+      break;
+    }
+    default:
+    {
+      rtnVal = HCI_LEGACY_CMD_STATUS_UNDEFINED;
+      break;
+    }
   }
-  else if (((opcode >= HCI_LE_SET_EXT_ADV_PARAMETERS) && (opcode <= HCI_LE_SET_PERIODIC_ADV_ENABLE)) ||
-            (opcode == HCI_EXT_LE_SET_EXT_ADV_DATA) ||
-            (opcode == HCI_EXT_LE_SET_EXT_SCAN_RESPONSE_DATA)) {
-    return HCI_LEGACY_CMD_STATUS_BT5_ADV;
-  }
-  else if ((opcode >= HCI_LE_SET_SCAN_PARAM) && (opcode <= HCI_LE_CREATE_CONNECTION_CANCEL)) {
-    return HCI_LEGACY_CMD_STATUS_BT4_SCAN;
-  }
-  else if ((opcode >= HCI_LE_SET_EXT_SCAN_PARAMETERS) && (opcode <= HCI_LE_READ_PERIODIC_ADV_LIST_SIZE)) {
-    return HCI_LEGACY_CMD_STATUS_BT5_SCAN;
-  }
-  else {
-    return HCI_LEGACY_CMD_STATUS_UNDEFINED;
-  }
+  return rtnVal;
 }
 #endif // LEGACY_CMD
 
@@ -1619,12 +1042,32 @@ uint8_t checkLegacyHCICmdStatus(uint16_t opcode)
  *
  * @brief   Process all HCI command that was not found in the predefined table
  *
- * @param   cmdOpCode - operation code of the command to process
- *          param  -    pointer to the parameter of the command
- * @return  none
+ * @param   pMsg -     HCI Msg packet
+ * @return  retVal     HCI Status
  */
-static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
+static uint8_t processExtraHCICmd(hciPacket_t *pMsg)
 {
+    uint8_t retVal = HCI_SUCCESS;
+    uint8_t packetType;
+    uint16_t cmdOpCode;
+    uint8_t *param; // pointer into HCI command parameters.
+
+    // Retrieve packetType
+    packetType = pMsg->pData[0];
+
+    // Retrieve opcode
+    cmdOpCode = BUILD_UINT16( pMsg->pData[1], pMsg->pData[2] );
+
+    // Retrieve pointer to parameter
+    if ( packetType == HCI_EXTENDED_CMD_PACKET )
+    {
+      param = &pMsg->pData[5];
+    }
+    else
+    {
+      param = &pMsg->pData[4];
+    }
+
     switch(cmdOpCode)
     {
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
@@ -1651,8 +1094,8 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
             }
 
             HCI_CommandCompleteEvent(cmdOpCode,
-                                      sizeof(status),
-                                      &status);
+                                     sizeof(status),
+                                     &status);
             break;
         }
 #endif //ADV_NCONN_CFG + ADV_CONN_CFG
@@ -1665,86 +1108,15 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
             // HCI_CommandCompleteEvent call performed by HCI_ResetCmd().
             legacyCmdStatusAdv = HCI_LEGACY_CMD_STATUS_UNDEFINED;
             legacyCmdStatusScan = HCI_LEGACY_CMD_STATUS_UNDEFINED;
+
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
             hci_tl_ClearAdvSet();
+#endif //defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
+
             HCI_ResetCmd();
-            return;
-        }
-//Legacy BT Commands for MCU attached with Bluetopia
-#ifdef CC33xx
-#ifdef HOST_BLUETOPIA
-        case HCI_READ_LOCAL_BUFFER_SIZE:
-        {
-            uint8_t res[4];
-            res[0] = HCI_SUCCESS;
-            res[1] = LO_UINT16(maximumPduSize);
-            res[2] = HI_UINT16(maximumPduSize);
-            res[3] = maxNumTxDataBufs;
-            HCI_CommandCompleteEvent(cmdOpCode, sizeof(res), &res);
             break;
         }
-        case HCI_WRITE_LOCAL_NAME:
-        {
-            uint8_t status;
-            status = HCI_SUCCESS;
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
-            break;
-        }
-        case HCI_READ_SCAN_ENABLE:
-        {
-            uint8_t res[2];
-            res[0] = HCI_SUCCESS;
-            res[1] = 0;
-            HCI_CommandCompleteEvent(cmdOpCode, sizeof(res), &res);
-            break;
-        }
-        case HCI_WRITE_SCAN_ENABLE:
-        {
-            uint8_t status;
-            status = HCI_SUCCESS;
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
-            break;
-        }
-        case HCI_READ_CLASS_OF_DEVICE:
-        {
-            uint8_t res[4];
-            res[0] = HCI_SUCCESS;
-            res[1] = 0x0;
-            res[2] = 0x1;
-            res[3] = 0x4;
-            HCI_CommandCompleteEvent(cmdOpCode, sizeof(res), &res);
-            break;
-        }
-        case HCI_WRITE_CLASS_OF_DEVICE:
-        {
-            uint8_t status;
-            status = HCI_SUCCESS;
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
-            break;
-        }
-        case HCI_WRITE_CURRENT_IAC_LAP:
-        {
-            uint8_t status;
-            status = HCI_SUCCESS;
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
-            break;
-        }
-        case HCI_READ_LE_HOST_SUPPORT:
-        {
-            uint8_t res[2];
-            res[0] = HCI_SUCCESS;
-            res[1] = 0x1;
-            HCI_CommandCompleteEvent(cmdOpCode, sizeof(res), &res);
-            break;
-        }
-        case HCI_WRITE_LE_HOST_SUPPORT:
-        {
-            uint8_t status;
-            status = HCI_SUCCESS;
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
-            break;
-        }
-#endif // HOST_BLUETOPIA
-#endif // CC33xx
+
 //Advertiser
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
         case HCI_LE_SET_ADV_PARAM:
@@ -1763,7 +1135,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // 1st check if there is not already an existing adv set with the same handle.
@@ -1800,7 +1172,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                     HCI_CommandCompleteEvent(cmdOpCode,
                                              sizeof(status),
                                              &status);
-                    return;
+                    break;
                 }
 
                 pAdvSet->advCmdParams.primIntMin[0]   = param[0];
@@ -1824,7 +1196,14 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 status = LE_SetExtAdvParams(&pAdvSet->advCmdParams, &retParams);
                 if (status != LL_STATUS_SUCCESS)
                 {
+                  // Remove the ADV set only if it is disabled
+                  // If the set was already enabled it means the controller allocated
+                  // its memory. We need to avoid removing it only from here.
+                  // In addition, the set can keep running with the last vaid parameters.
+                  if (pAdvSet->enableCmdParams.enable == LL_ADV_MODE_OFF)
+                  {
                     hci_tl_RemoveAdvSet(ADV_LEGACY_SET_HANDLE);
+                  }
                 }
             }
             else
@@ -1849,7 +1228,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             if ( param[0] > LL_MAX_ADV_DATA_LEN )
@@ -1858,7 +1237,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // 1st check if there is not already an existing adv set with the same handle.
@@ -1912,7 +1291,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             if ( param[0] > LL_MAX_ADV_DATA_LEN )
@@ -1921,7 +1300,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
             // 1st check if there is not already an existing adv set with the same handle.
             pAdvSet = hci_tl_GetAdvSet(ADV_LEGACY_SET_HANDLE);
@@ -1974,7 +1353,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // Check number of Set to enable, only one supported by TL.
@@ -2037,7 +1416,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // Translate this legacy API to a call to the new AE API.
@@ -2068,7 +1447,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // Translate this legacy API to a call to the new AE API.
@@ -2133,7 +1512,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
             {
                 HCI_CommandStatusEvent(LL_STATUS_ERROR_COMMAND_DISALLOWED,
                                        cmdOpCode);
-                return;
+                break;
             }
 
             // Translate this legacy API to a call to the new AE API.
@@ -2181,7 +1560,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
             {
                 HCI_CommandStatusEvent(LL_STATUS_ERROR_COMMAND_DISALLOWED,
                                        cmdOpCode);
-                return;
+                break;
             }
             HCI_TL_createConnParam = *((aeCreateConnCmd_t *)param);
 
@@ -2219,7 +1598,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          2,
                                          rsp);
-                return;
+                break;
             }
 
             // 1st check if there is not already an existing adv set with the same handle.
@@ -2234,29 +1613,19 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 pAdvSet->advCmdParams.zeroDelay = FALSE;
 #endif
 
-                // Check if data len is smaller from the max data len,
-                // max data len configure as function of:  max_interval,
-                //                                         properties,
-                //                                         primary_PHY,
-                //                                         skip.
-                // For now this part checks only specific case that required
-                // in the spec (test: HCI/DDI/BI-62-C), only to pass hci qual.
-                if ( isDataLenLessThanMaxDataSize( pAdvSet ) == FALSE )
-                {
-                  rsp[0] = LL_STATUS_ERROR_PACKET_TOO_LONG;
-                  rsp[1] = 0;
-                  HCI_CommandCompleteEvent(cmdOpCode,
-                                           2,
-                                           rsp);
-                  break;
-                }
-
                 rsp[0] = LE_SetExtAdvParams(&pAdvSet->advCmdParams, &retParams);
                 rsp[1] = retParams.txPower;
 
                 if (rsp[0] != LL_STATUS_SUCCESS)
                 {
+                  // Remove the ADV set only if it is disabled
+                  // If the set was already enabled it means the controller allocated
+                  // its memory. We need to avoid removing it only from here.
+                  // In addition, the set can keep running with the last vaid parameters.
+                  if (pAdvSet->enableCmdParams.enable == LL_ADV_MODE_OFF)
+                  {
                     hci_tl_RemoveAdvSet(param[0]);
+                  }
                 }
 
             }
@@ -2282,7 +1651,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // Enable/Disable all ADV sets
@@ -2396,7 +1765,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
             // Remove it from our linked list also
             if (status == LL_STATUS_SUCCESS)
@@ -2419,7 +1788,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
             if (status == LL_STATUS_SUCCESS)
             {
@@ -2442,7 +1811,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             pAdvSet = hci_tl_GetAdvSet(param[0]);
@@ -2456,7 +1825,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                                             sizeof(status),
                                             &status);
                    hci_tl_RemoveAdvSet(param[0]);
-                   return;
+                   break;
                 }
 
                 uint8_t idx = 0;
@@ -2487,7 +1856,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // 1st check if there is not already an existing adv set with the same handle.
@@ -2502,7 +1871,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                                            sizeof(status),
                                            &status);
                   hci_tl_RemoveAdvSet(param[0]);
-                  return;
+                  break;
                }
 
                uint8_t idx = 0;
@@ -2535,7 +1904,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             pAdvSet = hci_tl_GetAdvSet(param[0]);
@@ -2549,7 +1918,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                                             sizeof(status),
                                             &status);
                    hci_tl_RemoveAdvSet(param[0]);
-                   return;
+                   break;
                 }
 
                 uint8_t idx = 0;
@@ -2586,7 +1955,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             pAdvSet = hci_tl_GetAdvSet(param[0]);
@@ -2600,7 +1969,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                                             sizeof(status),
                                             &status);
                    hci_tl_RemoveAdvSet(param[0]);
-                   return;
+                   break;
                 }
 
                 uint8_t idx = 0;
@@ -2640,7 +2009,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // Need to register the callback Function.
@@ -2698,7 +2067,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(status),
                                          &status);
-                return;
+                break;
             }
 
             // If set already exist, the parameters will be updated,
@@ -2730,7 +2099,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                           sizeof(res),
                                           &res);
-                return;
+                break;
             }
 
             value = LE_ReadMaxAdvDataLen();
@@ -2756,7 +2125,7 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
                 HCI_CommandCompleteEvent(cmdOpCode,
                                          sizeof(res),
                                          &res);
-                return;
+                break;
             }
 
             value = LE_ReadNumSupportedAdvSets();
@@ -2770,16 +2139,10 @@ static void processExtraHCICmd(uint16_t cmdOpCode, uint8_t *param)
 #endif // (ADV_NCONN_CFG | ADV_CONN_CFG)
         default:
         {
-            // Opcode not found, return error.
-            uint8_t status;
-            status = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
-#ifdef CC33xx
-            GTRACE(GRP_BLE_DBG,"processExtraHCICmd: Received error or unknown HCI command opcode 0x%x", cmdOpCode);
-#endif // CC33xx
-
-            HCI_CommandCompleteEvent(cmdOpCode, 1, &status);
+          retVal = HCI_ERROR_CODE_UNKNOWN_HCI_CMD;
         }
     }
+    return retVal;
 }
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_NCONN_CFG | ADV_CONN_CFG))
@@ -3530,11 +2893,7 @@ static void host_tl_sendAdvReport(uint32_t event, GapScan_Evt_AdvRpt_t * advRpt)
  *
  * @return  none
  */
-#ifdef CC23X0
 static void host_tl_advEvtCallback(uint32_t event, void *pData, uint32_t arg)
-#else
-static void host_tl_advEvtCallback(uint32_t event, void *pData, UArg arg)
-#endif
 {
   if (HCI_TL_CallbackEvtProcessCB)
   {
@@ -3684,7 +3043,6 @@ static void host_tl_advEvtCallbackProcess(advEvtCallback_t *advEvtCallback)
   }
 }
 #endif // ( PERIPHERAL_CFG | BROADCASTER_CFG )
-
 #endif /* (PTM_MODE) */
 
 #ifndef HOST_CONFIG
@@ -4039,6 +3397,7 @@ static hci_tl_advSet_t *hci_tl_GetAdvSet(uint8_t handle)
     return(pAdvSet);
 
 }
+
 #ifdef LEGACY_CMD
 /*********************************************************************
  * @fn      hci_tl_InitAdvSetParams
@@ -4537,16 +3896,17 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
   {
 #if defined(BLE_V41_FEATURES) && (BLE_V41_FEATURES & L2CAP_COC_CFG)
     case HCI_EXT_L2CAP_DATA:
-      if (pCmd->len > 2)
+      if (pCmd->len > 4)
       {
-        uint8_t *pPayload = createMsgPayload(&pBuf[2], pCmd->len-2);
+        uint8_t *pPayload = createMsgPayload(&pBuf[4], pCmd->len - 4);
         if (pPayload != NULL)
         {
           l2capPacket_t pkt;
 
-          pkt.CID = connHandle; // connHandle is CID here
+          pkt.connHandle = connHandle;
+          pkt.CID = BUILD_UINT16(pBuf[2], pBuf[3]);
           pkt.pPayload = pPayload;
-          pkt.len = pCmd->len-2;
+          pkt.len = pCmd->len - 4;
 
           // Send SDU over dynamic channel
           stat = L2CAP_SendSDU(&pkt);
@@ -4639,8 +3999,8 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
         if ((stat == SUCCESS) && (info.numActiveChannels > 0))
         {
           uint8_t numCIDs = info.numActiveChannels;
-
-          uint16_t *pCIDs = (uint16_t *)ICall_malloc(sizeof(uint16_t) * numCIDs);
+          uint16_t sizeOfInfo = sizeof(l2capLocalChannelInfo_t) * numCIDs;
+          uint16_t *pCIDs = (uint16_t *)ICall_malloc(sizeOfInfo);
           if (pCIDs != NULL)
           {
             stat = L2CAP_PsmChannels(connHandle, numCIDs, pCIDs);
@@ -4649,13 +4009,13 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
               uint8_t *pRspBuf = &rspBuf[RSP_PAYLOAD_IDX];
               uint8_t i;
 
-              for (i = 0; i < numCIDs; i++)
+              for (i = 0; i < sizeOfInfo; i++)
               {
                 *pRspBuf++ = LO_UINT16(pCIDs[i]);
                 *pRspBuf++ = HI_UINT16(pCIDs[i]);
               }
 
-              *pRspDataLen = numCIDs * 2;
+              *pRspDataLen = numCIDs * 4;
             }
 
             VOID ICall_free(pCIDs);
@@ -4673,17 +4033,20 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
       break;
 
     case HCI_EXT_L2CAP_CHANNEL_INFO:
-      if (pCmd->len == 2)
+      if (pCmd->len == 4)
       {
         l2capChannelInfo_t channelInfo;
 
-        stat = L2CAP_ChannelInfo(connHandle, &channelInfo); // connHandle is CID here
+        uint16_t CID = BUILD_UINT16(pBuf[2], pBuf[3]);
+        stat = L2CAP_ChannelInfo(connHandle, CID, &channelInfo);
         if (stat == SUCCESS)
         {
           rspBuf[RSP_PAYLOAD_IDX] = channelInfo.state;
+          rspBuf[RSP_PAYLOAD_IDX + 1] = LO_UINT16(connHandle);
+          rspBuf[RSP_PAYLOAD_IDX + 2] = HI_UINT16(connHandle);
 
-          *pRspDataLen = 1 + buildCoChannelInfo(connHandle, &channelInfo.info,
-                                                 &rspBuf[RSP_PAYLOAD_IDX+1]);
+          *pRspDataLen = 3 + buildCoChannelInfo(CID, &channelInfo.info,
+                                                 &rspBuf[RSP_PAYLOAD_IDX + 3]);
         }
       }
       else
@@ -4720,9 +4083,10 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
       break;
 
     case L2CAP_DISCONNECT_REQ:
-      if (pCmd->len == 2)
+      if (pCmd->len == 4)
       {
-        stat = L2CAP_DisconnectReq(connHandle); // connHandle is CID here
+        uint16_t CID = BUILD_UINT16(pBuf[2], pBuf[3]);
+        stat = L2CAP_DisconnectReq(connHandle, CID);
       }
       else
       {
@@ -4731,10 +4095,11 @@ static uint8_t processExtMsgL2CAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRs
       break;
 
     case L2CAP_FLOW_CTRL_CREDIT:
-      stat = L2CAP_ParseFlowCtrlCredit(&cmd, pBuf, pCmd->len);
+      // pBuf[2] because the first two bytes are the connection handle
+      stat = L2CAP_ParseFlowCtrlCredit(&cmd, &(pBuf[2]), pCmd->len-2);
       if (stat == SUCCESS)
       {
-        stat = L2CAP_FlowCtrlCredit(cmd.credit.CID, cmd.credit.credits);
+        stat = L2CAP_FlowCtrlCredit(connHandle, cmd.credit.CID, cmd.credit.credits);
       }
       break;
 #endif //(BLE_V41_FEATURES & L2CAP_COC_CFG)
@@ -5695,7 +5060,7 @@ static uint8_t processExtMsgGATT(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRsp
             //send notification only if requested by the client or for handle 0
             if ((value & GATT_CLIENT_CFG_NOTIFY) || (pNoti->handle == 0))
             {
-              stat = GATT_Notification(connHandle, pNoti, pBuf[2]);
+              stat = GATT_Notification(connHandle, (attHandleValueNoti_t *)pNoti, pBuf[2]);
               if ((stat == SUCCESS) && (pNoti->pValue != NULL))
               {
                 safeToDealloc = FALSE; // payload passed to GATT
@@ -6544,15 +5909,23 @@ static uint8_t processExtMsgGAP(uint8_t cmdID, hciExtCmd_t *pCmd, uint8_t *pRspD
 
      pPeriodicData.operation = pBuf[1];
      pPeriodicData.dataLength = pBuf[2];
-     pPeriodicData.pData = MAP_osal_mem_alloc(pPeriodicData.dataLength);
 
-     if(pPeriodicData.pData)
+     if ( (pPeriodicData.dataLength > 0) )
      {
        // Copy the data
-       MAP_osal_memcpy(pPeriodicData.pData, &pBuf[3], pPeriodicData.dataLength);
+       pPeriodicData.pData = MAP_osal_mem_alloc(pPeriodicData.dataLength);
+       if ( pPeriodicData.pData != NULL )
+       {
+         MAP_osal_memcpy(pPeriodicData.pData, &pBuf[3], pPeriodicData.dataLength);
+         stat = GapAdv_SetPeriodicAdvData( pBuf[0], &pPeriodicData);
+
+         // Free the allocated memory
+         ICall_free(pPeriodicData.pData);
+       }
+     }
+     else
+     {
        stat = GapAdv_SetPeriodicAdvData( pBuf[0], &pPeriodicData);
-       // Free the allocated memory
-       ICall_free(pPeriodicData.pData);
      }
      break;
    }
@@ -7970,9 +7343,13 @@ static uint8_t *processEventsGAP(gapEventHdr_t *pMsg, uint8_t *pOutMsg, uint16_t
           pLongMsg[6] = pEvt->cteType;
           pLongMsg[7] = pEvt->dataStatus;
           pLongMsg[8] = pEvt->dataLen;
-          MAP_osal_memcpy(&pLongMsg[9], pEvt->pData, pEvt->dataLen);
 
-          MAP_osal_mem_free(pEvt->pData);
+          if ( (pEvt->pData != NULL) && (pEvt->dataLen > 0) )
+          {
+            MAP_osal_memcpy(&pLongMsg[9], pEvt->pData, pEvt->dataLen);
+            MAP_osal_mem_free(pEvt->pData);
+          }
+
           pBuf = pLongMsg;
           msgLen = 9 + pEvt->dataLen;
         }
@@ -8405,7 +7782,7 @@ static uint8_t *processDataL2CAP(l2capDataEvent_t *pPkt, uint8_t *pOutMsg,
 
   // Build the message header first
   VOID buildHCIExtHeader(pBuf, (HCI_EXT_L2CAP_EVENT | HCI_EXT_L2CAP_DATA),
-                          status, pPkt->connHandle);
+                          status, pPkt->pkt.connHandle);
   // Add CID
   pBuf[HCI_EXT_HDR_LEN] = LO_UINT16(pPkt->pkt.CID);
   pBuf[HCI_EXT_HDR_LEN+1] = HI_UINT16(pPkt->pkt.CID);

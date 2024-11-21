@@ -377,8 +377,6 @@ extern "C"
 #define HCI_PERIODIC_ADV_SYNCH_LOST_EVENT_LEN                          3
 #define HCI_HARDWARE_ERROR_EVENT_LEN                                   1
 #define HCI_DIRECT_TEST_END_LEN                                        3
-// LE Synchronous Event Lengths
-#define HCI_LE_READ_ANTENNA_INFORMATION_LEN                            5
 // Vendor Specific LE Events
 #define HCI_SCAN_REQ_REPORT_EVENT_LEN                                  11
 #define HCI_EXT_CONNECTION_IQ_REPORT_EVENT_LEN                         20
@@ -389,14 +387,14 @@ extern "C"
 #define HCI_EXT_SCAN_EVENT_LEN                                         3
 
 // Channel Sounding Events
-#define HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT_LEN 31
+#define HCI_LE_CS_READ_REMOTE_SUPPORTED_CAPABILITIES_COMPLETE_EVENT_LEN 32
 #define HCI_LE_CS_CONFIG_COMPLETE_EVENT_LEN                             34
 #define HCI_LE_CS_SECURITY_ENABLE_COMPLETE_EVENT_LEN                    4
 #define HCI_LE_CS_READ_REMOTE_FAE_TABLE_COMPLETE_EVENT_LEN              76
 #define HCI_LE_CS_PROCEDURE_ENABLE_COMPLETE_EVENT_LEN                   20
 #define HCI_LE_CS_SUBEVENT_RESULT_LEN                                   17
 #define HCI_LE_CS_SUBEVENT_CONTINUE_LEN                                 9
-#define HCI_LE_CS_TEST_END_COMPLETE_EVENT_LEN                           0
+#define HCI_LE_CS_TEST_END_COMPLETE_EVENT_LEN                           2
 
 /*******************************************************************************
  * TYPEDEFS
@@ -409,26 +407,6 @@ extern "C"
 /*******************************************************************************
  * API FUNCTIONS
  */
-
-/*******************************************************************************
- * @fn          HCI_CommandStatusCb
- *
- * @brief       This function is a wrapper for a callback provided by the Host.
- *              It was created to align the typecasts of the HCI_TL_CommandStatusCB_t
- *              and the pHciC2HCbs.send (the return type is different).
- *
- * input parameters
- *
- * @param       pBuf - Pointer to an HCI packet.
- * @param       len  - Lenght of the HCI packet.
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      void
- */
-void HCI_CommandStatusCb(uint8_t *pBuf, uint16_t len);
 
 /*******************************************************************************
  * @fn          HCI_SendEventToHost
@@ -819,6 +797,45 @@ void HCI_CommandStatusEvent( hciStatus_t status, uint16 opcode );
 void HCI_SendCommandCompleteEvent( uint8 eventCode, uint16 opcode,
                                    uint8 numParam, uint8 *param );
 
+/*******************************************************************************
+ * @fn          HCI_SendHandoverSNDataEvent
+ *
+ * @brief       This command prepare and send the handover data
+ *
+ * input parameters
+ *
+ * @param       status         - The event code.
+ * @param       dataSize       - The opcode of the command that generated this event.
+ * @param       pHandoverData  - The number of parameters in the event.
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      None.
+ */
+void HCI_SendHandoverSNDataEvent(uint8_t status,
+                                 uint16_t dataSize,
+                                 uint8_t *pHandoverData);
+
+/*******************************************************************************
+ * @fn          HCI_getPacketLen
+ *
+ * @brief       This function calculates and returns the length of the
+ *              input HCI packet.
+ *
+ * input parameters
+ *
+ * @param       *pEvt   - HCI packet.
+ *
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      pktLen - length of input packet or zero for invalid input.
+ */
+uint16 HCI_getPacketLen( hciPacket_t *pEvt );
 #ifdef __cplusplus
 }
 #endif

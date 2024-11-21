@@ -31,14 +31,6 @@
 #define BF(x,b,s)  (((x) & (b)) >> (s))
 #endif
 
-#ifndef MIN
-#define MIN(n,m)   (((n) < (m)) ? (n) : (m))
-#endif
-
-#ifndef MAX
-#define MAX(n,m)   (((n) < (m)) ? (m) : (n))
-#endif
-
 #ifndef ABS
 #define ABS(n)     (((n) < 0) ? -(n) : (n))
 #endif
@@ -48,14 +40,14 @@
 #define BREAK_UINT32( var, ByteNum ) \
           (uint8)((uint32)(((var) >>((ByteNum) * 8)) & 0x00FF))
 
-#define BUILD_UINT32(Byte0, Byte1, Byte2, Byte3) \
-          ((uint32)((uint32)((Byte0) & 0x00FF) \
-          + ((uint32)((Byte1) & 0x00FF) << 8) \
-          + ((uint32)((Byte2) & 0x00FF) << 16) \
-          + ((uint32)((Byte3) & 0x00FF) << 24)))
+#define BUILD_UINT32(Byte0, Byte1, Byte2, Byte3) ( ((uint32)(Byte3) << 24U) | \
+                                                   ((uint32)(Byte2)  << 16U) | \
+                                                   ((uint32)(Byte1)  << 8U)  | \
+                                                   (uint32)(Byte0) )
 
-#define BUILD_UINT16(loByte, hiByte) \
-          ((uint16)(((loByte) & 0x00FF) + (((hiByte) & 0x00FF) << 8)))
+#define BUILD_UINT16(loByte, hiByte) ( (uint16)(loByte) | ((uint16)(hiByte) << 8U ))
+
+#define BUILD_INT16(loByte, hiByte) ((int16)(((uint16)(loByte)) | ((uint16)(hiByte) << 8U )))
 
 #define HI_UINT16(a) (((a) >> 8) & 0xFF)
 #define LO_UINT16(a) ((a) & 0xFF)

@@ -363,7 +363,6 @@ void ICall_heapMgrGetMetrics(uint32_t *pBlkMax,
  * Worker Thread entity definition
  *
 */
-#ifdef CC23X0
 /* keep the worker thread priority lower than the icall task (5)
    and higher than the app task (1) */
 #define ICALL_WORKER_THREAD_PRIORITY    2
@@ -389,8 +388,6 @@ typedef struct
   void                  *func;
   void                  *arg;
 } ICall_WorkerThreadMsg_t;
-
-#endif
 
 /**
  * @internal Searches for a task entry within @ref ICall_tasks.
@@ -589,7 +586,6 @@ void ICall_init(void)
   }
 }
 
-#ifdef CC23X0
 /**
  * @brief   The worker thread entry function.
  *          This task waits forever on queue message
@@ -691,7 +687,6 @@ int ICall_workerThreadSendMsg(void *func, void *arg, uint16 size)
   }
   return status;
 }
-#endif
 
 /* See header file for comments */
 void ICall_createRemoteTasksAtRuntime(ICall_RemoteTask_t *remoteTaskTable, uint8_t nbElems)
@@ -736,10 +731,13 @@ void ICall_createRemoteTasks(void)
     remoteTaskTable[i].ICall_imgInitParam = (void *) ICall_getInitParams(i);
   }
   ICall_createRemoteTasksAtRuntime(remoteTaskTable, ICALL_REMOTE_THREAD_COUNT);
-#ifdef CC23X0
   // create the worker thread
   ICall_createWorkerThread();
-#endif
+}
+
+bool BLE_isInvokeRequired(void)
+{
+  return (TaskP_getCurrentTask() != RemoteTask);
 }
 
 /**
@@ -923,7 +921,6 @@ void ICall_verify(void)
 #endif /* COVERAGE_TEST */
 
 
-#ifdef ICALL_JT
 /**
  * Registers an application.
  * Note that this function must be called from the thread
@@ -983,8 +980,18 @@ void *ICall_allocMsg(size_t size)
 {
   void * msg = NULL;
   ICall_MsgHdr *hdr = NULL;
+  size_t allocSize;
 
-  hdr = (ICall_MsgHdr *) ICall_heapMalloc(sizeof(ICall_MsgHdr) + size);
+  allocSize = sizeof(ICall_MsgHdr) + size;
+
+  // If 'size' is very large and 'allocSize' overflows, the result will be
+  // smaller than size. In this case, don't try to allocate.
+  if ( allocSize < size )
+  {
+    return (NULL);
+  }
+
+  hdr = (ICall_MsgHdr *) ICall_heapMalloc(allocSize);
 
   if (!hdr)
   {
@@ -1321,7 +1328,7 @@ void ICall_heapGetStats(ICall_heapStats_t *pStats)
   pStats->totalSize = configTOTAL_HEAP_SIZE;
   pStats->largestFreeSize = pHeapStats.xSizeOfLargestFreeBlockInBytes;
 }
-#else // FREERTOS
+#elif defined(CONFIG_ZEPHYR)
 // ZEPHYR
 
 K_HEAP_DEFINE(ll_heap, CONFIG_BT_LL_HEAP_SIZE);
@@ -1369,6 +1376,8 @@ void ICall_heapGetStats(ICall_heapStats_t *pStats)
   pStats->largestFreeSize = CONFIG_BT_LL_HEAP_SIZE;
 }
 
+#else
+#error "Unknown OS. Only Zephyr and FreeRTOS supported."
 #endif // FREERTOS
 /**
  * Allocates a memory block.
@@ -2485,20 +2494,24 @@ ICall_threadServes(ICall_ServiceEnum service)
 uint_fast8_t
 ICall_getLocalMsgEntityId(ICall_ServiceEnum service, ICall_EntityID entity)
 {
-  ICall_GetLocalMsgEntityIdArgs args;
-  ICall_Errno errno;
-  args.hdr.service = service;
-  args.hdr.func = ICALL_MSG_FUNC_GET_LOCAL_MSG_ENTITY_ID;
-  args.entity = entity;
-  errno = ICall_dispatcher(&args.hdr);
-  if (errno == ICALL_ERRNO_SUCCESS)
+  // Getting the entity ID only if must invoke
+  if (BLE_isInvokeRequired())
   {
-    return (args.localId);
+    ICall_GetLocalMsgEntityIdArgs args;
+    ICall_Errno errno;
+    args.hdr.service = service;
+    args.hdr.func = ICALL_MSG_FUNC_GET_LOCAL_MSG_ENTITY_ID;
+    args.entity = entity;
+    errno = ICall_dispatcher(&args.hdr);
+    if (errno == ICALL_ERRNO_SUCCESS)
+    {
+      return (args.localId);
+    }
   }
+
+  // Otherwise, not in application context and invalid ID is returned
   return (0xFF);
 }
-
-#endif /* ICALL_JT */
 
 #ifdef ICALL_LITE
  /*******************************************************************************
@@ -2512,29 +2525,25 @@ static bool matchLiteCS(ICall_ServiceEnum src,
   ICall_LiteCmdStatus *pMsg = (ICall_LiteCmdStatus *)msg;
   return (pMsg->cmdId == ICALL_LITE_DIRECT_API_DONE_CMD_ID);
 }
+
  /*******************************************************************************
- * @fn          icall_directAPI
+ * @fn          icall_directAPIva
  * see headers for details.
  */
-uint32_t icall_directAPI( uint8_t service , icall_lite_id_t id, ... )
+uint32_t icall_directAPIva(icall_lite_id_t id, va_list argp)
 {
-  va_list argp;
   uint32_t res;
   icallLiteMsg_t liteMsg;
 
-  // The following will push all parameter in the runtime stack.
-  // This need to be call before any other local declaration of variable....
-  va_start(argp, id);
-
   // Todo - add string for every icall API function, instead of printing function address
   BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP, "APP : icall_directAPI to BLE func=0x%x, status=%d\n", id, 0);
-  // Create the message that will be send to the requested service..
+  // Create the message that will be send to the BLE service.
   liteMsg.hdr.len = sizeof(icallLiteMsg_t);
   liteMsg.hdr.next = NULL;
   liteMsg.hdr.dest_id = ICALL_UNDEF_DEST_ID;
   liteMsg.msg.directAPI  = id;
   liteMsg.msg.pointerStack = (uint32_t *)(*((uint32_t *)(&argp)));
-  ICall_sendServiceMsg(ICall_getEntityId(), service,
+  ICall_sendServiceMsg(ICall_getEntityId(), ICALL_SERVICE_CLASS_BLE,
                        ICALL_MSG_FORMAT_DIRECT_API_ID, &(liteMsg.msg));
 
   // Since stack needs to always have a higher priority than the thread calling
@@ -2580,9 +2589,47 @@ uint32_t icall_directAPI( uint8_t service , icall_lite_id_t id, ... )
   // first parameter.
   res = liteMsg.msg.pointerStack[0];
 
+  return (res);
+}
+
+/*
+ * Legacy icall_directAPI() that takes a var args "...".  This provides the
+ * legacy API as users migrate to the new API.  Eventually, if we eliminate all
+ * users of this legacy API (likely by moving to BLE_invokeIfRequired()), we
+ * could remove this API completely.
+ */
+uint32_t icall_directAPI(icall_lite_id_t id, ...) {
+  va_list argp;
+  uint32_t res;
+
+  va_start(argp, id);
+
+  res = icall_directAPIva(id, argp);
+
   va_end(argp);
 
   return (res);
+}
+
+bool BLE_invokeIfRequired(const void *pFxn, uint32_t* result, ...)
+{
+  bool didInvoke;
+
+  if (BLE_isInvokeRequired())
+  {
+    va_list argp;
+
+    va_start(argp, result);
+
+    *result = icall_directAPIva((uint32_t)pFxn, argp);
+
+    va_end(argp);
+    didInvoke = true;
+  }
+  else{
+    didInvoke = false;
+  }
+  return (didInvoke);
 }
 
  /*******************************************************************************

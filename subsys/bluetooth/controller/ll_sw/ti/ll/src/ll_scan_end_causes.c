@@ -30,8 +30,7 @@
 #include "ll_rat.h"
 #include "ll_timer_drift.h"
 #include "ll_ae.h"
-#include "hal_gpio_wrapper.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "hci_event.h"
 
 /*******************************************************************************
@@ -80,10 +79,6 @@ void llExtScan_PostProcess( void )
 {
   volatile uint32 currentTime;
   uint8 nextScanChannel = 0;
-
-#ifdef DEBUG_GPIO_ADV_SCAN
-  GPIO_writeDio(HAL_GPIO_2, 0);
-#endif // DEBUG_GPIO_ADV_SCAN
 
   // clear all RX entries
   llClearScanDataQueue(TRUE);
@@ -193,6 +188,22 @@ void llExtScan_PostProcess( void )
       // update Start Time based on Scan Interval
       extScanCmd.common.timing.absStartTime = extScanInfo->scanStartTime +
                                              (extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval * RAT_TICKS_IN_625US);
+
+#ifdef SCAN_OPTIMIZER
+      // When using SCAN_OPTIMIZER and the device has a gap between two following scan windows:
+      // a random number, with a range of (scan interval - scan window), will be added to the next scan start time
+      // instead of using the scan interval.
+      if(extScanInfo->pScanParam->extScanParam[extScanIndex].scanInterval > extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow)
+      {
+          if(llTimeCompare(extScanCmd.common.timing.absStartTime, currentTime))
+          {
+              uint32 scanTimeDiff = extScanCmd.common.timing.absStartTime - currentTime;
+              uint32 delay = (LL_ENC_GeneratePseudo32RandNum() % (scanTimeDiff));
+              extScanCmd.common.timing.absStartTime = currentTime + delay + 2 * RAT_TICKS_IN_1_5MS;;
+          }
+      }
+#endif
+
       extScanInfo->scanStartTime = extScanCmd.common.timing.absStartTime;
       // Restart the Graceful Stop Time
       extScanCmd.common.timing.relGracefulStopTime = extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US;
@@ -211,37 +222,6 @@ void llExtScan_PostProcess( void )
     // set window
     extScanCmd.common.timing.relGracefulStopTime =
       (extScanInfo->pScanParam->extScanParam[extScanIndex].scanWindow * RAT_TICKS_IN_625US);
-
-    // only if address resolution is enabled
-    if ( privInfo.addrResolution )
-    {
-      // check if RPA has changed, and if so, update Scan address
-      // Note: Assumes if the local IRK is valid, then the local RPA exists.
-      if ( LL_IS_ADDR_TYPE_RPA(extScanInfo->ownAddrType) &&
-           !MAP_LL_PRIV_IsZeroIRK( resolvingList[LOCAL_RL_INDEX].IRK ) )
-
-      {
-        // update the RPA (whether it has changed or not)
-        // Note: scanParam.pDeviceAddr points to scanInfo->ownAddr.
-        // Note: It would take just as long (longer actually) to first compare
-        //       the address to see if it has changed. Faster to just copy.
-        // Note: Sadly, we can't just point scanParam.pDeviceAddr to the RL RPA
-        //       (if valid) as we could end up changing it while the radio is
-        //       using it.
-        MAP_osal_memcpy( extScanInfo->ownAddr,
-                         resolvingList[LOCAL_RL_INDEX].RPA,
-                         B_ADDR_LEN );
-
-        // In devices using RF Driver (rflib instead of rcl), the command
-        // itself will point to extScanInfo->ownAddr which naturally updates
-        // the RPA.
-        // When using RCL, the RF Command needs to be directly updated
-        // Copy the address into the command.
-        MAP_osal_memcpy( extScanCmd.ctx->ownA,
-                         resolvingList[LOCAL_RL_INDEX].RPA,
-                         B_ADDR_LEN );
-      }
-    }
 
     // check if our duration has expired within the period
     // invoke callback, if there is one
@@ -372,26 +352,6 @@ void llPeriodicScan_PostProcess( void )
             pPeriodicScan->terminate = LL_STATUS_ERROR_CONNECTION_TIMEOUT;
           }
         }
-#ifdef RTLS_CTE
-        uint8 cteCount = 0;
-
-        while (llCteSamples.autoCopyCompleted > 0)
-        {
-          if (cteCount < pPeriodicScan->cteInfo.count)
-          {
-            MAP_llGetCteInfo( CTE_TASK_ID_CONNECTIONLESS, pPeriodicScan );
-            cteCount++;
-          }
-          else
-          {
-            // we should not get to this point because
-            // the RF was configured (cteCopyLimitCount) to get max cte count (cteInfo.count)
-            MAP_RFHAL_NextDataEntryDone( (dataEntryQ_t *)llCteSamples.autoCopy.pSamplesQueue );
-            // decrease number of completed buffers
-            llCteSamples.autoCopyCompleted--;
-          }
-        }
-#endif
       }
     }
     // check if there was a request for terminate the current periodic set
@@ -401,34 +361,56 @@ void llPeriodicScan_PostProcess( void )
     }
     else
     {
-      // Drift time in RAT ticks per event (no drift in case drift learning in progress)
-      int16 drift = (pPeriodicScan->driftLearnCounter <= PERIODIC_SCAN_DRIFT_LEARNING_MAX_NUM)?0:pPeriodicScan->driftFactor;
+      // Calculate the SCA drift using the advertiser SCA and the device SCA
+      // Interval is given in 1.25ms units, multiply by 2 to convert to 625us units
+      uint32 scaDrift = MAP_llCalcPeriodicScaDriftPerInterval(pPeriodicScan->syncInfo.sca, CONVERT_1_25MS_TO_0_625MS( pPeriodicScan->interval ));
 
-      // Update next sync indication receive time
+      // Save the lastStartTime
+      uint32 lastStartTime = pPeriodicScan->rfCmd.common.timing.absStartTime;
+
+      // Next sync indication receive time will depends if the packet was missed or not
+
+      // delayUnits is the number of missed events or number of skips, it will be used to set the
+      // correct SCA delay and the next start time
+      uint16 delayUnits;
+
+      // Packet was received
       if (pPeriodicScan->numMissed == 0)
       {
+        delayUnits =  pPeriodicScan->syncCmd.skip + 1;
 
-        // Calculate the SCA drift using the advertiser SCA and the device SCA
-        uint32 scaDrift = MAP_llCalcPeriodicScaDriftPerInterval(pPeriodicScan->syncInfo.sca, pPeriodicScan->interval);
+        // Set stop time to base value
+        pPeriodicScan->rfCmd.common.timing.relGracefulStopTime = PER_SUCCESS_SOFTSTOPTIME_DEFAULT;
 
-        // Add the SCA value and the drift value that calculated by stack and multiple that in the number of skips
-        pPeriodicScan->rfCmd.common.timing.absStartTime += (pPeriodicScan->syncCmd.skip + 1) *
-                                                           ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) - scaDrift + drift);
+        // Calculate the next start time for the scanner based on the periodic interval and the number of skips
+        pPeriodicScan->rfCmd.common.timing.absStartTime = lastStartTime + (delayUnits * pPeriodicScan->interval)
+                                                          * RAT_TICKS_IN_1_25MS;
+        // update the eventCounter based on number of skips
+        pPeriodicScan->eventCounter += delayUnits;
 
-        // When using big skip value, the device will start early due to big drift that calculate by the SCA factor,
-        // the scanner could lose the interval, so increase the RX window according to the skip value size
-        pPeriodicScan->rfCmd.common.timing.relGracefulStopTime = PER_SUCCESS_SOFTSTOPTIME_DEFAULT +
-                                                                 (pPeriodicScan->syncCmd.skip * PER_SOFTSTOP_ADDITION_PER_SKIP);
-
-        // Update event counter
-        pPeriodicScan->eventCounter += (pPeriodicScan->syncCmd.skip + 1);
       }
-      else
+      else // Periodic event was missed
       {
-        pPeriodicScan->rfCmd.common.timing.absStartTime += ((pPeriodicScan->interval * RAT_TICKS_IN_1_25MS) + drift);
-        // update event counter
-        pPeriodicScan->eventCounter++;
+        delayUnits =  pPeriodicScan->numMissed;
+
+        // When periodic event missed, trying to catch the next periodic event even if skip value has been set.
+        pPeriodicScan->rfCmd.common.timing.absStartTime = lastStartTime + (pPeriodicScan->interval) * RAT_TICKS_IN_1_25MS;
+
+        // Trying to catch the next periodic event so increase the eventCounter in one only.
+        pPeriodicScan->eventCounter ++;
+
       }
+
+      /* Widening process - extend the window from both sides if needed */
+
+      // Open the window earlier, depends on the ScaDrift and the number of skips or missed events.
+      pPeriodicScan->rfCmd.common.timing.absStartTime = pPeriodicScan->rfCmd.common.timing.absStartTime -
+                                                        (delayUnits * scaDrift);
+
+      // Extend the window size, depends on the number of skips or missed events. multiple by 2 to handle delayed drift
+      // as well.
+      pPeriodicScan->rfCmd.common.timing.relGracefulStopTime = pPeriodicScan->rfCmd.common.timing.relGracefulStopTime +
+                                                               (delayUnits  * scaDrift * 2);
 
       // initialize the status
       pPeriodicScan->rfCmd.common.status = RCL_CommandStatus_Idle;
@@ -442,8 +424,9 @@ void llPeriodicScan_PostProcess( void )
       }
       // set the next data channel
       pPeriodicScan->rfCmd.channel = llSetNextPeriodicAdvChan( &pPeriodicScan->chanMap.current,
-                                                             pPeriodicScan->syncInfo.accessAddr,
-                                                             pPeriodicScan->eventCounter );
+                                                               pPeriodicScan->syncInfo.accessAddr,
+                                                               pPeriodicScan->eventCounter );
+
     }
   }
   pPeriodicScan->rxCount = 0;

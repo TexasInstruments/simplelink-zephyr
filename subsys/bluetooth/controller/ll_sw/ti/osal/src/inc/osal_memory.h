@@ -55,20 +55,6 @@ extern "C"
  * FUNCTIONS
  */
 
-/**
- * @brief       This function is the OSAL heap memory management initialization callback.
- */
-  void osal_mem_init( void );
-
-/**
- * @brief       This function is the OSAL task initialization callback.
- *
- * Kick the ff1 pointer out past the long-lived OSAL Task blocks.
- * Invoke this once after all long-lived blocks have been allocated -
- * presently at the end of osal_init_system().
- */
-  void osal_mem_kick( void );
-
 /// @endcond //NODOC
 
  /*

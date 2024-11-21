@@ -23,8 +23,9 @@
 /*******************************************************************************
  * INCLUDES
  */
+#include <string.h>
 #include "ll_dfl.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "bcomdef.h"
 
 /*******************************************************************************
@@ -46,8 +47,8 @@
 /*******************************************************************************
  * LOCAL VARIABLES
  */
-dynamicFL_t       g_dynamicFL;   // Dynamic filter list
-rankDynamicFL_t   rankFLTable; // Rank table of the dynamic filter list
+RCL_FilterList    gDynamicFL;   // Dynamic filter list
+rankDynamicFL_t   gRankFLTable; // Rank table of the dynamic filter list
 
 /*******************************************************************************
  * FUNCTIONS
@@ -56,59 +57,39 @@ rankDynamicFL_t   rankFLTable; // Rank table of the dynamic filter list
 /*******************************************************************************
 * Public function defined in ll_dfl.h.
 */
-uint8 LL_DFL_GetDynamicFLSize( dynamicFL_t *dynamicFL )
+uint8 LL_DFL_GetDynamicFLSize( RCL_FilterList* const pDynamicFL )
 {
-    uint8 RetVal = 0;
-
+    uint8 numEntries = BLE_INVALID_NUM_FL_ENTRIES; // Init number of Entries to
+                                                   // invalid value.
     // Sanity Check
-    LL_ASSERT(dynamicFL != ((void *)0)); // (stands for NULL)
-
-    (void)MAP_osal_memcpy(&RetVal, &dynamicFL->numEntries, 1);
-    return RetVal;
-}
-
-/*******************************************************************************
-* Public function defined in ll_dfl.h.
-*/
-void LL_DFL_SetDynamicFLSize( dynamicFL_t *dynamicFL, uint8 size )
-{
-    if( dynamicFL != NULL )
+    if ( pDynamicFL != NULL )
     {
-        dynamicFL->numEntries = size;
+        numEntries = (uint8)pDynamicFL->numEntries;
     }
+
+    return numEntries;
 }
 
 /*******************************************************************************
 * Public function defined in ll_dfl.h.
 */
-dynamicFLEntry_t* LL_DFL_GetDynamicFLEntries( dynamicFL_t *dynamicFL )
+void LL_DFL_SetDynamicFLSize( RCL_FilterList* pDynamicFL, uint8 size )
 {
-    // Sanity Check
-    LL_ASSERT( dynamicFL != ((void *)0)); // (stands for NULL)
-
-    return dynamicFL->entries;
-}
-
-/*******************************************************************************
-* Public function defined in rfBleDpl.h.
-*/
-void* rfBleDpl_GetRadioFLPtr( dynamicFL_t *dynamicFL )
-{
-    // Sanity Check
-    LL_ASSERT( dynamicFL != ((void *)0)); // (stands for NULL)
-
-    return (void *)(dynamicFL);
+    if( pDynamicFL != NULL )
+    {
+        pDynamicFL->numEntries = size;
+    }
 }
 
 /*******************************************************************************
 * API function defined in ll_dfl.h.
 */
-llStatus_t LL_DFL_Init( dynamicFL_t       *pDynamicFL,
+llStatus_t LL_DFL_Init( RCL_FilterList    *pDynamicFL,
                         rankDynamicFL_t   *pRankFLTable )
 {
-    llStatus_t status = LL_STATUS_SUCCESS;  // Init status to success.
-    dynamicFLEntry_t *pEntries = NULL;      // Init the pointer of the filter
-                                            // list entries to null.
+    llStatus_t    status   = LL_STATUS_SUCCESS;  // Init status to success.
+    RCL_FL_Entry *pEntries = NULL;               // Init the pointer of the
+                                                 // filter list entries to null.
 
     // Verify that input parameters are valid
     if( ( pDynamicFL == NULL ) || ( pRankFLTable == NULL ) )
@@ -118,20 +99,20 @@ llStatus_t LL_DFL_Init( dynamicFL_t       *pDynamicFL,
     else
     {
         // Get pointer to the filter list entries
-        pEntries = LL_DFL_GetDynamicFLEntries(pDynamicFL);
+        pEntries = pDynamicFL->entries;
 
         // Iterate over the dynamic filter list and rank table and
         // initialize each entry
-        for ( int8 i=0; i<DFL_SIZE ; i++ )
+        for ( uint8 i=0; i<DFL_SIZE ; i++ )
         {
             // Set device address to 0
-            (void)MAP_osal_memset( pEntries[i].devAddr, 0, B_ADDR_LEN );
+            memset( pEntries[i].address, 0, B_ADDR_LEN );
 
             // Clear all flags ( clear all flags will set the entry as being free)
-            CLR_DFL_ENTRY( pEntries[i].dflFlags );
+            pEntries[i].ctlWord = BLE_INITIAL_RCL_FL_Entry;
 
-            // Set rank of the entry to the invalid rank - size of the filter list
-            pRankFLTable->entries[i] = DFL_SIZE;
+            // Set rank of the entry to the invalid rank
+            pRankFLTable->entries[i] = DFL_INVALID_RANK;
         }
 
         // Set number of entries in structure.
@@ -146,34 +127,31 @@ llStatus_t LL_DFL_Init( dynamicFL_t       *pDynamicFL,
 /*******************************************************************************
 * API function defined in ll_dfl.h.
 */
-uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
-                      rankDynamicFL_t   *pRankFLTable,
-                      uint8             *devAddr,
-                      uint8             devAddrType )
+uint8 LL_DFL_AddEntry( RCL_FilterList     *pDynamicFL,
+                       rankDynamicFL_t    *pRankFLTable,
+                       uint8              *devAddr,
+                       uint8              devAddrType )
 {
     uint8 operation = DFL_RANK_ADD_NEW_ENTRY; // The operation is adding a new
                                               // entry or replacing an existing
                                               // Entry.
-    uint8 newEntryIndex = DFL_SIZE;           // The index of the new entry in
-                                              // the dynamicFL. Init to DFL_SIZE.
-    dynamicFLEntry_t *pEntries = NULL;        // Init the pointer to the filter
+    uint8 newEntryIndex = DFL_INVALID_INDEX;  // The index of the new entry in
+                                              // the dynamicFL. Init to
+                                              // DFL_INVALID_INDEX.
+    RCL_FL_Entry *pEntries = NULL;            // Init the pointer to the filter
                                               // list entries to null.
 
     // Verify that input parameters are valid
-    if( ( pDynamicFL == NULL ) || ( pRankFLTable == NULL ) )
-    {
-        newEntryIndex = DFL_SIZE; // To approve with Maxim - maybe can leave it empty?
-    }
-    else
+    if( ( pDynamicFL != NULL ) && ( pRankFLTable != NULL ) )
     {
         // Get pointer to the filter list entries
-        pEntries = LL_DFL_GetDynamicFLEntries( pDynamicFL );
+        pEntries = pDynamicFL->entries;
 
         // Get available index to insert/replace the new entry
         newEntryIndex = llDFLGetAvailableEntry( pDynamicFL, pRankFLTable );
 
-        // Check if the newEntryIndex is free
-        if ( (IS_DFL_ENTRY_FREE(pEntries[newEntryIndex].dflFlags)) == FALSE)
+        // Check if the newEntryIndex is busy
+        if ( pEntries[newEntryIndex].ctl.enabled == UTRUE )
         {
             // The newEntryIndex in used, than update the operation to
             // DFL_RANK_UPDATE_ENTRY
@@ -181,23 +159,23 @@ uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
         }
 
         // Set entry as being in use
-        SET_DFL_ENTRY_BUSY(pEntries[newEntryIndex].dflFlags);
+        pEntries[newEntryIndex].ctl.enabled = TRUE;
 
         // Set address type
         if (devAddrType == LL_DEV_ADDR_TYPE_PUBLIC)
         {
-            SET_DFL_ENTRY_PUBLIC(pEntries[newEntryIndex].dflFlags);
+            pEntries[newEntryIndex].ctl.addType = LL_DEV_ADDR_TYPE_PUBLIC;
         }
         else
         {
-            SET_DFL_ENTRY_RANDOM(pEntries[newEntryIndex].dflFlags);
+            pEntries[newEntryIndex].ctl.addType = LL_DEV_ADDR_TYPE_RANDOM;
         }
 
         // Clear privacy ignore bit
-        CLR_DFL_ENTRY_PRIV_IGNORE(pEntries[newEntryIndex].dflFlags);
+        pEntries[newEntryIndex].ctl.privIgn = FALSE;
 
         // Copy device address
-        (void)MAP_osal_memcpy( pEntries[newEntryIndex].devAddr, devAddr, B_ADDR_LEN );
+        memcpy( (void*)(pEntries[newEntryIndex].address), (const void*)devAddr, B_ADDR_LEN );
 
         // Update the rank table of dynamicFL as a result of adding/replacing an
         // entry.
@@ -216,32 +194,33 @@ uint8 LL_DFL_AddEntry( dynamicFL_t      *pDynamicFL,
 /*******************************************************************************
 * API function defined in ll_dfl.h.
 */
-llStatus_t LL_DFL_RemoveEntry( dynamicFL_t      *pDynamicFL,
-                               rankDynamicFL_t  *pRankFLTable,
-                               uint8            indexEntry )
+llStatus_t LL_DFL_RemoveEntry( RCL_FilterList* const   pDynamicFL,
+                               rankDynamicFL_t         *pRankFLTable,
+                               uint8                   indexEntry )
 {
-    llStatus_t status = LL_STATUS_SUCCESS; // Init status to success.
-    dynamicFLEntry_t *pEntries = NULL;     // Init the pointer to the filter
-                                           // list entries to null.
-
-    // Get pointer to the filter list entries
-    pEntries = LL_DFL_GetDynamicFLEntries( pDynamicFL );
+    llStatus_t    status   = LL_STATUS_SUCCESS; // Init status to success.
+    RCL_FL_Entry *pEntries = NULL;              // Init the pointer to the
+                                                // filter list entries to null.
 
     // Verify that input parameters are valid
-    if( (indexEntry >= (uint8)DFL_SIZE) || (pDynamicFL == NULL) || (pRankFLTable == NULL))
+    if( (indexEntry >= DFL_SIZE) || (pDynamicFL == NULL) ||
+        (pRankFLTable == NULL) )
     {
         status = LL_STATUS_ERROR_INVALID_PARAMS;
     }
     else
     {
+        // Get pointer to the filter list entries
+        pEntries = pDynamicFL->entries;
+
         // Set device address to 0x0
-        (void)MAP_osal_memset( pEntries[indexEntry].devAddr, 0, B_ADDR_LEN );
+        memset( pEntries[indexEntry].address, 0, B_ADDR_LEN );
 
         // Clear all the Flags
-        CLR_DFL_ENTRY( pEntries[indexEntry].dflFlags );
+        pEntries[indexEntry].ctlWord = BLE_INITIAL_RCL_FL_Entry;
 
         // Mark Entry as Free
-        SET_DFL_ENTRY_FREE( pEntries[indexEntry].dflFlags );
+        pEntries[indexEntry].ctl.enabled = FALSE;
 
         // Update the rank table of the dynamicFL to maintain the LRU mechanism
         if(llDFLUpdateRanks( pRankFLTable, indexEntry, DFL_RANK_REMOVE_ENTRY ) != USUCCESS)
@@ -257,36 +236,32 @@ llStatus_t LL_DFL_RemoveEntry( dynamicFL_t      *pDynamicFL,
 /*******************************************************************************
 * API function defined in ll_dfl.h.
 */
-uint8 LL_DFL_UpdateEntry( dynamicFL_t       *pDynamicFL,
+uint8 LL_DFL_UpdateEntry( RCL_FilterList    *pDynamicFL,
                           rankDynamicFL_t   *pRankFLTable,
                           uint8             *oldRPA,
                           uint8             *newRPA )
 {
-    uint8 indexEntry = DFL_SIZE;       // The index of the found/new entry in
-                                       // the dynamicFL. Init to DFL_SIZE.
-    dynamicFLEntry_t *pEntries = NULL; // Init the pointer to the filter
-                                       // list entries to null.
+    uint8 indexEntry = DFL_INVALID_INDEX; // The index of the found/new entry
+                                          // in the dynamicFL. Init to
+                                          // DFL_INVALID_INDEX.
+    RCL_FL_Entry *pEntries = NULL;        // Init the pointer to the filter
+                                          // list entries to null.
 
     // Verify that input parameters are valid
-    if( ( pDynamicFL == NULL ) || ( pRankFLTable == NULL ) ||
-        ( oldRPA == NULL ) || ( newRPA == NULL ))
-    {
-        indexEntry = DFL_SIZE; // To approve with Maxim - maybe can leave it empty?
-    }
-
-    else
+    if( ( pDynamicFL != NULL ) && ( pRankFLTable != NULL ) &&
+        ( oldRPA != NULL ) && ( newRPA != NULL ))
     {
         // Get pointer to the filter list entries
-        pEntries = LL_DFL_GetDynamicFLEntries( pDynamicFL );
+        pEntries = pDynamicFL->entries;
 
         // Find the index entry of the old RPA in the dynamicFL
         indexEntry = LL_DFL_FindEntry( pDynamicFL, oldRPA, LL_DEV_ADDR_TYPE_RANDOM);
 
         // Check if the index entry is valid
-        if ( indexEntry < (uint8)DFL_SIZE )
+        if ( indexEntry != DFL_INVALID_INDEX )
         {
             // replace the oldRPA in the DynamicFL entry
-            (void)MAP_osal_memcpy( pEntries[indexEntry].devAddr, newRPA, B_ADDR_LEN );
+            memcpy( (void*)(pEntries[indexEntry].address), (const void*)newRPA, B_ADDR_LEN );
 
             // Update the rank table of dynamicFL as a result of replacing an
             // entry.
@@ -298,7 +273,10 @@ uint8 LL_DFL_UpdateEntry( dynamicFL_t       *pDynamicFL,
         else
         {
             // Get index of free entry or oldest entry (highest rank entry)
-            indexEntry = LL_DFL_AddEntry( pDynamicFL, pRankFLTable, newRPA, LL_DEV_ADDR_TYPE_RANDOM );
+            indexEntry = LL_DFL_AddEntry( pDynamicFL,
+                                          pRankFLTable,
+                                          newRPA,
+                                          LL_DEV_ADDR_TYPE_RANDOM );
         }
     }
 
@@ -308,42 +286,38 @@ uint8 LL_DFL_UpdateEntry( dynamicFL_t       *pDynamicFL,
 
 
 /*******************************************************************************
-* Internal function defined in ll_dfl.h.
+* API function defined in ll_dfl.h.
 */
-uint8 LL_DFL_FindEntry( dynamicFL_t    *pDynamicFL,
-                        uint8          *devAddr,
-                        uint8          devAddrType)
+uint8 LL_DFL_FindEntry( RCL_FilterList* const   pDynamicFL,
+                        uint8*                  devAddr,
+                        uint8                   devAddrType)
 {
-    uint8 entryIndex = DFL_SIZE;
-    dynamicFLEntry_t *pEntries = NULL; // Init the pointer to the filter
-                                       // list entries to null.
+    uint8 entryIndex = DFL_INVALID_INDEX; // The index of the found/new entry
+                                          // in the dynamicFL. Init to
+                                          // DFL_INVALID_INDEX.
+    RCL_FL_Entry *pEntries = NULL;        // Init the pointer to the filter
+                                          // list entries to null.
 
     // Verify that input parameters are valid
-    if( ( pDynamicFL == NULL ) || ( devAddr == NULL ) )
-    {
-        entryIndex = DFL_SIZE; // To approve with Maxim - maybe can leave it empty?
-    }
-
-    else
+    if( ( pDynamicFL != NULL ) && ( devAddr != NULL ) )
     {
         // Get pointer to the filter list entries
-        pEntries = LL_DFL_GetDynamicFLEntries( pDynamicFL );
+        pEntries = pDynamicFL->entries;
 
         // Iterate over the dynamic filter list check if there is a match between
         // device and type address in DynamicFL to the input.
         for ( uint8 i=0; i<(uint8)DFL_SIZE ; i++ )
         {
             // Check if the entry is busy
-            if( IS_DFL_ENTRY_FREE(pEntries[i].dflFlags) == FALSE )
+            if( pEntries[i].ctl.enabled == UTRUE )
             {
                 // Check if there is a match between the input device address to the
                 // dynamicFL device address.
-                if (MAP_osal_memcmp(devAddr, pEntries[i].devAddr, B_ADDR_LEN)
-                    == UTRUE)
+                if ( memcmp( (void*)devAddr, (const void*)pEntries[i].address, B_ADDR_LEN)
+                     == UTRUE )
                 {
                     // Check if there is a match between address type.
-                    if (GET_DFL_ENTRY_ADDR_TYPE(pEntries[i].dflFlags) ==
-                        devAddrType)
+                    if ( pEntries[i].ctl.addType == devAddrType )
                     {
                         // There is a match. The device found in the dynamicFL, so
                         // update the index of the entry in the dynamicFL and exit
@@ -363,9 +337,9 @@ uint8 LL_DFL_FindEntry( dynamicFL_t    *pDynamicFL,
 /*******************************************************************************
 * API function defined in ll_dfl.h.
 */
-dynamicFL_t *LL_DFL_GetDynamicFilterlist( void )
+RCL_FilterList *LL_DFL_GetDynamicFilterlist( void )
 {
-    return (dynamicFL_t*)&g_dynamicFL;
+    return (RCL_FilterList*)&gDynamicFL;
 }
 
 /*******************************************************************************
@@ -373,41 +347,36 @@ dynamicFL_t *LL_DFL_GetDynamicFilterlist( void )
 */
 rankDynamicFL_t *LL_DFL_GetRankTable( void )
 {
-    return (rankDynamicFL_t*)&rankFLTable;
+    return (rankDynamicFL_t*)&gRankFLTable;
 }
 
 /*******************************************************************************
 * Internal function defined in ll_dfl_internal.h.
 */
-uint8 llDFLGetAvailableEntry( dynamicFL_t        *dynamicFL,
-                              rankDynamicFL_t    *pRankFLTable )
+uint8 llDFLGetAvailableEntry( RCL_FilterList* const   pDynamicFL,
+                              rankDynamicFL_t*        pRankFLTable )
 {
     // Init availableIdx, maxRankIdx to invalid index.
-    uint8 availableIdx = DFL_SIZE;     // The index of the available entry in
-                                       // the dynamicFL.
-    uint8 maxRankIdx = DFL_SIZE;       // The index of the highest rank entry.
-    uint8 maxRankValue = 0;            // The rank values of the highest rank
-                                       // entry.
-    dynamicFLEntry_t *pEntries = NULL; // Init the pointer of the filter
-                                       // list entries to null.
+    uint8 availableIdx = DFL_INVALID_INDEX; // The index of the available entry
+                                            // in the dynamicFL.
+    uint8 maxRankIdx = DFL_INVALID_RANK;    // The index of the highest rank
+    uint8 maxRankValue = 0;                 // The rank values of the highest
+                                            // rank entry.
+    RCL_FL_Entry *pEntries = NULL;          // Init the pointer of the filter
+                                            // list entries to null.
 
     // Verify that input parameters are valid
-    if( ( dynamicFL == NULL ) || ( pRankFLTable == NULL ) )
-    {
-        availableIdx = DFL_SIZE; // To approve with Maxim - maybe can leave it empty?
-    }
-
-    else
+    if ( ( pDynamicFL != NULL ) && ( pRankFLTable != NULL ) )
     {
         // Get pointer to the filter list entries
-        pEntries = LL_DFL_GetDynamicFLEntries(dynamicFL);
+        pEntries = pDynamicFL->entries;
 
         // Iterate over the dynamic filter list and rank table and
         // update the maximal rank value
-        for ( int8 i=0; i<DFL_SIZE ; i++ )
+        for ( uint8 i = 0; i < DFL_SIZE ; i++ )
         {
             // Check if the entry is free
-            if( IS_DFL_ENTRY_FREE( pEntries->dflFlags ) == TRUE )
+            if( pEntries[i].ctl.enabled == UFALSE )
             {
                 // Update available index to the free entry index and exit for
                 // loop, since the available entry found.
@@ -423,14 +392,14 @@ uint8 llDFLGetAvailableEntry( dynamicFL_t        *dynamicFL,
             }
         }
         // Check if all the entries in dynamicFL in used.
-        if (availableIdx == (uint8)DFL_SIZE)
+        if ( availableIdx == DFL_INVALID_INDEX )
         {
             // Update available index to the entry with the highest rank value.
             availableIdx = maxRankIdx;
         }
     }
 
-    // return the available entry idx or DFL_SIZE if there is invalid param.
+    // Return the available entry idx or DFL_SIZE if there is invalid param.
     return availableIdx;
 }
 
@@ -459,34 +428,36 @@ llStatus_t llDFLUpdateRanks( rankDynamicFL_t   *pRankFLTable,
         // Save the previous rank entry in order to update the relevant entries.
         prevRank = pRankFLTable->entries[indexEntry];
 
-        // Set delta to -1 when removing entry, and restore the rank of the removed
-        // index entry to DFL_SIZE.
+        // Set delta to -1 when removing an entry to maintain the LRU mechanism,
+        // so that entries older than the indexEntry became newer,
+        // and init the rank of the removed indexEntry to an invalid rank.
         if (operation == DFL_RANK_REMOVE_ENTRY)
         {
             delta = -1;
-            pRankFLTable->entries[indexEntry] = DFL_SIZE;
+            pRankFLTable->entries[indexEntry] = DFL_INVALID_RANK;
         }
-        else // The operation is update/add new entry, then set delta to +1, and set
-            // the rank of the new/update index entry to 0.
+        else
         {
+            // Set delta to +1 when updating/adding an entry to maintain the
+            // LRU mechanism, so that entries newer than the indexEntry became older,
+            // and init the rank of the removed indexEntry to 0 - the newest rank.
             delta = 1;
             pRankFLTable->entries[indexEntry] = 0;
         }
 
         // Iterate over the rank table and update the rank values
-        for ( int8 i=0; i<DFL_SIZE ; i++ )
+        for ( uint8 i=0; i<DFL_SIZE ; i++ )
         {
             // Verify that the rank is valid and the index is not the input index
-            if ( (pRankFLTable->entries[i] != (uint8)DFL_SIZE) && ((uint8)i != indexEntry) )
+            if ( ( pRankFLTable->entries[i] != DFL_INVALID_RANK ) && ( i != indexEntry ) )
             {
                 // Check if the entry has to be update according to the operation
                 // and the rank of the entry.
                 if( ( (operation == DFL_RANK_UPDATE_ENTRY) &&
-                    (pRankFLTable->entries[i] < prevRank) ) ||
+                      (pRankFLTable->entries[i] < prevRank) ) ||
                     ( (operation == DFL_RANK_REMOVE_ENTRY) &&
-                    (pRankFLTable->entries[i] > prevRank) ) ||
-                    ( (operation == DFL_RANK_ADD_NEW_ENTRY) &&
-                    (pRankFLTable->entries[i] < (uint8)DFL_SIZE) ))
+                      (pRankFLTable->entries[i] > prevRank) ) ||
+                    ( operation == DFL_RANK_ADD_NEW_ENTRY ))
                 {
                     // increment/decrement the rank
                     pRankFLTable->entries[i] += delta;

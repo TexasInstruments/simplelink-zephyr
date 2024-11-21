@@ -26,24 +26,13 @@
 
 #include "onboard.h"
 #include "hal_mcu.h"
-#ifndef CC23X0
-#include "mb.h"
-#endif
 #include "ble.h"
 #include "ll.h"
 #include "ll_common.h"
 #include "ll_privacy.h"
 #include "ll_enc.h"
 #include "ll_al.h"
-#include "hal_gpio_wrapper.h"
-//
-#include "rom_jt.h"
-
-// SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_mst.h"
-#endif // DEBUG_SW_TRACE
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -67,9 +56,6 @@
 
 privInfo_t privInfo;
 rlEntry_t  *resolvingList;
-#ifndef CC23X0
-rpaCfg_t   *pRpaCfg;      //Pointer to RPA configuration structure
-#endif
 
 #ifdef QUAL_TEST
 localIrkList_t  localIrkList[LOCAL_IRK_LIST_SIZE];
@@ -153,8 +139,8 @@ void LL_PRIV_Init( void )
  */
 uint32 LL_PRIV_Ah( uint8 *irk, uint8 *prand )
 {
-  uint8  r[16] = {0};
-  uint8  localHash[16];
+  uint8  r[16] ALIGNED = {0};
+  uint8  localHash[16] ALIGNED = {0};
 
   // pad PRAND with 13 bytes of zero
   // Note: While the byte order of prand is (LSB..MSB), the byte order of r
@@ -317,10 +303,6 @@ void LL_PRIV_GenerateRSA( uint8 *rsa )
  */
 uint8 LL_PRIV_ResolveRPA( uint8 *rpa, uint8 *irk )
 {
-#ifndef CC23X0
-  uint32 prand = (uint32)(*((uint32 *)&rpa[3])) & 0x00FFFFFF;
-  uint32 hash  = (uint32)(*((uint32 *)&rpa[0])) & 0x00FFFFFF;
-#else
   uint32 prand;
   uint32 hash;
   osal_memcpy((uint8*)&prand, &rpa[3], 3);
@@ -328,7 +310,6 @@ uint8 LL_PRIV_ResolveRPA( uint8 *rpa, uint8 *irk )
 
   prand &= 0x00FFFFFF;
   hash &= 0x00FFFFFF;
-#endif
   return ( MAP_LL_PRIV_Ah(irk, (uint8 *)&prand) == hash );
 }
 
@@ -679,8 +660,11 @@ void LL_PRIV_CheckRLPeerId( rlEntry_t *pResolvingList,
  *
  * @brief       This function is used to check a Peer ID in the Resolving
  *              List that has a valid IRK and uses Network Privacy Mode, and
- *              if in the AL, mark it "ignore", and if not in the AL, add
- *              it to the extended accept list and mark it "ignore".
+ *              if in the AL, mark the public address with "ignore", and if
+ *              not in the AL, add the public address to the extended accept
+ *              list and mark it "ignore".
+ *              In addition, the function add the RPA address to the extended
+ *              accept if the device is in the AL.
  *
  * input parameters
  *
@@ -696,15 +680,17 @@ void LL_PRIV_CheckRLPeerId( rlEntry_t *pResolvingList,
 void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *pResolvingList,
                                  alTable_t *pAlTable )
 {
+  // get the public address of the peer device
+  uint8 alIndex = MAP_AL_FindEntry( pAlTable,
+                                    pResolvingList->idAddr,
+                                    pResolvingList->idAddrType );
+
   // check if the IRK is valid and using Network Privacy Mode
   if ( !MAP_LL_PRIV_IsZeroIRK( pResolvingList->IRK ) &&
        (pResolvingList->privMode == LL_NETWORK_PRIVACY_MODE) )
   {
-    // invalid Peer ID; check if already in the AL
-    uint8 alIndex = MAP_AL_FindEntry( pAlTable,
-                                      pResolvingList->idAddr,
-                                      pResolvingList->idAddrType );
-
+    // the privacy mode is Network Privacy Mode. Therefore
+      // mark the public address as "ignored".
     if ( alIndex != BLE_MAX_NUM_AL_ENTRIES )
     {
       // found Peer ID in the AL, so mark it "ignored"
@@ -712,14 +698,16 @@ void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *pResolvingList,
     }
     else // not in AL
     {
-      // so add the Peer ID to the extended accept list
+      // so add the Peer ID to the extended accept list with
+      // ignore
       alIndex = MAP_LL_PRIV_AddExtALEntry( pAlTable,
                                        pResolvingList->idAddr,
                                      pResolvingList->idAddrType,
                                            PRIV_IGNORE_AL_ENTRY );
 
       // make sure the accept list index is valid
-      if ( alIndex == INVALID_EXT_ACCEPT_LIST_INDEX )
+      if ( ( alIndex == INVALID_EXT_ACCEPT_LIST_INDEX ) &&
+           ( llUserConfig.useDFL == FALSE ) )
       {
         // Sanity Check:
         // There must be an Extended AL entry for every RL Peer ID!
@@ -729,14 +717,15 @@ void LL_PRIV_CheckRLPeerIdEntry( rlEntry_t *pResolvingList,
         MAP_llHardwareError( HW_FAIL_EXTENDED_AL_FAULT );
       }
     }
+  }
 
-#ifdef CC23X0
-    // add RPA to ExtAL
+  if ( alIndex != BLE_MAX_NUM_AL_ENTRIES )
+  {
+    // the device is in the AL, so add RPA to ExtAL
     MAP_LL_PRIV_AddExtALEntry( pAlTable,
-                            pResolvingList->RPA,
-                                LL_DEV_ADDR_TYPE_RANDOM,
-                                PRIV_USE_AL_ENTRY );
-#endif
+                               pResolvingList->RPA,
+                               LL_DEV_ADDR_TYPE_RANDOM,
+                               PRIV_USE_AL_ENTRY );
   }
 }
 
@@ -876,11 +865,7 @@ void LL_PRIV_ClearAllPrivIgn( alTable_t *pAlTable )
     // check parameter
   if ( pAlTable != NULL )
   {
-#ifdef CC23X0
     for (uint8 i=0; i<pAlTable->numEntries; i++)
-#else
-    for (uint8 i=0; i<pAlTable->pAlEntries[0].numEntries; i++)
-#endif
     {
       // clear a given entry
       CLR_AL_ENTRY_PRIV_IGNORE( pAlTable->pAlEntries[i].alFlags );
@@ -1129,11 +1114,7 @@ void LL_PRIV_SetALSize( alTable_t *pAlTable,
   {
     if ( alSizeType == AL_SIZE_STANDARD )
     {
-#ifdef CC23X0
       pAlTable->numEntries = BLE_MAX_NUM_AL_ENTRIES;
-#else
-      pAlTable->pAlEntries[0].numEntries = BLE_MAX_NUM_AL_ENTRIES;
-#endif
     }
     else if ( alSizeType == AL_SIZE_EXTENDED )
     {
@@ -1142,13 +1123,8 @@ void LL_PRIV_SetALSize( alTable_t *pAlTable,
       // Note: To handle Network Privacy Mode, there needs to be space in the
       //       extended AL for every Peer ID in the RL. This is required to
       //       work in conjunction with the privIgnMode feature of the CM0.
-#ifdef CC23X0
       pAlTable->numEntries = BLE_MAX_NUM_AL_ENTRIES +
                              EXT_ACCEPT_LIST_SIZE    + 1;
-#else
-      pAlTable->pAlEntries[0].numEntries = BLE_MAX_NUM_AL_ENTRIES +
-                                           EXT_ACCEPT_LIST_SIZE    + 1;
-#endif
     }
     else
     {
@@ -1260,7 +1236,71 @@ rlEntry_t *LL_PRIV_GetResolvingList( void )
 }
 
 /*******************************************************************************
- * @fn          LL_PRIV_PrivacyPolicyTests
+ * @fn          LL_PRIV_SetPrivacyTests
+ *
+ * @brief       This subroutine is used to check the required tests to determine
+ *              whether to approve the packet.
+ *              The subroutine set flags which indicate the required test for
+ *              privacy policy requirements.
+ *
+ *
+ * input parameters
+ *
+ * @param       peerAddr                - Pointer to the peer device address.
+ * @param       rpaTypeAddr             - Whether Peer address type of the peer
+ *                                        device is RPA.
+ * @param       usingAcceptListFilter   - Whether the accept list is in use.
+ *
+ * output parameters
+ *
+ * @return      POLICY_NO_FAILED_TEST     - if all the requires tests passed.
+                POLICY_INVALID_PARAMETERS - for invalid input parameters or
+                                            invalid pointers to accept/resolving
+                                            list.
+                policyTests flag which indicate the required tests.
+ */
+privTestflags_t LL_PRIV_SetPrivacyTests (uint8* const  peerAddr,
+                                         uint8         rpaTypeAddr,
+                                         uint8         usingAcceptListFilter)
+{
+  privTestflags_t policyTests;
+  policyTests.flags = POLICY_NO_FAILED_TEST;
+
+  // Verify that input parameters are valid
+  if( peerAddr == NULL )
+  {
+      policyTests.flags = POLICY_INVALID_PARAMETERS;
+  }
+  else // Input parameters are valid, set flags of the required tests.
+  {
+    if ( privInfo.addrResolution == UTRUE )
+    {
+      // check if the peer address is an RPA address type
+      if ( rpaTypeAddr == UTRUE )
+      {
+        // The RPA address shall be resolvable only when using accept list filter
+        policyTests.resolveRPA = TRUE;
+      }
+      else
+      {
+        // set test flag of privacy mode and IRK validation
+        policyTests.privacyMode = TRUE;
+      }
+    }
+
+    // Check filter policy
+    if ( usingAcceptListFilter == UTRUE )
+    {
+      // set test flag of existance in accept list
+      policyTests.addressIsInAL = TRUE;
+    }
+  }
+
+  return policyTests;
+}
+
+/*******************************************************************************
+ * @fn          LL_PRIV_ValidatePrivacyCompliance
  *
  * @brief       This subroutine is used to check some privacy policy required tests
  *              and determine whether to approve the packet.
@@ -1272,7 +1312,8 @@ rlEntry_t *LL_PRIV_GetResolvingList( void )
  *
  * @param       peerAddr          - Pointer to the peer device address.
  * @param       peeraddrType      - Peer address type of the peer device.
- * @param       rlIndex           - The resolving list index of the peer address.
+ * @param       pRLIndex          - Pointer to the resolving list index of
+ *                                  the peer address.
  * @param       requiredTests     - The required test for check the privacy policy.
  *
  * output parameters
@@ -1281,18 +1322,22 @@ rlEntry_t *LL_PRIV_GetResolvingList( void )
                 POLICY_INVALID_PARAMETERS - for invalid input parameters or
                                             invalid pointers to accept/resolving
                                             list.
-                testResult flag which indicate the failed test.
+                testResults flag which indicate the failed test.
  */
-privTestflags_t LL_PRIV_PrivacyPolicyTests( uint8              *peerAddr,
-                                            uint8              peerAddrType,
-                                            uint8              rlIndex,
-                                            privTestflags_t    requiredTests )
+privTestflags_t LL_PRIV_ValidatePrivacyCompliance( uint8* const       peerAddr,
+                                                   uint8              peerAddrType,
+                                                   uint8              *pRLIndex,
+                                                   privTestflags_t    requiredTests )
 {
-  privTestflags_t testResults = POLICY_NO_FAILED_TEST;
+  privTestflags_t testResults;
   rlEntry_t       *pResolvingList = NULL;
   alTable_t       *pAlTable = NULL;
-  uint8           *peerAddrIDA = NULL;
-  uint8           peerAddrIDAType = LL_INVALID_DEV_ADDR_TYPE;
+  uint8           *peerAddrIdA = NULL;
+  uint8           peerAddrIdAType = LL_INVALID_DEV_ADDR_TYPE;
+  uint8           rlIndex = INVALID_RESOLVE_LIST_INDEX;
+
+  // Initiate privacy test flags
+  testResults.flags = POLICY_NO_FAILED_TEST;
 
   // Get resolving List pointer
   pResolvingList = LL_PRIV_GetResolvingList();
@@ -1305,69 +1350,72 @@ privTestflags_t LL_PRIV_PrivacyPolicyTests( uint8              *peerAddr,
     // Verify that input parameters are valid
     if( peerAddr == NULL || pResolvingList == NULL || pAlTable == NULL )
     {
-      testResults = POLICY_INVALID_PARAMETERS;
+      testResults.flags = POLICY_INVALID_PARAMETERS;
       break;
     }
 
-    // Init deviceAddr and addrType to the input
-    peerAddrIDA = peerAddr;
-    peerAddrIDAType = peerAddrType;
+    // Init peerAddrIdA and peerAddrIdAType to the input
+    peerAddrIdA = peerAddr;
+    peerAddrIdAType = peerAddrType;
 
-    // Test if address resolution is enabled if this test required
-    if ( IS_ADDRESS_RESOLUTION_TEST_REQUIRED( requiredTests ) == TRUE )
-    {
-      if ( privInfo.addrResolution == UFALSE )
-      {
-        SET_ADDRESS_RESOLUTION_TEST( testResults );
-        break;
-      }
-    }
     // Test if RPA is resolvable if this test required
-    if (IS_RESOLVABLE_RPA_TEST_TEST_REQUIRED( requiredTests ) == TRUE)
+    if ( requiredTests.resolveRPA == UTRUE )
     {
+      // Get resolving list entry index
+       rlIndex = MAP_LL_PRIV_IsResolvable( peerAddr, pResolvingList );
+
       // Check if peer address is resolvable
       if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
       {
         // Set identity device address pointer the IDA of the resolving list
-        peerAddrIDA = pResolvingList[rlIndex].idAddr;
-        peerAddrIDAType = pResolvingList[rlIndex].idAddrType;
-      }
-      else
-      {
-        SET_RESOLVABLE_RPA_TEST( testResults );
-        break;
+        peerAddrIdA = pResolvingList[rlIndex].idAddr;
+        peerAddrIdAType = pResolvingList[rlIndex].idAddrType;
+
+        // Update the pointer of the resolving list index
+        *pRLIndex = rlIndex;
       }
     }
     // Test if the identity device address is in the accept list if this test required
-    if ( IS_ADDRESS_IN_ACCEPT_LIST_TEST_REQUIRED( requiredTests ) == TRUE )
+    if ( requiredTests.addressIsInAL == UTRUE )
     {
-      // check if the identity device address is in the AL
-      if ( MAP_AL_FindEntry( pAlTable,
-                             peerAddrIDA,
-                             peerAddrIDAType ) == BLE_MAX_NUM_AL_ENTRIES )
+      // Check if the type address is RPA,
+      // and either the address resolution disable or the RPA is unresolvable
+      if ( ( requiredTests.resolveRPA == UTRUE ) &&
+           ( ( privInfo.addrResolution == UFALSE ) ||
+             ( rlIndex == INVALID_RESOLVE_LIST_INDEX ) ) )
       {
-        SET_ADDRESS_IN_ACCEPT_LIST_TEST( testResults );
+        // The filter policy uses an accept list approach, requiring resolve the RPA,
+        // and finding the corresponding public addresses in the accept list.
+        // However, since address resolution is disabled, the RPA can't be resolved.
+        testResults.resolveRPA = TRUE;
+        testResults.addressIsInAL = TRUE;
+        break;
+      }
+
+      // Check if the identity device address is in the AL
+      if ( MAP_AL_FindEntry( pAlTable,
+                             peerAddrIdA,
+                             peerAddrIdAType ) == BLE_MAX_NUM_AL_ENTRIES )
+      {
+        testResults.addressIsInAL = TRUE;
         break;
       }
     }
     // Test if the privacy mode is DPM or the IRK is invalid if this test required
-    if ( IS_DPM_OR_INVALID_IRK_TEST_REQUIRED( requiredTests ) == TRUE )
+    if ( requiredTests.privacyMode == UTRUE )
     {
       // Get resolving list entry index if identity device address is in the
       // resolving list.
-      rlIndex = LL_PRIV_FindPeerInRL( resolvingList, peerAddrIDAType, peerAddrIDA );
+      rlIndex = LL_PRIV_FindPeerInRL( resolvingList, peerAddrType, peerAddr );
 
-      // Check if peer address is resolvable
-      if ( rlIndex != INVALID_RESOLVE_LIST_INDEX )
+      // Check if peer address is resolvable, and if his identity device address
+      // mode is Network Privacy Mode with valid IRK
+      if ( ( rlIndex != INVALID_RESOLVE_LIST_INDEX ) &&
+           ( ( resolvingList[rlIndex].privMode == LL_NETWORK_PRIVACY_MODE ) &&
+             ( MAP_LL_PRIV_IsZeroIRK( resolvingList[rlIndex].IRK ) == UFALSE ) ) )
       {
-        // Check if identity device address mode is Network Privacy Mode with
-        // Valid IRK
-        if (! (resolvingList[rlIndex].privMode == LL_DEVICE_PRIVACY_MODE) ||
-             (MAP_LL_PRIV_IsZeroIRK( resolvingList[rlIndex].IRK ) == UTRUE) )
-        {
-          SET_DPM_OR_INVALID_IRK_TEST( testResults );
-          break;
-        }
+        testResults.privacyMode = TRUE;
+        break;
       }
     }
 
@@ -1398,11 +1446,11 @@ privTestflags_t LL_PRIV_PrivacyPolicyTests( uint8              *peerAddr,
  *              LL_STATUS_ERROR_INVALID_PARAMS
  */
 llStatus_t LL_PRIV_RemoveInvalidPeerId( rlEntry_t         *pResolvingListEntry,
-                                        dynamicFL_t       *pDynamicFL,
+                                        RCL_FilterList    *pDynamicFL,
                                         rankDynamicFL_t   *prankFLTable )
 {
-  llStatus_t  status = LL_STATUS_SUCCESS; // Init status to success.
-  uint8       dynamicFLIdx = DFL_SIZE;    // Init index to invalid index
+  llStatus_t  status = LL_STATUS_SUCCESS;       // Init status to success.
+  uint8       dynamicFLIdx = DFL_INVALID_INDEX; // Init index to invalid index
 
   // Verify that input parameters are valid
   if( pResolvingListEntry == NULL || pDynamicFL == NULL ||
@@ -1422,7 +1470,7 @@ llStatus_t LL_PRIV_RemoveInvalidPeerId( rlEntry_t         *pResolvingListEntry,
                                        pResolvingListEntry->idAddrType );
     }
   }
-  if ( dynamicFLIdx != DFL_SIZE )
+  if ( dynamicFLIdx != DFL_INVALID_INDEX )
   {
     // remove entry from dynamic filter list
     status = LL_DFL_RemoveEntry( pDynamicFL, prankFLTable, dynamicFLIdx );

@@ -36,9 +36,7 @@ extern "C"
 #include "osal_memory.h"
 #include "osal_timers.h"
 
-#ifdef USE_ICALL
 #include <icall.h>
-#endif /* USE_ICALL */
 
 /*********************************************************************
  * MACROS
@@ -66,27 +64,52 @@ extern "C"
  * CONSTANTS
  */
 
+
+// LL Events
+#define LL_EVT_NONE                                    0x00000000u
+#define LL_EVT_POST_PROCESS_RF                         0x00000001u
+#define LL_EVT_INIT_LAST_CMD_DONE                      0x00000002u
+#define LL_EVT_INIT_LAST_CMD_DONE_RX_ERR               0x00000004u
+#define LL_EVT_CENTRAL_CONN_CREATED                    0x00000008u
+#define LL_EVT_CENTRAL_CONN_CANCELLED                  0x00000010u
+#define LL_EVT_EXT_SCAN_TIMEOUT                        0x00000020u
+#define LL_EVT_EXT_ADV_TIMEOUT                         0x00000040u
+#define LL_EVT_INIT_LAST_CMD_DONE_CONNECT              0x00000080u
+#define LL_EVT_PERIODIC_SCAN_CANCELLED                 0x00000100u
+#define LL_EVT_RESET_SYSTEM_HARD                       0x00000200u
+#define LL_EVT_RESET_SYSTEM_SOFT                       0x00000400u
+#define LL_EVT_CONN_DISCONNECTED_IMMED                 0x00000800u
+#define LL_EVT_ADDRESS_RESOLUTION_TIMEOUT              0x00001000u
+#define LL_EVT_INIT_DONE                               0x00002000u
+#define LL_EVT_OUT_OF_MEMORY                           0x00004000u
+#define LL_EVT_CONN_RX_AVAIL                           0x00008000u
+#define LL_EVT_ADV_LAST_CMD_DONE                       0x00010000u
+#define LL_EVT_SCAN_LAST_CMD_DONE                      0x00020000u
+#define LL_EVT_CENTRAL_LAST_CMD_DONE                   0x00040000u
+#define LL_EVT_PERIPHERAL_LAST_CMD_DONE                0x00080000u
+#define LL_EVT_SCAN_RX_AVAIL                           0x00100000u
+#define LL_EVT_PERIODIC_SCAN_LAST_CMD_DONE             0x00200000u
+#define LL_EVT_PERIODIC_SCAN_RX_AVAIL                  0x00400000u
+#define LL_EVT_RESCHEDULE                              0x00800000u
+#define LL_EVT_CMD_STARTED                             0x01000000u
+#define LL_EVT_PERIODIC_ADV_LAST_CMD_DONE              0x02000000u
+#define LL_EVT_PERIODIC_ADV_TX_BUFF_FINISHED           0x04000000u
+#define LL_EVT_CONN_TX_BUFF_FINISHED                   0x08000000u
+#define LL_EVT_ADV_RX_AVAIL                            0x10000000u
+#define LL_EVT_ADV_TX_BUFF_FINISHED                    0x20000000u
+#define LL_EVT_INIT_RX_ENTRY_DONE                      0x40000000u
+
+#define SYS_EVENT_MSG                                  0x80000000u  //!< A message is waiting event
+
+#define SYS_RESERVED                                   SYS_EVENT_MSG
+
 /*** Interrupts ***/
 #define INTS_ALL    0xFF      //!< All interrupts
 
 /*********************************************************************
  * TYPEDEFS
  */
-#ifdef USE_ICALL
 typedef ICall_MsgHdr osal_msg_hdr_t;    //!< ICall Message header
-#else /* USE_ICALL */
-typedef struct
-{
-  void   *next;               //!< pointer to next
-#ifdef OSAL_PORT2TIRTOS
-  /* Limited OSAL port to TI-RTOS requires compatibility with ROM
-   * code compiled with USE_ICALL compile flag.  */
-  uint32 reserved;
-#endif /* OSAL_PORT2TIRTOS */
-  uint16 len;               //!< length
-  uint8  dest_id;           //!< destination ID
-} osal_msg_hdr_t;
-#endif /* USE_ICALL */
 
 /// @brief OSAL Event Header
 typedef struct
@@ -97,10 +120,8 @@ typedef struct
 
 typedef void * osal_msg_q_t;      //!< osal message queue
 
-#ifdef USE_ICALL
 /** @brief High resolution timer callback function type */
 typedef void (*osal_highres_timer_cback_t)(void *arg);
-#endif /* USE_ICALL */
 
 #ifdef ICALL_LITE
 /** @brief ICall Message hook*/
@@ -110,7 +131,6 @@ typedef void (*osal_icallMsg_hook_t)(void * param);
 /*********************************************************************
  * GLOBAL VARIABLES
  */
-#ifdef USE_ICALL
 #ifdef ICALL_EVENTS
 extern ICall_SyncHandle osal_syncHandle;      //!< OSAL synchronization handle
 #else /* !ICALL_EVENTS */
@@ -119,7 +139,6 @@ extern ICall_Semaphore osal_semaphore;        //!< OSAL semaphore
 extern ICall_EntityID osal_entity;            //!< OSAL entity
 extern uint_least32_t osal_tickperiod;        //!< OSAL ticket period
 extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
-#endif /* USE_ICALL */
 
 
 /*********************************************************************
@@ -330,7 +349,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  */
   extern void osal_msg_extract( osal_msg_q_t *q_ptr, void *msg_ptr, void *prev_ptr );
 
-#ifdef USE_ICALL
 /**
  * @brief Service function for messaging service
  *
@@ -339,7 +357,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  * @return  ICall error code
  */
   extern ICall_Errno osal_service_entry(ICall_FuncArgsHdr *args);
-#endif /* USE_ICALL */
 
 
 /*** Task Synchronization  ***/
@@ -373,59 +390,8 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  */
   extern uint8 osal_clear_event( uint8 task_id, uint32 event_flag );
 
-
-/*** Interrupt Management  ***/
-
-/**
- * @brief Register a service routine with an interrupt.
- *
- * When the interrupt occurs, this service routine is called.
- *
- * @param interrupt_id Interrupt number
- * @param (*isr_ptr)( uint8* ) function pointer to ISR
- *
- * @return  SUCCESS
- * @return INVALID_INTERRUPT_ID
- */
-  extern uint8 osal_isr_register( uint8 interrupt_id, void (*isr_ptr)( uint8* ) );
-
-/**
- * @brief Enable an interrupt.
- *
- * Once enabled, occurrence of the interrupt causes the service routine associated
- * with that interrupt to be called.
- *
- * If @ref INTS_ALL is the interrupt_id, interrupts (in general) are enabled.
- * If a single interrupt is passed in, then interrupts still have
- * to be enabled with another call to @ref INTS_ALL.
- *
- * @param interrupt_id Interrupt number
- *
- * @return @ref SUCCESS
- * @return @ref INVALID_INTERRUPT_ID
- */
-  extern uint8 osal_int_enable( uint8 interrupt_id );
-
-/**
- * @brief Disable an interrupt.
- *
- * When a disabled interrupt occurs, the service routine associated with that
- * interrupt is not called.
- *
- * If @ref INTS_ALL is the interrupt_id, interrupts (in general) are disabled.
- * If a single interrupt is passed in, then just that interrupt is disabled.
- *
- * @param uint8 interrupt_id Interrupt number
- *
- * @return @ref SUCCESS
- * @return @ref INVALID_INTERRUPT_ID
- */
-  extern uint8 osal_int_disable( uint8 interrupt_id );
-
-
 /*** Task Management  ***/
 
-#ifdef USE_ICALL
 /**
  * @brief  Map a task id to an ICall entity id for messaging in
  *          both directions (sending and receiving).
@@ -461,7 +427,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  */
   extern void osal_enroll_notasksender(ICall_EntityID dispatchid);
 
-#ifdef ICALL_JT
 /**
  * @brief Initialize global OSAL timer variable.
  *
@@ -469,9 +434,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
  * @param osalMaxMsecs max possible timer duration
  */
   void osal_timer_init(uint_least32_t tickPeriod, uint_least32_t osalMaxMsecs);
-#endif /* ICALL_JT */
-
-#endif /* USE_ICALL */
 
 /**
  * @brief Initializes the "task" system by creating the
@@ -485,16 +447,11 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
    * System Processing Loop
    */
 /**
- * @brief This function is the main loop function of the task system (if
- * ZBIT and UBIT are not defined).
+ * @brief This function is the main loop function of the task system.
  *
  * @note This function does not return.
  */
-#if defined (ZBIT)
-  extern __declspec(dllexport)  void osal_start_system( void );
-#else
   extern void osal_start_system( void );
-#endif
 
 /**
  * @brief OSAL main loop
@@ -637,18 +594,6 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
   extern uint8* osal_buffer_uint32( uint8 *buf, uint32 val );
 
 /**
- * @brief   Buffer an uint24 value - LSB first
- *
- * @note type uint24 is typedef to uint32 in comdef.h
- *
- * @param   buf buffer
- * @param   val uint24 value
- *
- * @return pointer to end of destination buffer
- */
-  extern uint8* osal_buffer_uint24( uint8 *buf, uint24 val );
-
-/**
  * @brief Check if all of the array elements are set to a value
  *
  * @param buf buffer to check
@@ -680,45 +625,10 @@ extern void (*osal_eventloop_hook)(void);     //!< OSAL event loop hook
 
 #endif /* ICALL_LITE */
 
-/*-------------------------------------------------------------------
- * BLE_LOG FUNCTIONS
- */
-//#define BLE_LOG
-#ifdef BLE_LOG
-
-#define BLE_LOG_MODULE_CTRL            0x01
-#define BLE_LOG_MODULE_HOST            0x02
-#define BLE_LOG_MODULE_APP             0x04
-#define BLE_LOG_MODULE_OSAL_TASK       0x08
-#define BLE_LOG_MODULE_RF_CMD          0x10
-
-void bleLog_int_int(void *handle, uint32_t type, uint8_t *format, uint32_t param1, uint32_t param2);
-void bleLog_int_str(void *handle, uint32_t type, uint8_t *format, uint32_t param1, char *param2);
-void bleLog_int_time(void *handle, uint32_t type, uint8_t *start_str, uint32_t param1);
-
-#ifndef CC33xx
-#define BLE_LOG_INT_INT(handle, type, format, param1, param2)         bleLog_int_int(handle, type, format, param1, param2)
-#define BLE_LOG_INT_STR(handle, type, format, param1, param2)         bleLog_int_str(handle, type, format, param1, param2)
-#define BLE_LOG_INT_TIME(handle, type, start_str, param1)             bleLog_int_time(handle, type, start_str, param1)
-#else
-#define BLE_LOG_INT_INT(handle, type, format, param1, param2)         GTRACE(GRP_BLE_DBG,format,param1,param2);
-#define BLE_LOG_INT_STR(handle, type, format, param1, param2)         GTRACE(GRP_BLE_DBG,format,param1,param2);
-#define BLE_LOG_INT_TIME(handle, type, start_str, param1)
-#endif // CC33xx
-
-#else
-
-#ifndef CC33xx
 #define BLE_LOG_INT_INT(handle, type, format, param1, param2)
 #define BLE_LOG_INT_STR(handle, type, format, param1, param2)
 #define BLE_LOG_INT_TIME(handle, type, start_str, param1)
-#else
-#define BLE_LOG_INT_INT(handle, type, format, param1, param2)         GTRACE(GRP_BLE_DBG,format,param1,param2);
-#define BLE_LOG_INT_STR(handle, type, format, param1, param2)         GTRACE(GRP_BLE_DBG,format,param1,param2);
-#define BLE_LOG_INT_TIME(handle, type, start_str, param1)
-#endif // CC33xx
 
-#endif // BLE_LOG
 
 /*********************************************************************
 *********************************************************************/

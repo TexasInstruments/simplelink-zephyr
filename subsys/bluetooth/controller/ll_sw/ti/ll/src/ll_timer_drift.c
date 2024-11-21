@@ -20,16 +20,13 @@
 
 #include "bcomdef.h"
 
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
-
 #include "hal_mcu.h"
 #include "osal_pwrmgr.h"
 #include "ll.h"
 #include "ll_common.h"
 #include "ll_timer_drift.h"
 #include "ll_ae.h"
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS
@@ -61,52 +58,7 @@ const uint16 SCA[] = {500, 250, 150, 100, 75, 50, 30, 20};
  * Functions
  */
 
-
-/*******************************************************************************
- * @fn          llCalcPeriodicScaDriftPerInterval
- *
- * @brief       This function is used when a periodic sync is formed to calculate
- *              the timer drift per periodic interval based on
- *              the combined SCA of the Scanner and the Advertiser
- *
- * input parameters
- *
- * @param       perAdvSCA - An ordinal value from 0..7 that corresponds to a
- *                          SCA range per Vol. 6, Part B, Section 2.3.3.1,
- *                          Table 2.2.
- * @param       periodicInterval - the interval between two periodic events as defined
- *                          by the periodic advertiser
- *
- * output parameters
- *
- * @param       None.
- *
- * @return      The timer drift factor in RATS
- */
-uint32 llCalcPeriodicScaDriftPerInterval( uint8 perAdvSCA , uint16 periodicInterval)
-{
-   // Extract the SCA in PPM with the PerAdvSCA index
-   uint16 scaFactorPPM = SCA[ perAdvSCA & SCA_INDEX_MASK ];
-   uint32 scaDrift;
-
-   // If Source Clock is LFOSC
-   if (llUserConfig.useSrcClkLFOSC != 0)
-   {
-       // Use User cfgLFOSCExtraPPM instead of default SCA
-       scaFactorPPM += llUserConfig.cfgLFOSCExtraPPM;
-   }
-   else
-   {
-       scaFactorPPM += LL_SCA_CENTRAL_DEFAULT;
-   }
-
-   // Multiple the scaFactor in the periodic interval and divide it
-   // so ScaDrift value will be in RATS
-   scaDrift = ((scaFactorPPM * periodicInterval) / RAT_TICKS_IN_100US ) + 1;
-
-   return( scaDrift );
-}
-
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & ADV_CONN_CFG)
 /*******************************************************************************
  * @fn          llCalcScaFactor
  *
@@ -149,5 +101,51 @@ uint16 llCalcScaFactor( uint8 centralSCA )
 
 #endif // ADV_CONN_CFG
 
+#ifdef USE_PERIODIC_SCAN
+/*******************************************************************************
+ * @fn          llCalcPeriodicScaDriftPerInterval
+ *
+ * @brief       This function is used when a periodic sync is formed to calculate
+ *              the timer drift per periodic interval based on
+ *              the combined SCA of the Scanner and the Advertiser
+ *
+ * input parameters
+ *
+ * @param       perAdvSCA - An ordinal value from 0..7 that corresponds to a
+ *                          SCA range per Vol. 6, Part B, Section 2.3.3.1,
+ *                          Table 2.2.
+ * @param       periodicInterval - the interval between two periodic events as defined
+ *                          by the periodic advertiser (should be in 625us units)
+ *
+ * output parameters
+ *
+ * @param       None.
+ *
+ * @return      The timer drift factor in RATS
+ */
+uint32 llCalcPeriodicScaDriftPerInterval( uint8 perAdvSCA , uint16 periodicInterval)
+{
+   // Extract the SCA in PPM with the PerAdvSCA index
+   uint16 scaFactorPPM = SCA[ perAdvSCA & SCA_INDEX_MASK ];
+   uint32 scaDrift;
+
+   // If Source Clock is LFOSC
+   if (llUserConfig.useSrcClkLFOSC != 0)
+   {
+       // Use User cfgLFOSCExtraPPM instead of default SCA
+       scaFactorPPM += llUserConfig.cfgLFOSCExtraPPM;
+   }
+   else
+   {
+       scaFactorPPM += SCA[LL_SCA_CENTRAL_DEFAULT];
+   }
+
+   // Multiple the scaFactor in the periodic interval and divide it
+   // so ScaDrift value will be in RATS
+   scaDrift = ((scaFactorPPM * periodicInterval) / RAT_TICKS_IN_100US ) + 1;
+
+   return( scaDrift );
+}
+#endif // USE_PERIODIC_SCAN
 /*******************************************************************************
  */

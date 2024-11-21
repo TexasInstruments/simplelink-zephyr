@@ -20,22 +20,19 @@
  */
 #include "ll_common.h"
 #include "ll_scheduler.h"
+#include "ll_handover_sn.h"
 #include "hal_mcu.h"
 #include "ll_privacy.h"
 #include "ll_rat.h"
 #include "ll_ae.h"
+#include <ti/drivers/utils/Math.h>
+
 #ifdef BLE_HEALTH
 #include <health_toolkit/inc/debugInfo_errno.h>
 #endif //BLE_HEALTH
 #include <ti/drivers/rcl/RCL.h>
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
-// SW Tracer
-#ifdef DEBUG_SW_TRACE
-#define DBG_ENABLE
-#include "dbgid_sys_mst.h"
-#endif // DEBUG_SW_TRACE
 #include "cs/ll_cs_rcl.h"
 
 /*******************************************************************************
@@ -71,8 +68,6 @@ extern void LL_rclRescheduleCommand(RCL_Command *cmd);
 
 // BLE Tasks
 taskList_t llTaskList;
-// sdaa task
-taskInfo_t *pRXWindowTask = NULL;
 
 // pointer to next AE set to be scheduled
 extern sortedAdv_t *pNextAdvSet;
@@ -170,18 +165,24 @@ void llSchedulerInit( void )
  */
 void llScheduler( void )
 {
-  uint8      startTypeSDAA;
   taskInfo_t *curTask = llTaskList.curTask;
 
-  // check if there's nothing left to do
-  if ( curTask == NULL )
+  if (curTask != NULL)
   {
-    // check if any post-radio operations were scheduled, but somehow missed
-    // Note: This really should not happen, but doesn't cost much to ensure
-    //       a schedule post-RF operation isn't missed.
-    MAP_llProcessPostRfOps();
+  // Fetch the current command from the current task
+  RCL_Command *curCmd = (RCL_Command *)curTask->command;
 
-    return;
+  if ( curCmd != NULL )
+  {
+    // If there is a command already scheduled, this means that the
+    // scheduler was called multiple time. Don't continue this operation
+    // The scheduler will be called again once the current command finishes
+    if( (curCmd->status == RCL_CommandStatus_Scheduled) ||
+        (curCmd->status == RCL_CommandStatus_Active) ||
+        (curCmd->status == RCL_CommandStatus_Queued) )
+    {
+      return;
+    }
   }
 
   // base scheduling on the current task that just finished
@@ -246,14 +247,33 @@ void llScheduler( void )
         }
       }
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & (INIT_CFG | ADV_CONN_CFG))
-      // check if there are any active connections (Central or Peripheral)
+      uint8 trySchedConn = FALSE;
+
+      // Check if there are any active connections (Central or Peripheral)
       if ( llConns.numActiveConns != 0 )
+      {
+        // Note: this is done for the handover process
+        // The scheduler will continue to search for the next connection to schedule in the
+        // following cases:
+        // 1. There are multiple connections
+        // 2. There is only one connection and it is not in the middle of an handover process
+        // If trySchedConn will stay false:
+        // 1. If there is a secondary task - schedule it
+        // 2. If there aren't any other task - change the llState to IDLE
+        if ( (llConns.numActiveConns > 1) ||
+             ((llConns.numActiveConns == 1) &&
+              (MAP_llIsHandoverInProgress(MAP_llDataGetConnPtr(llConns.currentConn)) == FALSE)) )
+        {
+          trySchedConn = TRUE;
+        }
+      }
+
+      if ( trySchedConn == TRUE )
       {
         uint8          startType = LL_SCHED_START_PRIMARY;
         llConnState_t *nextConnPtr  = MAP_llDataGetConnPtr( MAP_llGetNextConn() );
         taskInfo_t    *nextConnTask = nextConnPtr->llTask;
         void          *nextConnCmd  = ((void *)nextConnTask->command);
-        taskInfo_t    *csTask       = MAP_llGetTask(LL_TASK_ID_CS);
         RCL_Command    *csCmd = (RCL_Command *)llSchedulerGetCsCmd();
 
         // Set the next connection variable
@@ -293,27 +313,6 @@ void llScheduler( void )
           //       a primary start type is returned.
           startType = MAP_llFindStartType( nextSecTask, nextConnTask );
         }
-
-        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
-                // therefore llScheduler() will finish here. The function will return the
-                // new start type of next task which can be change when the next channel
-                // is blocked or there isn't sufficient time to schedule RX window for
-                // overloaded channel.
-                // This function can split the TX queue of connection if there
-                // is no time for RX window. In this case the next task type will be
-                // priary task.
-                // This function may do nothing when RX window isn't neccesary or sdaa
-                // module is disable. In this case the function return start type task
-                // equal to the start type that inserted as input.
-                startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, nextSecTask, startType);
-                if(startTypeSDAA != startType)
-                {
-                    if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
-                    {
-                        return;
-                    }
-                    startType = startTypeSDAA;
-                }
 
         // check if the secondary task can start
         if ( (startType != LL_SCHED_START_PRIMARY) && (startType != LL_SCHED_START_CS) )
@@ -362,9 +361,9 @@ void llScheduler( void )
             default:
               // Sanity Check:
               // Fatal Error: Next Secondary task must be valid!
-              LL_ASSERT( FALSE );
+            LL_ASSERT( FALSE );
 
-              break;
+            break;
           }  // switch on next secondary task ID
         }
         else if (startType == LL_SCHED_START_PRIMARY)// start type is PRIMARY (a connection)
@@ -400,7 +399,13 @@ void llScheduler( void )
           }
         }
       }
-      else // there are no active connections
+      else if ( (trySchedConn == FALSE) && (nextSecTask == NULL) )
+      {
+        // There aren't any other task in the system change the llState to Idle
+        llState = LL_STATE_IDLE;
+        return;
+      }
+      else // There are no active connections or we don't want to schedule the connection that is currently in the handover process
 #endif  // INIT_CFG | ADV_CONN_CFG
       {
         if ( nextSecTask == NULL)
@@ -410,23 +415,6 @@ void llScheduler( void )
           LL_ASSERT( nextSecTask != NULL );
           return;
         }
-
-        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
-        // therefore llScheduler() will finish here. The function will return the
-		// new start type of next task which can be change when the next channel
-		// is blocked or there isn't sufficient time to schedule RX window for
-		// overloaded channel.
-		// This function can split the TX queue of connection if there
-		// is no time for RX window. In this case the next task type will be
-		// priary task.
-		// This function may do nothing when RX window isn't neccesary or sdaa
-		// module is disable. In this case the function return start type task
-		// equal to the start type that inserted as input.
-		startTypeSDAA = MAP_llHandleSDAAControlTX(NULL, nextSecTask, LL_SCHED_START_EVENT);
-		if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
-		{
-			return;
-		}
 
         // check if the next secondary task is the current task
         if ( curTask == nextSecTask )
@@ -544,41 +532,39 @@ void llScheduler( void )
     case LL_TASK_ID_PERIPHERAL:
     case LL_TASK_ID_CENTRAL:
     case LL_TASK_ID_CS:
-      // check if there are any active connections
+    {
+      uint8 trySchedConn = FALSE;
+      // Check if there are any active connections
       if ( llConns.numActiveConns != 0 )
+      {
+        // Note: this is done for the handover process
+        // The scheduler will continue to search for the next connection to schedule in the
+        // following cases:
+        // 1. There are multiple connections
+        // 2. There is only one connection and it is not in the middle of an handover process
+        // If trySchedConn will stay false:
+        // 1. If there is a secondary task - schedule it
+        // 2. If there aren't any other task - change the llState to IDLE
+        if ( (llConns.numActiveConns > 1) ||
+             ((llConns.numActiveConns == 1) &&
+              (MAP_llIsHandoverInProgress(MAP_llDataGetConnPtr(llConns.currentConn)) == FALSE)) )
+        {
+          trySchedConn = TRUE;
+        }
+      }
+
+      if ( trySchedConn == TRUE )
       {
         uint8          startType = LL_SCHED_START_PRIMARY;
         llConnState_t *nextConnPtr  = MAP_llDataGetConnPtr( MAP_llGetNextConn() );
         taskInfo_t    *nextConnTask = nextConnPtr->llTask;
-        taskInfo_t    *nextSecTask  = MAP_llFindNextSecTask( llTaskList.lastSecTask );
         void          *nextConnCmd  = ((void *)nextConnTask->command);
-        llConnState_t *curConnPtr   = MAP_llDataGetConnPtr( llConns.currentConn );
         taskInfo_t    *csTask       = MAP_llGetTask(LL_TASK_ID_CS);
         RCL_Command    *csCmd        = (RCL_Command *)llSchedulerGetCsCmd();
 
         // Set the next connection variable
         llConns.nextConn = nextConnPtr->connId;
 
-        // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
-		// therefore llScheduler() will finish here. The function will return the
-		// new start type of next task which can be change when the next channel
-		// is blocked or there isn't sufficient time to schedule RX window for
-		// overloaded channel.
-		// This function can split the TX queue of connection if there
-		// is no time for RX window. In this case the next task type will be
-		// priary task.
-		// This function may do nothing when RX window isn't neccesary or sdaa
-		// module is disable. In this case the function return start type task
-		// equal to the start type that inserted as input.
-		startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, NULL, LL_SCHED_START_PRIMARY);
-		if(startTypeSDAA != LL_SCHED_START_PRIMARY)
-		{
-			if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
-			{
-				return;
-			}
-			startType = startTypeSDAA;
-		}
         if (curTask->taskID == LL_TASK_ID_PERIPHERAL)
         {
           if (MAP_llCheckPeripheralTerminate(nextConnPtr->connId) == TRUE)
@@ -655,29 +641,29 @@ void llScheduler( void )
           // check if there is a command
           if ( nextSecCmd == NULL )
           {
+            if ( csCmd != NULL )
+            {
+              uint32 connMinTime = RAT_TICKS_IN_500US +
+                                   MAP_llScheduler_getSwitchTime(nextConnPtr->taskID) +
+                                   LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
+
+              // If the CS command is active and the secondary isn't the decision should
+              // be done between the CS and the connection
               if ( csCmd != NULL )
               {
-                uint32 connMinTime = RAT_TICKS_IN_500US +
-                                     MAP_llScheduler_getSwitchTime(nextConnPtr->taskID) +
-                                     LL_MARGIN_TIME_FOR_TIMER_HANDLING_RAT_TICKS;
-
-                // If the CS command is active and the secondary isn't the decision should
-                // be done between the CS and the connection
-                if ( csCmd != NULL )
+                // If the connection is the CS connection and it scheduled before
+                // the CS commands schedule the connection else the CS command
+                if( (MAP_llTimeCompare(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
+                     (MAP_llTimeDelta(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
                 {
-                  // If the connection is the CS connection and it scheduled before
-                  // the CS commands schedule the connection else the CS command
-                  if( (MAP_llTimeCompare(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) == FALSE) &&
-                       (MAP_llTimeDelta(((RCL_Command *)nextConnCmd)->timing.absStartTime, csCmd->timing.absStartTime) > connMinTime) )
-                  {
-                    startType = LL_SCHED_START_PRIMARY;
-                  }
-                  else
-                  {
-                    startType = LL_SCHED_START_CS;
-                  }
+                  startType = LL_SCHED_START_PRIMARY;
+                }
+                else
+                {
+                  startType = LL_SCHED_START_CS;
                 }
               }
+            }
           }
           else
           {
@@ -685,27 +671,6 @@ void llScheduler( void )
             // Note: The next secondary task pointer may be NULL, in which case
             //       a primary start type is returned.
             startType = MAP_llFindStartType( nextSecTask, nextConnTask );
-          }
-
-          // This function return LL_SDAA_SCHED_HANDLED when RX window is scheduled,
-          // therefore llScheduler() will finish here. The function will return the
-          // new start type of next task which can be change when the next channel
-          // is blocked or there isn't sufficient time to schedule RX window for
-          // overloaded channel.
-          // This function can split the TX queue of connection if there
-          // is no time for RX window. In this case the next task type will be
-          // priary task.
-          // This function may do nothing when RX window isn't neccesary or sdaa
-          // module is disable. In this case the function return start type task
-          // equal to the start type that inserted as input.
-          startTypeSDAA = MAP_llHandleSDAAControlTX(nextConnPtr, NULL, LL_SCHED_START_PRIMARY);
-          if(startTypeSDAA != LL_SCHED_START_PRIMARY)
-          {
-              if (startTypeSDAA == LL_SDAA_SCHED_HANDLED)
-              {
-                  return;
-              }
-              startType = startTypeSDAA;
           }
 
           // check if the secondary task can start
@@ -776,21 +741,17 @@ void llScheduler( void )
           // either there is a next secondary task but it can't be started
           // before the next connection, or there are no secondary tasks;
           // either way, start next connection
-          // check if the next connection is different from the current one
-          // Note: This is only possible witht he Central connection.
-          if ( curConnPtr != nextConnPtr )
+
+          // which LL state based on role
+          // Note: Currently, Central+Peripheral combo isn't permitted, but will be
+          //       in the future, so leave this here.
+          if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
           {
-            // which LL state based on role
-            // Note: Currently, Central+Peripheral combo isn't permitted, but will be
-            //       in the future, so leave this here.
-            if ( nextConnTask->taskID == LL_TASK_ID_CENTRAL )
-            {
-              MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
-            }
-            else // assume taskId == LL_TASK_ID_PERIPHERAL
-            {
-              MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
-            }
+            MAP_llSetTaskCentral(nextConnPtr->connId, nextConnCmd);
+          }
+          else // assume taskId == LL_TASK_ID_PERIPHERAL
+          {
+            MAP_llSetTaskPeripheral(nextConnPtr->connId, nextConnCmd);
           }
 
           // either way, nextConnPtr is the connection to schedule; if the current
@@ -816,7 +777,14 @@ void llScheduler( void )
           MAP_llScheduleTask( csTask );
         }
       }
-      else // there are no active connections
+      else if ( (trySchedConn == FALSE) &&
+                (MAP_llFindNextSecTask( llTaskList.lastSecTask ) == NULL) )
+      {
+        // There aren't any other task in the system change the llState to Idle
+        llState = LL_STATE_IDLE;
+        return;
+      }
+      else // There are no active connections or we don't want to schedule the connection that is currently in the handover process
       {
         // check if there are any active secondary tasks
         if ( MAP_llGetActiveTasks() & LL_TASK_ID_SECONDARY_TASKS )
@@ -914,6 +882,7 @@ void llScheduler( void )
 
       }  // if active connection
       break;
+    }
 #endif  // INIT_CFG | ADV_CONN_CFG
 
     case LL_TASK_ID_NONE:
@@ -929,7 +898,7 @@ void llScheduler( void )
 
       break;
   }  // switch on curTask taskID
-
+  }
   return;
 }
 
@@ -1080,6 +1049,9 @@ void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     extScanInfo->scanStartTime = nextSecCmd->timing.absStartTime;
   }
 
+  // Periodic Task start time
+  uint32 perStartTime = MAP_llReturnCurrentPeriodicStartTime();
+
   // In case there is a connection.
   if (nextConnCmd != NULL)
   {
@@ -1098,12 +1070,28 @@ void llSetTaskScan( uint8 startType, taskInfo_t *nextSecTask, void *nextSecComma
     //       either case, just set the End Trigger to the next
     //       connection's cutoff.
     // Note: Post processing will always disable the End Trigger.
+
+    // Check if periodic task is active
+    if(( perStartTime != 0 ) && ( MAP_llTimeCompare( perStartTime - LL_SCHED_POST_CUTOFF, nextSecCmd->timing.absStartTime )))
+    {
+       // If it is, update the secTaskEndTimeCalc  to be the minimum between the current EndTime and the Periodic startTime
+       secTaskEndTimeCalc = Math_MIN(secTaskEndTimeCalc, perStartTime - LL_SCHED_POST_CUTOFF);
+    }
     nextSecCmd->timing.relHardStopTime = (secTaskEndTimeCalc == 0) ? 0 : MAP_llTimeDelta( secTaskEndTimeCalc, nextSecCmd->timing.absStartTime );
   }
-  else
+  else // There is no active connection
   {
-    nextSecCmd->timing.relHardStopTime = 0;
+      // if there is an active scan and
+      if(( perStartTime != 0 ) && ( MAP_llTimeCompare( perStartTime - LL_SCHED_POST_CUTOFF, nextSecCmd->timing.absStartTime )))
+      {
+          nextSecCmd->timing.relHardStopTime = MAP_llTimeDelta(perStartTime - LL_SCHED_POST_CUTOFF, nextSecCmd->timing.absStartTime);
+      }
+      else
+      {
+          nextSecCmd->timing.relHardStopTime = 0;
+      }
   }
+
 
   // start Scan
   llSetTask(LL_TASK_ID_SCANNER, LL_STATE_SCAN);
@@ -1238,20 +1226,6 @@ void llSetTaskCentral( uint8 connId, void *nextConnCmd )
 {
   llState = LL_STATE_CONN_CENTRAL;
 
-#ifndef CC23X0
-  // check if one packet per event is enabled
-  if (onePktPerEvt == TRUE)
-  {
-    // set limit for the number of packets to transmit before it ends
-    ((centralParam_t *)((ble5OpCmd_t *)nextConnCmd)->pParams)->maxTxPkt = ONE_PKT_PER_EVENT;
-  }
-  else // one packet per event is disabled and number of connections is one
-  {
-    // so restore configured max number of packets
-    ((centralParam_t *)((ble5OpCmd_t *)nextConnCmd)->pParams)->maxTxPkt =
-      llConfigTable.maxPktsPerEvtPtr->maxMstPktsPerEvt;
-  }
-#endif
   // set this connection as the current connection
   llConns.currentConn = connId;
 }
@@ -1278,21 +1252,6 @@ void llSetTaskPeripheral( uint8 connId, void *nextConnCmd )
 {
   llState = LL_STATE_CONN_PERIPHERAL;
 
-#ifndef CC23X0
-  // check if one packet per event is enabled
-  // Note: Only one Peripheral connection allowed.
-  if ( onePktPerEvt == TRUE )
-  {
-    // set limit for the number of packets to transmit before it ends
-    ((peripheralParam_t *)((ble5OpCmd_t *)nextConnCmd)->pParams)->maxTxPkt = ONE_PKT_PER_EVENT;
-  }
-  else // one packet per event is disabled
-  {
-    // so restore configured max number of packets
-    ((peripheralParam_t *)((ble5OpCmd_t *)nextConnCmd)->pParams)->maxTxPkt =
-      llConfigTable.maxPktsPerEvtPtr->maxSlvPktsPerEvt;
-  }
-#endif
   // set this connection as the current connection
   llConns.currentConn = connId;
 }
@@ -1596,36 +1555,26 @@ uint8 llFindStartType( taskInfo_t *secTask,
   }
   else // not enough time to start secondary task at all
   {
-#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG))
+#if defined(CTRL_CONFIG) && (CTRL_CONFIG & (ADV_CONN_CFG | INIT_CFG | SCAN_CFG))
 
-    /****************************************/
-    /************ Priority Check ************/
-    /****************************************/
-    // Check if the secondary task has a higher priority than the primary task.
-    // Schedule the adv set only in case it does not collide with connection events
-    // that are in LSTO or in connection establishment
-    if (MAP_llCompareSecondaryPrimaryTasksQoSParam(LL_QOS_TYPE_PRIORITY, secTask, nextConnPtr) == TRUE)
-    {
-      // Check that the secondary task does not collide with connection events
-      // that are in LSTO or in connection establishment mode.
-      if (MAP_llCheckIsSecTaskCollideWithPrimTaskInLsto(secTask, timeGap, llConns.nextConn) == FALSE)
+      /************ Priority Check ************/
+      /****************************************/
+      /****************************************/
+      // Check if the secondary task has a higher priority than the primary task.
+      // Schedule the secondary task only in case it does not collide with connection events
+      // that are in LSTO or in connection establishment
+      if ((llCompareSecondaryPrimaryTasksQoSParam(LL_QOS_TYPE_PRIORITY, secTask, nextConnPtr) == TRUE) &&
+         // Check that next schedule in time is indeed the secondary task and not a primary task
+         (MAP_llTimeCompare( primCmd->timing.absStartTime, secCmd->timing.absStartTime) == TRUE))
       {
-        // the secondary task has enough time to start relative to the primary
-        // task's cutoff, but check if there's enough time relative to current time.
-        if ( MAP_llTimeCompare( secCmd->timing.absStartTime,
-                               curTime + LL_SCHED_PRE_CUTOFF - LL_SCHED_START_IMMED_PAD ) == FALSE )
-        {
-          // Update that we need to schedule the secondary task (immediately) instead of the
-          // the primary task.
-          return ( LL_SCHED_START_IMMED );
-        }
-        else
-        {
-          // so there's enough time to start it based on its own interval.
-          return( LL_SCHED_START_EVENT );
-        }
+         // Check that the secondary task does not collide with connection events
+         // that are in LSTO or in connection establishment mode.
+         if (llCheckIsSecTaskCollideWithPrimTaskInLsto(secTask, timeGap, llConns.nextConn) == FALSE)
+         {
+            // start the secondary task in it's start time
+            return( LL_SCHED_START_EVENT );
+         }
       }
-    }
 #endif
     // so resume the primary task
     if ( tempCmd == csCmd )
@@ -2666,14 +2615,16 @@ void llExtAdvSchedSetup( taskInfo_t *llTask )
         ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime = MAP_llGetCurrentTime() + LL_SCHED_START_IMMED_PAD;
         pAdvSet->advStartTime = ((RCL_Command *)pAdvSet->pRfCmds)->timing.absStartTime;
       }
-
-      if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
-      {
-        pAdvSet->txPowerIndex = curTxPowerVal;
-      }
-      aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
-      pRf->advCmd.txPower = pAdvSet->txPowerIndex;
     }
+
+    // If Host doesn't set the AdvSet Tx power, use the current TxPower value
+    if ( pAdvSet->pAdvParam->txPower == AE_TX_POWER_NO_PREFERENCE )
+    {
+      pAdvSet->txPowerIndex = curTxPowerVal;
+    }
+
+    aeRf_t *pRf = (aeRf_t *)pAdvSet->pRfCmds;
+    pRf->advCmd.txPower = pAdvSet->txPowerIndex;
 
     // pointer to first radio operation command
     pAdvSet->llTask->command = (uint32)pAdvSet->pRfCmds;
@@ -2759,16 +2710,6 @@ void llPeriodicAdvSchedSetup( taskInfo_t *llTask )
   {
     pPeriodicAdv->intPriority = LL_QOS_LOW_PRIORITY;
   }
-#ifdef RTLS_CTE
-  // check that the CTE sampling is enable
-  if (llCteSamples.pAutoCopyBuffers != NULL)
-  {
-    // disable the antenna switch
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-    // disable the auto copy
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-  }
-#endif
 }
 #endif // USE_PERIODIC_ADV
 #endif // ADV_NCONN_CFG | ADV_CONN_CFG
@@ -2816,32 +2757,53 @@ void llExtScanSchedSetup( taskInfo_t *llTask )
                          resolvingList[LOCAL_RL_INDEX].RPA,
                          B_ADDR_LEN );
 
-        // In devices using RF Driver (rflib instead of rcl), the command
-        // itself will point to extScanInfo->ownAddr which naturally updates
-        // the RPA.
-        // When using RCL, the RF Command needs to be directly updated
-        // Copy the address into the command.
-        MAP_osal_memcpy( extScanCmd.ctx->ownA,
+        // Define a zero address to check if ownAddrRclCtx should be used.
+        uint8_t zeroAddr[B_ADDR_LEN] = {0};
+
+        // In case there was a directed advertise set for us, but with a different (valid)
+        // RPA, we might want to answer it with a scan request (when in active scanning).
+        // In such case we have already saved this RPA address in ownAddrRclCtx.
+        // Since the RCL answers for directed advertise sets only when the TargetA field
+        // is equal to extScanCmd.ctx->ownA, we will need to change it to be the address
+        // we have saved.
+        // If ownAddrRclCtx is not zero, copy it into ownA, else - copy the updated RPA.
+        if( MAP_osal_memcmp(extScanInfo->ownAddrRclCtx, zeroAddr, B_ADDR_LEN) == FALSE )
+        {
+            MAP_osal_memcpy( extScanCmd.ctx->ownA,
+                             extScanInfo->ownAddrRclCtx,
+                             B_ADDR_LEN );
+        }
+        else
+        {
+            // In devices using RF Driver (rflib instead of rcl), the command
+            // itself will point to extScanInfo->ownAddr which naturally updates
+            // the RPA.
+            // When using RCL, the RF Command needs to be directly updated
+            // Copy the address into the command.
+            MAP_osal_memcpy( extScanCmd.ctx->ownA,
+                             resolvingList[LOCAL_RL_INDEX].RPA,
+                             B_ADDR_LEN );
+        }
+
+        // Copy the updated RPA to scanReqA.
+        // ScanA is the address which will be used by the radio over the air
+        // Note: if scanReqA is zero, it will not be used for scan requests and ownA will.
+        MAP_osal_memcpy( extScanCmd.ctx->scanReqA,
                          resolvingList[LOCAL_RL_INDEX].RPA,
                          B_ADDR_LEN );
       }
-  }
+      else // Not using RPA
+      {
+          // Copy our id address to scanReqA
+          MAP_osal_memcpy( extScanCmd.ctx->scanReqA,
+                           resolvingList[LOCAL_RL_INDEX].idAddr,
+                           B_ADDR_LEN );
 
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, (uint32 *)&extScanCmd );
-#endif // CC13X2P
+      }
 
-#ifdef RTLS_CTE
-  // check that the CTE sampling is enable
-  if (llCteSamples.pAutoCopyBuffers != NULL)
-  {
-    // disable the antenna switch
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-    // disable the auto copy
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
+      // When using scanReqA, we also need to set its type
+      extScanCmd.ctx->addrType.scanReq = extScanInfo->ownAddrType;
   }
-#endif // RTLS_CTE
 
 #ifdef USE_PERIODIC_SCAN
   // reset the number of missed scan windows -
@@ -2876,37 +2838,6 @@ void llPeriodicScanSchedSetup( taskInfo_t *llTask )
 
   // Update RCL buffer pointer to the global buffer address
   pPeriodicScan->rfCmd.ctx->rxBuffers = llPeriodicScan.rxBuffers;
-
-#ifdef RTLS_CTE
-  // check that the CTE sampling is enable
-  if (llCteSamples.pAutoCopyBuffers != NULL)
-  {
-    // in case the IQ sampling is enable
-    if (pPeriodicScan->cteInfo.enable == LL_CTE_SAMPLING_ENABLE)
-    {
-      // Enable the Packet received with CRC error interrupt and copy samples interrupt
-      llTask->rfEvents |= (RF_EventRxNOk | RF_EventSamplesEntryDone);
-      // Set the antenna switch
-      llRfOverrideCteValue((uint32)(pPeriodicScan->cteInfo.pAntenna),RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-
-      // set the auto copy struct pointer in RF memory
-      llRfOverrideCteValue((uint32)(&llCteSamples.autoCopy),RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-      // reset the auto copy counter
-      llCteSamples.autoCopyCompleted = 0;
-      // set the CTE max count
-      llCteSamples.autoCopy.cteCopyLimitCount = pPeriodicScan->cteInfo.count;
-    }
-    else
-    {
-      // Disable the Packet received with CRC error interrupt and copy samples interrupt
-      llTask->rfEvents &= ~(RF_EventRxNOk | RF_EventSamplesEntryDone);
-      // disable the antenna switch
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-      // disable the auto copy
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-    }
-  }
-#endif // RTLS_CTE
 
   return;
 }
@@ -2943,23 +2874,6 @@ void llExtInitSchedSetup( taskInfo_t *llTask )
     }
   }
 
-
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, (uint32 *)&extInitCmd );
-#endif // CC13X2P
-
-#ifdef RTLS_CTE
-  // check that the CTE sampling is enable
-  if (llCteSamples.pAutoCopyBuffers != NULL)
-  {
-    // disable the antenna switch
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-    // disable the auto copy
-    llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-  }
-#endif // RTLS_CTE
-
   return;
 }
 #endif // INIT_CFG
@@ -2990,11 +2904,6 @@ void llLinkSchedSetup( taskInfo_t *llTask )
   // clear the output parameters
   connOutput = RCL_StatsConnection_DefaultRuntime();
 
-#if defined(CC13X2P)
-  // setup RF Setup and Radio Command for Tx Power PA based on current Tx Power
-  MAP_llTxPwrSwitchPA( curTxPowerVal, (uint32 *)llTask->command );
-#endif // CC13X2P
-
   /***********************************************************/
   /**** Abort Conn Event According to Max Conn Length ********/
   /***********************************************************/
@@ -3017,34 +2926,6 @@ void llLinkSchedSetup( taskInfo_t *llTask )
     }
   }
 
-#ifdef RTLS_CTE
-  if ((connPtr != NULL) && (llCteSamples.pAutoCopyBuffers != NULL))
-  {
-    // in case the sampling is enable
-    if (llCte[connPtr->connId].initiator.samplingEnable == LL_CTE_SAMPLING_ENABLE)
-    {
-      // Enable the Packet received with CRC error interrupt and copy samples interrupt
-      llTask->rfEvents |= (RF_EventRxNOk | RF_EventSamplesEntryDone);
-      // Set the antenna switch
-      llRfOverrideCteValue((uint32)(llCte[connPtr->connId].initiator.pAntenna),RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-      // set the auto copy struct pointer in RF memory
-      llRfOverrideCteValue((uint32)(&llCteSamples.autoCopy),RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-      // reset the auto copy counter
-      llCteSamples.autoCopyCompleted = 0;
-      // set the CTE max count as 1 CTE (relevant only to periodic scan)
-      llCteSamples.autoCopy.cteCopyLimitCount = 1;
-    }
-    else
-    {
-      // Disable the Packet received with CRC error interrupt and copy samples interrupt
-      llTask->rfEvents &= ~(RF_EventRxNOk | RF_EventSamplesEntryDone);
-      // disable the antenna switch
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_ANT_SWITCH,RFC_CTE_ANT_SWITCH_OFFSET);
-      // disable the auto copy
-      llRfOverrideCteValue(0,RFC_FWPAR_CTE_AUTO_COPY,RFC_CTE_AUTO_COPY_OFFSET);
-    }
-  }
-#endif // RTLS_CTE
   return;
 }
 #endif // ADV_CONN_CFG | INIT_CFG
@@ -3062,14 +2943,6 @@ void llCmdStartedEventHandle( void )
     case LL_STATE_EXT_ADV:
     {
       advSet_t *pAdvSet;
-
-#ifdef DEBUG_GPIO_CONN
-  GPIO_writeDio(HAL_GPIO_1, 1);
-#endif // DEBUG_GPIO_CONN
-
-#ifdef DEBUG_GPIO_ADV_SCAN
-  GPIO_writeDio(HAL_GPIO_1, 1);
-#endif // DEBUG_GPIO_ADV_SCAN
 
       // get current Adv Set
       pAdvSet = MAP_LL_SearchAdvSet( aeCurHandle );
@@ -3102,10 +2975,6 @@ void llCmdStartedEventHandle( void )
 
 #if defined(CTRL_CONFIG) && (CTRL_CONFIG & SCAN_CFG)
     case LL_STATE_SCAN:
-
-#ifdef DEBUG_GPIO_ADV_SCAN
-  GPIO_writeDio(HAL_GPIO_2, 1);
-#endif // DEBUG_GPIO_ADV_SCAN
 
       // check if this is the first time
       switch( extScanInfo->scanStartState )
@@ -3144,25 +3013,6 @@ void llCmdStartedEventHandle( void )
       }
       break;
 #endif // SCAN_CFG
-
-#ifdef DEBUG_GPIO_CONN
-    case LL_STATE_INIT:
-      GPIO_writeDio(HAL_GPIO_2, 1);
-      break;
-
-    case LL_STATE_CONN_CENTRAL:
-      GPIO_writeDio(HAL_GPIO_3, 1);
-      break;
-
-    case LL_STATE_CONN_PERIPHERAL:
-      GPIO_writeDio(HAL_GPIO_4, 1);
-      break;
-#endif // DEBUG_GPIO_CONN
-
-    case LL_STATE_SDAA_RX_WINDOW:
-      // when SDAA module is enabled channels are scaned for noise level.
-      MAP_LL_SDAA_SampleRXWindow();
-      break;
 
     default:
       break;

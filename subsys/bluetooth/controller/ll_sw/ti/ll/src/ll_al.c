@@ -24,9 +24,7 @@
 #include "bcomdef.h"
 #include "ll.h"
 #include "ll_common.h"
-
-//
-#include "rom_jt.h"
+#include "map_direct.h"
 
 /*******************************************************************************
  * MACROS

@@ -31,6 +31,9 @@ extern "C" {
 #include "osal_snv.h"
 #include "ll_common.h"
 #include "ll_ae.h"
+#include "ll_handover.h"
+#include "ll_handover_cn.h"
+#include "ll_handover_sn.h"
 #ifndef CONTROLLER_ONLY
 #include "gapgattserver.h"
 #include "linkdb.h"
@@ -47,10 +50,8 @@ extern "C" {
 #include "gatt_uuid.h"
 #include "gatt_profile_uuid.h"
 #include "gattservapp.h"
+#include "handover.h"
 #endif // !CONTROLLER_ONLY
-#if !defined(CC23X0) && !defined(CC33xx)
-#include "rtls_srv_api.h"
-#endif // !CC23X0 && !CC33xx
 
 #if defined (GATT_TEST) || defined (GATT_QUAL)
   #include "gatttest.h"
@@ -59,10 +60,6 @@ extern "C" {
 #if defined(HOST_CONFIG) && defined(STACK_LIBRARY)
 #include "osal_bufmgr.h"
 #endif  /* defined(HOST_CONFIG) && !defined(STACK_LIBRARY)*/
-
-#ifdef HOST_CONFIG
-#include <../rom/rom_jt.h>
-#endif /* HOST_CONFIG */
 
 /*-------------------------------------------------------------------
  * TYPEDEFS
@@ -687,16 +684,16 @@ typedef struct _ICall_L2capPsmInfo_
 
 /**
  * ICall message containing HciExtCmd hdr, local PSM, number of channels and
- * pointer to structure to copy CIDs into
+ * pointer to structure to copy CIDs with their connection handle into
  *
  * @see L2CAP_PsmChannels
  */
 typedef struct _ICall_L2capPsmChannels_
 {
-  ICall_HciExtCmd hdr; //!< hdr event field must be set as ICALL_CMD_EVENT
-  uint16_t psm;        //!< PSM Id
-  uint8_t numCIDs;     //!< number of CIDs can be copied
-  uint16_t *pCIDs;     //!< structure to copy CIDs into
+  ICall_HciExtCmd hdr;             //!< hdr event field must be set as ICALL_CMD_EVENT
+  uint16_t psm;                    //!< PSM Id
+  uint8_t numCIDs;                 //!< number of CIDs can be copied
+  l2capLocalChannelInfo_t *pCIDs;  //!< structure to copy CIDs into
 } ICall_L2capPsmChannels;
 
 /**
@@ -867,7 +864,6 @@ typedef struct _ICall_HciLe_TxTest_
   uint8_t payloadType; //!< type of packet payload
 } ICall_HciLe_TxTest;
 
-#ifndef CC33xx // NV is not supported for CC33xx
 /**
  * ICall message containing HciExtCmd hdr and Util NV Read parameters
  *
@@ -893,7 +889,6 @@ typedef struct _ICall_UtilNvWrite_
   osalSnvLen_t len;    //!< length of data to write
   void *pBuf;          //!< data to write
 } ICall_UtilNvWrite;
-#endif // CC33xx
 
 /**
  * ICall structure containing Build Revision parameters
@@ -920,7 +915,6 @@ typedef struct _ICall_UtilBuildRev_
   ICall_BuildRevision *pBuildRev; //!< ptr to struct to copy build revision into
 } ICall_UtilBuildRev;
 
-#ifndef CC33xx // Security is currently not supported for CC33xx
 /**
  * ICall message containing header for Get TRNG Number
  * @see Util_GetTRNG()
@@ -929,7 +923,6 @@ typedef struct _ICall_UtilGetTRNG_
 {
   ICall_HciExtCmd hdr; //!< hdr event field must be set as ICALL_CMD_EVENT
 } ICall_UtilGetTRNG;
-#endif // CC33xx
 
 /**
  * ICall message containing HciExtCmd hdr and task ID
@@ -1006,12 +999,10 @@ typedef union _ICall_CmdMsg_
   ICall_GSA_ReadRsp          gsaReadRsp;         //!< GSA Read Response
   ICall_GGSRegisterAppCBs    ggsRegister;        //!< GGS Register App Callbacks
 #endif // CONTROLLER_ONLY
-#ifndef CC33xx
   ICall_UtilNvRead           utilNvRead;         //!< Util NV Read
   ICall_UtilNvWrite          utilNvWrite;        //!< Util NV Write
   ICall_UtilBuildRev         utilBuildRev;       //!< Util Build Revision
   ICall_UtilGetTRNG          utilGetTRNG;        //!< Util Get TRNG Number
-#endif // !CC33xx
 #ifndef CONTROLLER_ONLY
   ICall_BondMgrRegister      gapBondMgrRegister;   //!< GAP BondMgr Register
   ICall_BondMgrPasscodeRsp   gapBondMgrPasscodeRsp;//!< GAP BondMgr Passcode Rsp

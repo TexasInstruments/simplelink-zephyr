@@ -25,9 +25,11 @@
 #include "cs/ll_cs_mgr_internal.h"
 #include "cs/ll_cs_sec.h"
 #include "cs/ll_cs_common.h"
+#include "cs/ll_cs_procedure.h"
+#include "cs/ll_cs_test.h"
 
 #include "ll_common.h"
-#include "rom_jt.h"
+#include "map_direct.h"
 #include "ll.h"
 #include "ll_rat.h"
 #include "ll_config.h"
@@ -40,7 +42,6 @@
 /*******************************************************************************
  * CONSTANTS
  */
-#define RAT_TICKS_IN_1S 4000000
 
 /*******************************************************************************
  * EXTERNS
@@ -121,8 +122,7 @@ csStatus_e LL_CS_SecurityEnable(uint16 connId)
 /*******************************************************************************
  * Public function defined in ll_cs_mgr.h
  */
-csStatus_e
-LL_CS_ReadLocalSupportedCapabilites(csCapabilities_t* localCapabilities)
+csStatus_e LL_CS_ReadLocalSupportedCapabilites(csCapabilities_t* localCapabilities)
 {
     llCsDbGetLocalCapabilities(localCapabilities);
     return (CS_STATUS_SUCCESS);
@@ -531,6 +531,11 @@ csStatus_e LL_CS_SetProcedureParameters(uint16 connId, uint8 configId,
     {
         return CS_STATUS_UNEXPECTED_PARAMETER;
     }
+    if ((csProcParams->snrCtrlI != 0xFFU) || (csProcParams->snrCtrlR != 0xFFU))
+    {
+        /* SNR Control is not applied */
+        return CS_STATUS_UNEXPECTED_PARAMETER;
+    }
 
     llCsDbSetProcedureParams(connId, configId, csProcParams);
     return (CS_STATUS_SUCCESS);
@@ -579,18 +584,123 @@ csStatus_e LL_CS_ProcedureEnable(uint16 connId, uint8 configId, uint8 enable)
         /* Set terminateState field to CS_TERMINATE_RECEIVED */
         /* This indicate that the procedure state will be updated to
             CS_DISABLE at the end of the procedure. */
-        llCsDbSetProcedureTerminateState(connId, configId,
+        llCsDbSetProcedureTerminateState(connId,
                                          CS_TERMINATE_RECEIVED);
+        llCsDbSetTerminateReason(connId,
+                                 LL_STATUS_ERROR_HOST_TERM);
 
         /* Set procedure's status in the DB */
         llCsDbEnableProcedureParams(connId, configId, CS_DISABLE);
 
         /* send LL_CS_TERMINATE_IND PDU in order to terminate */
-        MAP_llEnqueueCtrlPkt(connPtr, LL_CTRL_CS_TERMINATE_IND);
+        MAP_llEnqueueCtrlPkt(connPtr, LL_CTRL_CS_TERMINATE_REQ);
     }
 
     return (CS_STATUS_SUCCESS);
 }
+
+/*******************************************************************************
+ * Public function defined in ll_cs_mgr.h
+ */
+csStatus_e LL_CS_Test(csTestParams_t *pParams)
+{
+    csStatus_e status;
+
+    if ((pParams == NULL)             ||
+        (llConns.numActiveConns != 0) ||
+        (llCsConfigIdSafeToUse(CS_TEST_MODE_CONN_ID,
+                               CS_TEST_MODE_CONFIG_ID) != CS_STATUS_SUCCESS))
+    {
+        /* Don't start CS Test if pParams is NULL */
+        /* or a BLE Connection is active */
+        /* Or the Test Config ID is in use */
+        status = CS_STATUS_UNEXPECTED_PARAMETER;
+    }
+    else
+    {
+        status = llCsCheckTestParams(pParams);
+
+        if (status == CS_STATUS_SUCCESS)
+        {
+            if (llCsDbGetTestMode() != CS_TEST_MODE_ENABLE)
+            {
+                /* Set Test Mode */
+                llCsDbSetTestMode(CS_TEST_MODE_ENABLE);
+
+                /* Setup CS config */
+                llCsDbSetTestConfig(pParams);
+
+                /* Set Switch Time */
+                llCsDbSetSwitchTime(pParams->tSw);
+
+                /* Set Default settings */
+                llCsDbSetTestDefaultSettings(pParams);
+
+                /* Set Procedure Enable */
+                llCsDbSetTestProcedureEnable(pParams);
+
+                /* Set Procedure Params */
+                llCsDbSetTestProcedureParams(pParams);
+
+                /* Set overrides */
+                if (llCsDbSetTestOverrideData(pParams) != CS_STATUS_SUCCESS)
+                {
+                    return CS_STATUS_UNEXPECTED_PARAMETER;
+                }
+
+                status = llCsStartTestProcedure();
+            }
+            else
+            {
+                /* A test is already in progress */
+                status = CS_STATUS_SUCCESS;
+            }
+        }
+    }
+
+    return (status);
+}
+
+/*******************************************************************************
+ * Public function defined in ll_cs_mgr.h
+ */
+csStatus_e LL_CS_TestEnd(void)
+{
+    csStatus_e status = CS_STATUS_SUCCESS;
+    csTestMode_e testMode = llCsDbGetTestMode();
+
+    if (testMode == CS_TEST_MODE_ENABLE || testMode == CS_TEST_MODE_TERMINATE)
+    {
+        /* Set Test Mode flag to terminate */
+        llCsDbSetTestMode(CS_TEST_MODE_TERMINATE);
+
+        /* Set Procedure Terminate flag to received */
+        llCsDbSetProcedureTerminateState(CS_TEST_MODE_CONN_ID,
+                                         CS_TERMINATE_RECEIVED);
+        /* see note in the else */
+        MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_TEST_END );
+    }
+    else if (testMode == CS_TEST_MODE_FINISHED)
+    {
+        /* A Test Mode procedure was finished */
+        /* Note: in this case the spec expects to get a the TestEndCompleteCback
+           anyway, and since there is no on-going procedure, we can only trigger
+           it from here. However, we still need to make sure that the Command
+           Status Event is sent first, so I had to move the command status event
+           here instead of sending it from hci.c */
+        MAP_HCI_CommandStatusEvent( status, HCI_LE_CS_TEST_END );
+        MAP_HCI_CS_TestEndCompleteCback(CS_STATUS_SUCCESS);
+        llCsDbSetTestMode(CS_TEST_MODE_DISABLE);
+    }
+    else
+    {
+        /* Test Mode is disabled, nothing to end */
+        status = CS_STATUS_COMMAND_DISALLOWED;
+    }
+
+    return (status);
+}
+
 
 /*******************************************************************************
  * Internal function defined in ll_cs_mgr_internal.h
