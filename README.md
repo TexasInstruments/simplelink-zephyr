@@ -35,21 +35,10 @@ support them in the upstream repositories.
 Supported by this release:
 
 - [CC2340R52](https://www.ti.com/product/CC2340R5)
-
-Beta support:
-
-Limited testing was also performed on the `CC2340R53`, a variant of the CC2340R5
-with 64kB of SRAM. Please note that some examples that require more RAM should
-be run on the CC2340R53. Please see the release notes for more details.
-
-To use this device, change [`cc2340r5.dtsi`](dts/arm/ti/cc2340r5.dtsi)
-as follows:
-
-```dts
-sram0: memory@20000000 {
-  reg = <0x20000000 DT_SIZE_K(64)>;
-};
-```
+- [CC2340R53](https://www.ti.com/product/CC2340R5)
+    - Tested only on the following examples:
+        - samples/bluetooth/mesh_demo/
+        - samples/bluetooth/mesh/
 
 Supported by the Zephyr community:
 
@@ -68,6 +57,7 @@ Supported by the Zephyr community:
 Supported by this release:
 
 - [lp_em_cc2340r5](https://www.ti.com/tool/LP-EM-CC2340R5)
+- lp_em_cc2340r53
 
 Supported by the Zephyr community:
 
@@ -93,6 +83,46 @@ the environment and building your first application.
 > You can look up the latest tag from the following link:
 > https://github.com/TexasInstruments/simplelink-zephyr/tags
 
+
+## BLE FOTA
+
+TI supports BLE FOTA for Bluetooth Peripheral samples. To enable, add the following
+configurations to your project's `prj.conf`.
+
+```
+# Enable BLE DFU FOTA MCUMGR MCUBOOT
+CONFIG_BOOTLOADER_MCUBOOT=y
+CONFIG_TI_MCUMGR_BT_OTA_DFU=y
+```
+
+The following configurations should also be applied to your project's `prj.conf`
+to reduce flash and RAM consumption.
+
+```
+CONFIG_LOG=n
+CONFIG_BT_RECV_WORKQ_SYS=y
+CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT=2
+CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=1100
+```
+
+You can then build MCUboot and the Bluetooth Peripheral sample using the following
+commands
+
+```
+west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_f3 bootloader/mcuboot/boot/zephyr
+west build -p=always -b lp_em_cc2340r5 -d build_peripheral_fota_f3 zephyr/samples/bluetooth/peripheral_fota/
+```
+
+By default, BLE FOTA uses the internal flash as the secondary slot for MCUboot.
+For applications that require more flash, the external flash on the `lp_em_cc2340r5x`
+can be used as the secondary slot instead. To enable this, TI provides Snippets
+that can be applied at build time to enable offchip BLE FOTA. Use the commands below
+as reference
+
+```
+west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_offchip_f3 bootloader/mcuboot/boot/zephyr -S ti-spi-nor-secondary-bl
+west build -p=always -b lp_em_cc2340r5 -d build_peripheral_offchip_fota_f3 zephyr/samples/bluetooth/peripheral_fota/ -S ti-spi-nor-secondary-app
+```
 
 ## Tools support
 

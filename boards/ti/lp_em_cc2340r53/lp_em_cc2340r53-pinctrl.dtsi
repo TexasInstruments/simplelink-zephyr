@@ -37,6 +37,7 @@
 		pinmux = <11 DIO11_SPI0_CSN>;
 		bias-disable;
 	};
+
 	spi0_flash_cs: spi0_flash_cs {
 		pinmux = <6 DIO6_SPI0_CSN>;
 		bias-disable;

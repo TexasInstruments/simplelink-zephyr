@@ -247,7 +247,7 @@ manifest:
         - hal
     - name: simplelink-hal_ti
       remote: downstream
-      revision: 59e05d926bc3204edb5afb2a3d7b66513def1108
+      revision: 2e7b95ad079-ti-8.20.01_ea
       path: modules/hal/ti
       groups:
         - hal

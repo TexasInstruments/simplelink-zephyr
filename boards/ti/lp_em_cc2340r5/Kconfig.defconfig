@@ -1,3 +1,9 @@
+# Copyright (c) 2024 Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "../lpf3_common/Kconfig.defconfig"
+
 if BOARD_LP_EM_CC2340R5
 
 
@@ -9,7 +15,7 @@ config ZEPHYR
   help
     Bluetooth TI Controller on ZEPHYR OS.
   default y
-  
+
 config BT_LL_HEAP_SIZE
     hex "LL Heap memory pool size (in bytes)"
     default 0x1800
@@ -22,6 +28,8 @@ CONFIG_BT_BUF_EVT_RX_SIZE=255
 CONFIG_BT_BUF_ACL_RX_SIZE=255
 CONFIG_BT_BUF_ACL_TX_SIZE=251
 CONFIG_BT_BUF_CMD_TX_SIZE=255
+config BT_HCI_ACL_FLOW_CONTROL
+  default n
 
 endif # BT
 
