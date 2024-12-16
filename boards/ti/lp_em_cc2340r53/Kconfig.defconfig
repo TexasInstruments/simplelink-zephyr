@@ -1,0 +1,16 @@
+if BOARD_LP_EM_CC2340R53
+
+
+if BT
+
+config ZEPHYR
+  bool
+  default y
+
+config BT_LL_HEAP_SIZE
+  hex
+  default 0x1800
+
+endif # BT
+
+endif # BOARD_LP_EM_CC2340R53
