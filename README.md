@@ -35,21 +35,10 @@ support them in the upstream repositories.
 Supported by this release:
 
 - [CC2340R52](https://www.ti.com/product/CC2340R5)
-
-Beta support:
-
-Limited testing was also performed on the `CC2340R53`, a variant of the CC2340R5
-with 64kB of SRAM. Please note that some examples that require more RAM should
-be run on the CC2340R53. Please see the release notes for more details.
-
-To use this device, change [`cc2340r5.dtsi`](dts/arm/ti/cc2340r5.dtsi)
-as follows:
-
-```dts
-sram0: memory@20000000 {
-  reg = <0x20000000 DT_SIZE_K(64)>;
-};
-```
+- [CC2340R53](https://www.ti.com/product/CC2340R5)
+    - Tested only on the following examples:
+        - samples/bluetooth/mesh_demo/
+        - samples/bluetooth/mesh/
 
 Supported by the Zephyr community:
 
@@ -68,6 +57,7 @@ Supported by the Zephyr community:
 Supported by this release:
 
 - [lp_em_cc2340r5](https://www.ti.com/tool/LP-EM-CC2340R5)
+- lp_em_cc2340r53
 
 Supported by the Zephyr community:
 
