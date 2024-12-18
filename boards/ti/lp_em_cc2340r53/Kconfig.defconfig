@@ -16,4 +16,32 @@ config BT_LL_HEAP_SIZE
 
 endif # BT
 
+config BT_HCI_ACL_FLOW_CONTROL
+	default n
+
+if BT_MESH
+
+	config BT_TINYCRYPT_ECC
+		default y
+
+	config BT_LONG_WQ
+		default y
+
+	config BT_BUF_EVT_RX_SIZE
+		default 255
+
+	config BT_BUF_ACL_RX_SIZE
+		default 255
+
+	config BT_BUF_ACL_TX_SIZE
+		default 251
+
+	config BT_BUF_CMD_TX_SIZE
+		default 255
+
+	config BT_PERIPHERAL_PREF_TIMEOUT
+		default 150
+
+endif # BT_MESH
+
 endif # BOARD_LP_EM_CC2340R53
