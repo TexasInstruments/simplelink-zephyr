@@ -18,7 +18,6 @@
 
 #include <zephyr/drivers/bluetooth.h>
 
-#include "comdef.h"
 #include "hci_api.h"
 #include "ble_init.h"
 
@@ -43,9 +42,8 @@ struct hci_driver_data {
 /*******************************************************************************
  * CONSTANTS
  */
-#define BT_HCI_SET_BD_ADDR           0xfc0c
-
-
+#define BLE_SYNC_INIT_TIMEOUT_SEC      10
+#define BLE_SYNC_INIT_TIMEOUT_TICKS    10000// K_SECONDS(BLE_SYNC_INIT_TIMEOUT_SEC)
 /*******************************************************************************
  * LOCAL FUNCTIONS PROTOTYPES
  */
@@ -146,87 +144,81 @@ void AssertHandler(uint8 assertCause, uint8 assertSubCause)
 
 #define HCI_TYPE_INVALID                             (0xFF)
 
-static const enum bt_buf_type translation_array_in[6] = { HCI_TYPE_INVALID,                 /* BT_HCI_H4_NONE */ /* NOT SUPPORTED */
-                                                     HCI_TYPE_INVALID,                 /* BT_HCI_H4_CMD  */ /* NOT SUPPORTED */
-                                                     BT_BUF_ACL_IN,                    /* BT_HCI_H4_ACL  */
-                                                     HCI_TYPE_INVALID,                 /* BT_HCI_H4_SCO  */ /* NOT SUPPORTED */
-                                                     BT_BUF_EVT,                       /* BT_HCI_H4_EVT  */
-                                                     HCI_TYPE_INVALID                  /* BT_HCI_H4_ISO  */ /* NOT SUPPORTED */
+static const enum bt_buf_type bt_buf_type_in[6] = {
+    HCI_TYPE_INVALID, /* BT_HCI_H4_NONE */ /* NOT SUPPORTED */
+    HCI_TYPE_INVALID, /* BT_HCI_H4_CMD  */ /* NOT SUPPORTED */
+    BT_BUF_ACL_IN,    /* BT_HCI_H4_ACL  */
+    HCI_TYPE_INVALID, /* BT_HCI_H4_SCO  */ /* NOT SUPPORTED */
+    BT_BUF_EVT,       /* BT_HCI_H4_EVT  */
+    HCI_TYPE_INVALID  /* BT_HCI_H4_ISO  */ /* NOT SUPPORTED */
 };
 
-static const uint8_t     translation_array_out[6] = { BT_HCI_H4_CMD,                            /* BT_BUF_CMD      */
-                                                      HCI_TYPE_INVALID,                         /* BT_BUF_EVT      */ /* NOT SUPPORTED */
-                                                      BT_HCI_H4_ACL,                            /* BT_BUF_ACL_OUT  */
-                                                      HCI_TYPE_INVALID,                         /* BT_BUF_ISO_OUT  */ /* NOT SUPPORTED */
-                                                      HCI_TYPE_INVALID,                         /* BT_BUF_ISO_IN   */ /* NOT SUPPORTED */
-                                                      HCI_TYPE_INVALID                          /* BT_BUF_H4       */ /* NOT SUPPORTED */
+static const uint8_t bt_buf_type_out[6] = {
+    BT_HCI_H4_CMD,    /* BT_BUF_CMD      */
+    HCI_TYPE_INVALID, /* BT_BUF_EVT      */ /* NOT SUPPORTED */
+    BT_HCI_H4_ACL,    /* BT_BUF_ACL_OUT  */
+    HCI_TYPE_INVALID, /* BT_BUF_ISO_OUT  */ /* NOT SUPPORTED */
+    HCI_TYPE_INVALID, /* BT_BUF_ISO_IN   */ /* NOT SUPPORTED */
+    HCI_TYPE_INVALID  /* BT_BUF_H4       */ /* NOT SUPPORTED */
 };
 
-static uint8_t hci_driver_add_pkt_type(struct net_buf *buf)
+static bool hci_driver_add_pkt_type(struct net_buf *buf)
 {
-    /* Read the nut_buf buffer paket type */
+    /* Read the net_buf buffer packet type */
     enum bt_buf_type type = bt_buf_get_type(buf);
 
-    /* Translate the nut_buf buffer paket type into the HCI Paket type */
-	uint8_t h4_type = translation_array_out[type];
+    /* Translate the net_buf buffer packet type into the HCI Packet type */
+	  uint8_t h4_type = bt_buf_type_out[type];
 
-	if (h4_type == HCI_TYPE_INVALID) {
+	  if (h4_type == HCI_TYPE_INVALID) {
         LOG_ERR("Received Invalid pkt type from the Host: %u", type);
-		return FAILURE;
-	}
+		    return true;
+	  }
 
-    /* Set the HCI Paket type into the payload */
-    net_buf_simple_push_mem(&buf->b, &h4_type, sizeof(h4_type));
+    /* Add the HCI Packet type to the buffer */
+    net_buf_push_u8(buf, h4_type);
 
-	return SUCCESS;
+    return false; // Assuming 0 indicates success
 }
 
 static int hci_driver_send(const struct device *dev, struct net_buf *buf)
 {
-    static int first_entry = TRUE;
-	int err = SUCCESS;
+    static bool first_entry = true;
+    int err = 0;
 
-    if (TRUE == first_entry) {
+    if (first_entry) {
+        first_entry = false;
         /* Register the calling context in the icall */
         ICall_SyncHandle syncEvent_dummy;
         ICall_EntityID icall_entity_dummy;
         ICall_registerApp(&icall_entity_dummy, &syncEvent_dummy);
-        first_entry = FALSE;
-
-//        /* In case bt_ctlr_set_public_addr was called, we need to set the BD_ADDR before executing any other commands */
-//        vs_set_bd_addr();
     }
 
-	LOG_DBG("enter");
+    /* Add the HCI Packet type to the buffer */
+    err = hci_driver_add_pkt_type(buf);
+    if (err) {
+        net_buf_unref(buf);
+        LOG_ERR("Failed to add HCI packet type");
+        return -ENOTSUP;
+    }
 
-	if (!buf->len) {
-		LOG_ERR("Empty HCI packet");
-		return -EINVAL;
-	}
-
-	err = hci_driver_add_pkt_type(buf);
-	if (SUCCESS != err) {
-		net_buf_unref(buf);
-		return -EINVAL;
-	}
-
-	err = HCI_HostToController(buf->data, buf->len);
-	if (SUCCESS != err) {
-		net_buf_unref(buf);
-		return -EINVAL;
-	}
+    /* Send the buffer to the device */
+    err = HCI_HostToControllerSend(buf->data, buf->len);
+    if (err) {
+        net_buf_unref(buf);
+        LOG_ERR("Failed to send buffer to device");
+        return err;
+    }
     net_buf_unref(buf);
 
-	LOG_DBG("exit: %d", err);
-
-	return err;
+    return 0; // Assuming 0 indicates success
 }
 
 struct net_buf *hci_evt_create(uint8 *pHciPkt, uint16 pktLen)
 {
-	struct net_buf *buf;
+    struct net_buf *buf;
 
-	enum bt_buf_type buf_type = translation_array_in[pHciPkt[0]/* pktType */];
+    enum bt_buf_type buf_type = bt_buf_type_in[pHciPkt[0] /* pktType */];
 
     if (buf_type == HCI_TYPE_INVALID) {
         LOG_ERR("Received Invalid pkt type from the Controller: %u", pHciPkt[0]);
@@ -236,13 +228,13 @@ struct net_buf *hci_evt_create(uint8 *pHciPkt, uint16 pktLen)
 	buf = bt_buf_get_rx(buf_type, K_NO_WAIT);
 
 	if (NULL != buf) {
+        net_buf_add_mem(buf, pHciPkt, pktLen);
+
         /* Skip the native H4_EVT OpCode as
          * - HCI_RAW adds it in bt_recv
          * - HCI_CORE doesn't expect it at all
          * */
-        pHciPkt++;
-        pktLen--;
-        net_buf_add_mem(buf, pHciPkt, pktLen);
+        net_buf_pull_u8(buf);
 	}
 	return buf;
 }
@@ -257,35 +249,36 @@ static int hci_driver_ll_send_to_host_cb(uint8 *pHciPkt, uint16 pktLen)
     	struct hci_driver_data *data = dev->data;
 
     	data->recv(dev, buf);
-    	return SUCCESS;
+    	return 0; // Assuming 0 indicates success
     }
 
-	return FAILURE;
+    LOG_ERR("Failed to send pkt type %u from the Controller to the Host, len %u", pHciPkt[0], pktLen);
+    return -1; // Assuming -1 indicates failure
 }
 
 static int hci_driver_open(const struct device *dev, bt_hci_recv_t recv)
 {
-	uint32 status = FAILURE;
+	uint32 status = 0;
 	struct hci_driver_data *data = dev->data;
 
 	data->recv = recv;
 
 	/* Init BLE Services params structure */
 	status = BLE_ServicesParamsInit(&bleServicesParams, sizeof (bleServicesParams_t));
-	if (SUCCESS == status) {
+	if (0 == status) {
 		/* Set HCI Driver callbacks to provide hci_driver interface to the LL */
 		bleServicesParams.hciCbs.send      = hci_driver_ll_send_to_host_cb;
 		/* Set User Defined Assert handling callback */
 		bleServicesParams.assertCallback   = AssertHandler;
 		/* Set User Defined Assert handling callback */
-		bleServicesParams.syncInitTimeoutTics = 10000;
+		bleServicesParams.syncInitTimeoutTicks = BLE_SYNC_INIT_TIMEOUT_TICKS;
 
 		/* Init the BLE services */
 		LOG_DBG("BLE Init Start");
 		status = BLE_ServicesInit(&bleServicesParams);
 		LOG_DBG("BLE Init End");
 	}
-	return (status == SUCCESS ) ? SUCCESS : FAILURE;
+	return status;
 }
 
 static int hci_driver_close(const struct device *dev)
@@ -294,47 +287,8 @@ static int hci_driver_close(const struct device *dev)
 
 	/* Clear the (host) receive callback */
 	data->recv = NULL;
-	return 0;
+	return 0; // Assuming 0 indicates success
 }
-
-
-static bt_addr_t public_addr = {0};
-uint8_t set_bd_addr = FALSE;
-
-void bt_ctlr_set_public_addr(const uint8_t *addr)
-{
-    memcpy(&public_addr, addr, sizeof(public_addr));
-    set_bd_addr = TRUE;
-}
-
-//static void vs_set_bd_addr()
-//{
-//#ifdef CONFIG_HCI_HOST
-//    if (set_bd_addr) {
-//        struct net_buf *buf;
-//        bt_addr_t *bd_addr;
-//
-//        buf = bt_hci_cmd_create(BT_HCI_SET_BD_ADDR, sizeof(*bd_addr));
-//        if (!buf) {
-//            return;
-//        }
-//
-//        bd_addr = net_buf_add(buf, sizeof(*bd_addr));
-//        bt_addr_copy(bd_addr, &public_addr);
-//
-//        bt_buf_set_type(buf, BT_BUF_CMD);
-//
-//        hci_driver_add_pkt_type(buf);
-//
-//        err = HCI_HostToController(buf->data, buf->len);
-//        if (SUCCESS != err) {
-//            net_buf_unref(buf);
-//            return;
-//        }
-//        net_buf_unref(buf);
-//    }
-//#endif
-//}
 
 static const struct bt_hci_driver_api hci_driver_api = {
 	.open	= hci_driver_open,
@@ -347,5 +301,6 @@ static const struct bt_hci_driver_api hci_driver_api = {
   	  }; \
 	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &data_##inst, NULL, POST_KERNEL, \
 			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &hci_driver_api)
+
 /* Only a single instance is supported */
 BT_HCI_CONTROLLER_INIT(0)
