@@ -1,0 +1,10 @@
+sample:
+  name: Bluetooth Mesh UART Bridge
+tests:
+  sample.bluetooth.mesh_uart_bridge:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2340r53
+    integration_platforms:
+      - qemu_x86
+    tags: bluetooth
