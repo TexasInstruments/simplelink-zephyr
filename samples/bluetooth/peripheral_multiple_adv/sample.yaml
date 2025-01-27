@@ -1,0 +1,8 @@
+sample:
+  name: Bluetooth Peripheral Multiple Advertisements
+tests:
+  sample.bluetooth.peripheral_multiple_adv:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2340r53
+    tags: bluetooth
