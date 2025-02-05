@@ -6,7 +6,6 @@ rsource "../lpf3_common/Kconfig.defconfig"
 
 if BOARD_LP_EM_CC2340R5
 
-
 if BT
 
 config ZEPHYR
@@ -17,8 +16,20 @@ config BT_LL_HEAP_SIZE
     hex
     default 0x1800
 
-config BT_HCI_ACL_FLOW_CONTROL
-  default n
+config BT_BUF_EVT_RX_SIZE
+  default 255
+
+config BT_BUF_ACL_RX_SIZE
+  default 255
+
+config BT_BUF_ACL_TX_SIZE
+  default 255
+
+config BT_BUF_CMD_TX_SIZE
+  default 255
+
+config BT_COMPANY_ID
+  default 0x000D
 
 endif # BT
 
