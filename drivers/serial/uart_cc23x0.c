@@ -14,6 +14,7 @@
 #include <zephyr/irq.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/policy.h>
+#include <zephyr/sys/atomic.h>
 
 #include <errno.h>
 
@@ -53,6 +54,12 @@ struct uart_cc23x0_config {
 #endif
 };
 
+enum uart_cc23x0_pm_locks {
+	UART_CC23X0_PM_LOCK_TX,
+	UART_CC23X0_PM_LOCK_RX,
+	UART_CC23X0_PM_LOCK_COUNT,
+};
+
 struct uart_cc23x0_data {
 	struct uart_config uart_config;
 	const struct pinctrl_dev_config *pcfg;
@@ -76,21 +83,30 @@ struct uart_cc23x0_data {
 	uint8_t *rx_next_buf;
 	size_t rx_next_len;
 #endif /* CONFIG_UART_CC23X0_DMA_DRIVEN */
+#ifdef CONFIG_PM
+	ATOMIC_DEFINE(pm_lock, UART_CC23X0_PM_LOCK_COUNT);
+#endif
 };
 
-static inline void uart_cc23x0_pm_policy_state_lock_get(void)
+static inline void uart_cc23x0_pm_policy_state_lock_get(struct uart_cc23x0_data *data,
+							enum uart_cc23x0_pm_locks pm_lock_type)
 {
 #ifdef CONFIG_PM_DEVICE
-	pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
-	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	if (!atomic_test_and_set_bit(data->pm_lock, pm_lock_type)) {
+		pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+		pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	}
 #endif
 }
 
-static inline void uart_cc23x0_pm_policy_state_lock_put(void)
+static inline void uart_cc23x0_pm_policy_state_lock_put(struct uart_cc23x0_data *data,
+							enum uart_cc23x0_pm_locks pm_lock_type)
 {
 #ifdef CONFIG_PM_DEVICE
-	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
-	pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	if (atomic_test_and_clear_bit(data->pm_lock, pm_lock_type)) {
+		pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+		pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	}
 #endif
 }
 
@@ -283,7 +299,7 @@ static void uart_cc23x0_irq_tx_enable(const struct device *dev)
 	/* When TX IRQ is enabled, it is implicit that we are expecting to transmit
 	 * using the UART, hence we should no longer go into standby
 	 */
-	uart_cc23x0_pm_policy_state_lock_get();
+	uart_cc23x0_pm_policy_state_lock_get(dev->data, UART_CC23X0_PM_LOCK_TX);
 
 	UARTEnableInt(config->reg, UART_INT_TX);
 }
@@ -294,7 +310,7 @@ static void uart_cc23x0_irq_tx_disable(const struct device *dev)
 
 	UARTDisableInt(config->reg, UART_INT_TX);
 
-	uart_cc23x0_pm_policy_state_lock_put();
+	uart_cc23x0_pm_policy_state_lock_put(dev->data, UART_CC23X0_PM_LOCK_TX);
 }
 
 static int uart_cc23x0_irq_tx_ready(const struct device *dev)
@@ -311,7 +327,7 @@ static void uart_cc23x0_irq_rx_enable(const struct device *dev)
 	/* When RX IRQ is enabled, it is implicit that we are expecting to receive
 	 * from the UART, hence we can no longer go into standby
 	 */
-	uart_cc23x0_pm_policy_state_lock_get();
+	uart_cc23x0_pm_policy_state_lock_get(dev->data, UART_CC23X0_PM_LOCK_RX);
 
 	/* Trigger the ISR on both RX and Receive Timeout. This is to allow
 	 * the use of the hardware FIFOs for more efficient operation
@@ -325,7 +341,7 @@ static void uart_cc23x0_irq_rx_disable(const struct device *dev)
 
 	UARTDisableInt(config->reg, UART_INT_RX | UART_INT_RT);
 
-	uart_cc23x0_pm_policy_state_lock_put();
+	uart_cc23x0_pm_policy_state_lock_put(dev->data, UART_CC23X0_PM_LOCK_RX);
 }
 
 static int uart_cc23x0_irq_tx_complete(const struct device *dev)
@@ -461,7 +477,7 @@ static int uart_cc23x0_async_tx(const struct device *dev, const uint8_t *buf, si
 	}
 
 	/* Lock PM */
-	uart_cc23x0_pm_policy_state_lock_get();
+	uart_cc23x0_pm_policy_state_lock_get(data, UART_CC23X0_PM_LOCK_TX);
 
 	/* Enable DMA trigger to start the transfer */
 	UARTEnableDMA(config->reg, UART_DMA_TX);
@@ -502,7 +518,7 @@ static int uart_cc23x0_tx_halt(struct uart_cc23x0_data *data)
 		}
 
 		/* Unlock PM */
-		uart_cc23x0_pm_policy_state_lock_put();
+		uart_cc23x0_pm_policy_state_lock_put(data, UART_CC23X0_PM_LOCK_TX);
 	} else {
 		return -EINVAL;
 	}
@@ -583,7 +599,7 @@ static int uart_cc23x0_async_rx_enable(const struct device *dev, uint8_t *buf, s
 	}
 
 	/* Lock PM */
-	uart_cc23x0_pm_policy_state_lock_get();
+	uart_cc23x0_pm_policy_state_lock_get(data, UART_CC23X0_PM_LOCK_RX);
 
 	/* Enable DMA trigger to start the transfer */
 	UARTEnableDMA(config->reg, UART_DMA_RX);
@@ -671,7 +687,7 @@ static int uart_cc23x0_async_rx_disable(const struct device *dev)
 	dma_stop(config->dma_dev, config->dma_channel_rx);
 
 	/* Unlock PM */
-	uart_cc23x0_pm_policy_state_lock_put();
+	uart_cc23x0_pm_policy_state_lock_put(data, UART_CC23X0_PM_LOCK_RX);
 
 	if (dma_get_status(config->dma_dev, config->dma_channel_rx, &status) == 0 &&
 	    status.pending_length) {
@@ -757,7 +773,7 @@ static void uart_cc23x0_isr(const struct device *dev)
 		data->tx_len = 0;
 
 		/* Unlock PM */
-		uart_cc23x0_pm_policy_state_lock_put();
+		uart_cc23x0_pm_policy_state_lock_put(data, UART_CC23X0_PM_LOCK_TX);
 
 		irq_unlock(key);
 
@@ -788,7 +804,7 @@ static void uart_cc23x0_isr(const struct device *dev)
 			}
 
 			/* Unlock PM */
-			uart_cc23x0_pm_policy_state_lock_put();
+			uart_cc23x0_pm_policy_state_lock_put(data, UART_CC23X0_PM_LOCK_RX);
 		} else {
 			/* Otherwise, load next buffer and start the transfer */
 			data->rx_buf = data->rx_next_buf;
@@ -892,6 +908,11 @@ static int uart_cc23x0_init_common(const struct device *dev)
 	k_work_init_delayable(&data->tx_timeout_work, uart_cc23x0_async_tx_timeout);
 
 	data->dev = dev;
+#endif
+
+#ifdef CONFIG_PM_DEVICE
+	atomic_clear_bit(data->pm_lock, UART_CC23X0_PM_LOCK_RX);
+	atomic_clear_bit(data->pm_lock, UART_CC23X0_PM_LOCK_TX);
 #endif
 
 	/* Configure and enable UART */
