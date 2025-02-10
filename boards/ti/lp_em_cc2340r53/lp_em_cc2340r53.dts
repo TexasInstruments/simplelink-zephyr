@@ -83,6 +83,10 @@
 		};
 	};
 
+	lfxosc: lf_xosc {
+		compatible = "ti,cc23x0-lf-xosc";
+	};
+
 	ti_bt_hci: ti_bt_hci {
 		compatible = "ti,bt-hci";
 		status = "okay";
