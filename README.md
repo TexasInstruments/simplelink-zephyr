@@ -93,6 +93,9 @@ configurations to your project's `prj.conf`.
 # Enable BLE DFU FOTA MCUMGR MCUBOOT
 CONFIG_BOOTLOADER_MCUBOOT=y
 CONFIG_TI_MCUMGR_BT_OTA_DFU=y
+
+# PM is currently not supported on BLE FOTA
+CONFIG_PM=n
 ```
 
 The following configurations should also be applied to your project's `prj.conf`
@@ -101,8 +104,12 @@ to reduce flash and RAM consumption.
 ```
 CONFIG_LOG=n
 CONFIG_BT_RECV_WORKQ_SYS=y
-CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT=2
-CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=1100
+CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT=3
+CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=1536
+CONFIG_BT_BUF_EVT_RX_SIZE=68
+CONFIG_BT_BUF_ACL_RX_SIZE=69
+CONFIG_BT_BUF_ACL_TX_SIZE=27
+CONFIG_BT_BUF_CMD_TX_SIZE=65
 ```
 
 You can then build MCUboot and the Bluetooth Peripheral sample using the following
@@ -110,7 +117,7 @@ commands
 
 ```
 west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_f3 bootloader/mcuboot/boot/zephyr
-west build -p=always -b lp_em_cc2340r5 -d build_peripheral_fota_f3 zephyr/samples/bluetooth/peripheral_fota/
+west build -p=always -b lp_em_cc2340r5 -d build_peripheral_fota_f3 zephyr/samples/bluetooth/peripheral
 ```
 
 By default, BLE FOTA uses the internal flash as the secondary slot for MCUboot.
@@ -121,7 +128,7 @@ as reference
 
 ```
 west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_offchip_f3 bootloader/mcuboot/boot/zephyr -S ti-spi-nor-secondary-bl
-west build -p=always -b lp_em_cc2340r5 -d build_peripheral_offchip_fota_f3 zephyr/samples/bluetooth/peripheral_fota/ -S ti-spi-nor-secondary-app
+west build -p=always -b lp_em_cc2340r5 -d build_peripheral_offchip_fota_f3 zephyr/samples/bluetooth/peripheral -S ti-spi-nor-secondary-app
 ```
 
 ## Tools support
