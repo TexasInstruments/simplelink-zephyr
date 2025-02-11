@@ -31,6 +31,12 @@ config BT_BUF_CMD_TX_SIZE
 config BT_COMPANY_ID
   default 0x000D
 
+choice BT_RECV_CONTEXT
+  bool
+  default BT_RECV_WORKQ_BT if BT_MESH
+  default BT_RECV_WORKQ_SYS
+endchoice
+
 endif # BT
 
 endif # BOARD_LP_EM_CC2340R53
