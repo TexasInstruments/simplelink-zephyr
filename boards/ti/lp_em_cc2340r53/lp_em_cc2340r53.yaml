@@ -10,4 +10,5 @@ toolchain:
   - xtools
 supported:
   - gpio
+  - adc
 vendor: ti
