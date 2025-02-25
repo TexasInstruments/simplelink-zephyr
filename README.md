@@ -93,9 +93,6 @@ configurations to your project's `prj.conf`.
 # Enable BLE DFU FOTA MCUMGR MCUBOOT
 CONFIG_BOOTLOADER_MCUBOOT=y
 CONFIG_TI_MCUMGR_BT_OTA_DFU=y
-
-# PM is currently not supported on BLE FOTA
-CONFIG_PM=n
 ```
 
 The following configurations should also be applied to your project's `prj.conf`

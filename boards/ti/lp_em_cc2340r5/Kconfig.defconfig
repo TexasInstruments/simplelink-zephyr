@@ -33,4 +33,11 @@ config BT_COMPANY_ID
 
 endif # BT
 
+if PM
+# Power Management requires increased idle task stack size because of
+# stack usage introduced by "pm_state_set"
+config IDLE_STACK_SIZE
+  default 320
+endif # PM
+
 endif # BOARD_LP_EM_CC2340R5
