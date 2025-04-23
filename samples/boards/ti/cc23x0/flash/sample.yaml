@@ -3,9 +3,9 @@ sample:
 tests:
   sample.drivers.flash.soc_flash_cc23x0:
     platform_allow:
-      - ti/lp_em_cc2340r5
+      - lp_em_cc2340r5
     integration_platforms:
-      - ti/lp_em_cc2340r5
+      - lp_em_cc2340r5
     tags:
       - flash
       - drivers

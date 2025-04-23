@@ -1,7 +1,0 @@
-sample:
-  name: Blinky Sample
-tests:
-    tags:
-      - PM
-    integration_platforms:
-      - lp_em_cc2340r5

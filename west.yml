@@ -31,6 +31,11 @@ manifest:
   #
   # Please add items below based on alphabetical order
   projects:
+    - name: hal_ti
+      url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
+      revision: 46407c76196-ti-9.10-internal
+      groups:
+        - internal
     - name: acpica
       revision: 8d24867bc9c9d81c81eeac59391cda59333affd4
       path: modules/lib/acpica
@@ -251,6 +256,7 @@ manifest:
       path: modules/hal/ti
       groups:
         - hal
+        - external
     - name: hal_wurthelektronik
       revision: e5bcb2eac1bb9639ce13b4dafc78eb254e014342
       path: modules/hal/wurthelektronik

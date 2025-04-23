@@ -4623,6 +4623,14 @@ West:
   labels:
     - "platform: TI"
 
+"West project: simplelink-hal_ti":
+  status: maintained
+  maintainers:
+    - ti
+  files: []
+  labels:
+    - "platform: TI"
+
 "West project: hal_wurthelektronik":
   status: maintained
   maintainers:
