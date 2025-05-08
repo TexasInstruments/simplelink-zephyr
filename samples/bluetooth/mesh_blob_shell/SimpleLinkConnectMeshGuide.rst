@@ -1,4 +1,4 @@
-.. _simplelink_connect_mesh_guide:
+.. _simplelink_connect_mesh_guide_mesh_blob:
 
 SimpleLink Connect Mesh Feature Guide
 #####################################

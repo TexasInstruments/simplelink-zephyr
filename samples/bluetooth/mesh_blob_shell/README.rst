@@ -59,7 +59,7 @@ Interacting with the sample
 
 To provision and test, continue to the sections below.
 
-.. _provisioning-section:
+.. _provisioning-section-mesh-blob:
 
 Provisioning
 ************
@@ -69,7 +69,7 @@ provisioner device. The provisioner must give the device an Application Key and
 bind it to the BLOB Client and BLOB Server models.
 
 If using Texas Instrument's SimpleLink Connect Mobile App, refer to the
-`SimpleLink Mesh Guide <simplelink_connect_mesh_guide>`_ for information on how
+`SimpleLink Mesh Guide <_simplelink_connect_mesh_guide_mesh_blob>`_ for information on how
 to provision and configure a mesh device.
 
 Before getting started:
@@ -81,7 +81,7 @@ The first device will act as the BLOB Client
 The second device will act as the BLOB Server
 * Bind the BLOB Server Model to the Application Key
 
-.. _testing-section:
+.. _testing-section-mesh-blob:
 
 Testing
 *******

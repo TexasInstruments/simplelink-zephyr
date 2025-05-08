@@ -55,7 +55,7 @@ Interacting with the sample
 
 To provision and test, continue to the sections below.
 
-.. _provisioning-section:
+.. _provisioning-section-uart-bridge:
 
 Provisioning
 ************
@@ -66,7 +66,7 @@ bind it to the UART Bridge Model. It may show up as `Vendor Model` on the
 provisioner, but it will have the ID of `0x0D0010`.
 
 If using Texas Instrument's SimpleLink Connect Mobile App, refer to the
-`SimpleLink Mesh Guide <simplelink_connect_mesh_guide>`_ for information on how
+`SimpleLink Mesh Guide <_simplelink_connect_mesh_guide_uart_bridge>`_ for information on how
 to provision and configure a mesh device.
 
 Before getting started:
@@ -97,7 +97,7 @@ network. To perform remote provisioning, follow the steps below:
 7. Select the 'PB Remote via' option.
 8. Continue the provisioning and configuration process as normal.
 
-.. _testing-section:
+.. _testing-section-uart-bridge:
 
 Testing
 *******
