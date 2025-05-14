@@ -1,0 +1,5 @@
+board:
+  name: lp_em_cc2745r10_q1
+  vendor: ti
+  socs:
+    - name: cc2745r10_q1
