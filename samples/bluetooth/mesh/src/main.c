@@ -25,6 +25,11 @@
 #define OP_ONOFF_SET_UNACK BT_MESH_MODEL_OP_2(0x82, 0x03)
 #define OP_ONOFF_STATUS    BT_MESH_MODEL_OP_2(0x82, 0x04)
 
+#define BT_MESH_OPCODE_SIZE 2  // 2 bytes for the opcode
+#define BT_MESH_ONOFF_PAYLOAD_SIZE 1  // 1 byte for the OnOff value
+
+static bool client_onoff_val = false; // Initial state for the client
+
 static void attention_on(const struct bt_mesh_model *mod)
 {
 	board_led_set(true);
@@ -242,6 +247,17 @@ static int gen_onoff_status(const struct bt_mesh_model *model,
 	return 0;
 }
 
+static int gen_onoff_cli_pub_cb(const struct bt_mesh_model *mod)
+{
+    printk("Generic OnOff Client publish callback #%d\n", mod->id);
+    return 0; // Return success
+}
+
+static struct bt_mesh_model_pub gen_onoff_cli_pub = {
+    .msg = NET_BUF_SIMPLE(BT_MESH_OPCODE_SIZE + BT_MESH_ONOFF_PAYLOAD_SIZE),
+    .update = gen_onoff_cli_pub_cb,
+};
+
 static const struct bt_mesh_model_op gen_onoff_cli_op[] = {
 	{OP_ONOFF_STATUS, BT_MESH_LEN_MIN(1), gen_onoff_status},
 	BT_MESH_MODEL_OP_END,
@@ -253,7 +269,7 @@ static const struct bt_mesh_model models[] = {
 	BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
 	BT_MESH_MODEL(BT_MESH_MODEL_ID_GEN_ONOFF_SRV, gen_onoff_srv_op, NULL,
 		      NULL),
-	BT_MESH_MODEL(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, gen_onoff_cli_op, NULL,
+	BT_MESH_MODEL(BT_MESH_MODEL_ID_GEN_ONOFF_CLI, gen_onoff_cli_op, &gen_onoff_cli_pub,
 		      NULL),
 };
 
@@ -302,9 +318,14 @@ static const struct bt_mesh_prov prov = {
 /** Send an OnOff Set message from the Generic OnOff Client to all nodes. */
 static int gen_onoff_send(bool val)
 {
+	if (elements[0].models[3].pub->addr == BT_MESH_ADDR_UNASSIGNED) {
+        printk("No group address found for the Generic OnOff Client.\n");
+        return -EINVAL; // Return an error if no group address is found
+    }
+
 	struct bt_mesh_msg_ctx ctx = {
 		.app_idx = models[3].keys[0], /* Use the bound key */
-		.addr = BT_MESH_ADDR_ALL_NODES,
+		.addr = elements[0].models[3].pub->addr,
 		.send_ttl = BT_MESH_TTL_DEFAULT,
 	};
 	static uint8_t tid;
@@ -315,7 +336,7 @@ static int gen_onoff_send(bool val)
 		return -ENOENT;
 	}
 
-	BT_MESH_MODEL_BUF_DEFINE(buf, OP_ONOFF_SET_UNACK, 2);
+	BT_MESH_MODEL_BUF_DEFINE(buf, OP_ONOFF_SET_UNACK, BT_MESH_OPCODE_SIZE + BT_MESH_ONOFF_PAYLOAD_SIZE);
 	bt_mesh_model_msg_init(&buf, OP_ONOFF_SET_UNACK);
 	net_buf_simple_add_u8(&buf, val);
 	net_buf_simple_add_u8(&buf, tid++);
@@ -328,9 +349,19 @@ static int gen_onoff_send(bool val)
 static void button_pressed(struct k_work *work)
 {
 	if (bt_mesh_is_provisioned()) {
-		(void)gen_onoff_send(!onoff.val);
-		return;
-	}
+        // Toggle the client's onoff value
+        client_onoff_val = !client_onoff_val;
+
+        // Send the new value
+        int err = gen_onoff_send(client_onoff_val);
+        if (err) {
+            printk("Failed to send OnOff message (err: %d)\n", err);
+            return;
+        }
+
+        printk("Client OnOff value toggled to: %s\n", onoff_str[client_onoff_val]);
+        return;
+    }
 
 	/* Self-provision with an arbitrary address.
 	 *
