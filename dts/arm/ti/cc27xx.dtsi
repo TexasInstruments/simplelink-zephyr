@@ -8,6 +8,10 @@
 #include <arm/armv8-m.dtsi>
 
 / {
+	chosen {
+		zephyr,flash-controller = &flash_controller;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -28,10 +32,41 @@
 		clock-frequency = <96000000>;
 		#clock-cells = <0>;
 	};
+
+	soc {
+		flash_controller: flash-controller@40021000 {
+			compatible = "ti,cc27xx-flash-controller";
+			reg = <0x40021000 0x418>;
+
+			#address-cells	= <1>;
+			#size-cells		= <1>;
+
+			/* Main flash sector */
+			flash0: flash@0 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+
+			/* CCFG flash sector */
+			flash1: flash@4E020000 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+
+			/* SCFG flash sector */
+			flash2: flash@4E040000 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+		};
+	};
 };
 
 &nvic {
-	arm,num-irq-priority-bits = <2>; /* Interrupt levels are 0-192 in steps of 64 */
+	arm,num-irq-priority-bits = <4>; /* Interrupt levels are 0-192 in steps of 64 */
 };
 
 &systick {
