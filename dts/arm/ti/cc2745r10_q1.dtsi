@@ -14,12 +14,12 @@
 	};
 };
 
-// Main flash
+/* Main flash */
 &flash0 {
 	reg = <0x0 DT_SIZE_K(1024)>;
 };
 
-// CCFG
+/* CCFG */
 &flash1 {
 reg = <0x4E020000 DT_SIZE_K(2)>;
 
@@ -36,7 +36,7 @@ reg = <0x4E020000 DT_SIZE_K(2)>;
 	};
 };
 
-// SCFG
+/* SCFG */
 &flash2 {
 reg = <0x4e040000 DT_SIZE_K(8)>;
 

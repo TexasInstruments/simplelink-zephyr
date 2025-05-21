@@ -190,6 +190,8 @@ rsource "Kconfig.cc32xx"
 
 rsource "Kconfig.cc23x0"
 
+rsource "Kconfig.cc27xx"
+
 rsource "Kconfig.cmsdk_apb"
 
 rsource "Kconfig.sifive"
