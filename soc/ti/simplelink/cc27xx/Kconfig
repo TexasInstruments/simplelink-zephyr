@@ -16,6 +16,8 @@ config SOC_SERIES_CC27XX
 	select DYNAMIC_INTERRUPTS
 	select HAS_TI_SCFG if !BOOTLOADER_MCUBOOT
 	select HAS_TI_CCFG if !BOOTLOADER_MCUBOOT
+	select EVENTS
+
 
 menu "Customer Configuration (CCFG)"
 depends on SOC_SERIES_CC27XX
