@@ -56,8 +56,8 @@ pipeline
         '--load-tests testplan.json --force-color --inline-logs -v -N -M\
         --retry-failed 3 --timeout-multiplier 2 --clobber-output --integration -W'
 
-        UID = sh(script: "id -u", returnStdout: true)
-        GID = sh(script: "id -g", returnStdout: true)
+        UID = sh(script: 'id -u', returnStdout: true)
+        GID = sh(script: 'id -g', returnStdout: true)
     }
 
     parameters
@@ -245,49 +245,52 @@ pipeline
             {
                 script
                 {
+                    /* Use the files listed in Zephyr's docs github action
+                       to check if docs files have changed in this PR */
+                    int statusDocsChanged = docker_compose.bashGetStatus("""\
+                        cd zephyr ; \
+                        ${env.JENKINS_PYTHON_EXEC_NAME} etc/jenkins/check_docs_files.py\
+                        --target-branch origin/${env.CHANGE_TARGET} --yml-file .github/workflows/doc-build.yml \
+                    """, label: 'Check if docs files have changed')
+
                     if (keywords.containsKey('no_docs')) {
-                        common.printHeading('Skipped Docs')
-                    } else {
+                        if (statusDocsChanged != 0) {
+                            common.printBody(':warning: Skipping docs but docs files have changed,\
+                            please re-run build without the `%% no_docs` flag!')
+                        } else {
+                            common.printBody('Docs skipped')
+                        }
+                    } else if (statusDocsChanged != 0) {
+                        /* Build docs as is done in .github/workflows/doc-build.yml */
                         common.printHeading(':books: Docs')
 
-                        /* Use the files listed in Zephyr's docs github action
-                           to check if docs files have changed in this PR */
-                        int statusDocsChanged = docker_compose.bashGetStatus("""\
+                        docker_compose.bash("""\
                             cd zephyr ; \
-                            ${env.JENKINS_PYTHON_EXEC_NAME} etc/jenkins/check_docs_files.py\
-                            --target-branch origin/${env.CHANGE_TARGET} --yml-file .github/workflows/doc-build.yml \
-                        """, label: 'Check if docs files have changed')
+                            make -C doc ${env.DOC_TARGET}
+                        """,additionalArgs: env.DOCKER_SPHINX_ADDITIONAL_ARGS, label: 'Build docs')
 
-                        /* Build docs as is done in .github/workflows/doc-build.yml */
-                        if (statusDocsChanged != 0) {
-                            docker_compose.bash("""\
-                              cd zephyr ; \
-                              make -C doc ${env.DOC_TARGET}
-                            """,additionalArgs: env.DOCKER_SPHINX_ADDITIONAL_ARGS, label: 'Build docs')
+                        docker_compose.bash("""\
+                            cd zephyr ; \
+                            ${env.JENKINS_PYTHON_EXEC_NAME} -m coverxygen --xml-dir  doc/_build/html/doxygen/xml/ \
+                            --src-dir include/ --output doc-coverage.info; \
+                            lcov --remove doc-coverage.info */deprecated > new.info; \
+                            genhtml --no-function-coverage --no-branch-coverage new.info -o coverage-report \
+                        """, label: 'Docs coverage')
 
-                            docker_compose.bash("""\
-                              cd zephyr ; \
-                              ${env.JENKINS_PYTHON_EXEC_NAME} -m coverxygen --xml-dir  doc/_build/html/doxygen/xml/ \
-                              --src-dir include/ --output doc-coverage.info; \
-                              lcov --remove doc-coverage.info */deprecated > new.info; \
-                              genhtml --no-function-coverage --no-branch-coverage new.info -o coverage-report \
-                            """, label: 'Docs coverage')
+                        sh('mkdir -p docs/build')
+                        sh('cp -r zephyr/doc/_build/html/* docs/build')
 
-                            sh('mkdir -p docs/build')
-                            sh('cp -r zephyr/doc/_build/html/* docs/build')
+                        publishHTML([
+                            allowMissing: false,
+                            alwaysLinkToLastBuild: false,
+                            keepAll: false,
+                            reportDir: './docs/build',
+                            reportFiles: 'index.html',
+                            reportName: 'Documentation',
+                            reportTitles: ''
+                        ])
 
-                            publishHTML([
-                                allowMissing: false,
-                                alwaysLinkToLastBuild: false,
-                                keepAll: false,
-                                reportDir: './docs/build',
-                                reportFiles: 'index.html',
-                                reportName: 'Documentation',
-                                reportTitles: ''
-                            ])
-
-                            common.printBody("[Click here to view updated documentation](${env.JOB_URL}/Documentation)")
-                        }
+                        common.printBody("[Click here to view updated documentation](${env.JOB_URL}/Documentation)")
                     }
                 }
             }
@@ -325,18 +328,18 @@ pipeline
 
                         if (statusTwister != 0) {
                             unstable('Build marked unstable due to twister failures')
-                        } else {
-                            /* Check out fwtools to have access to ./fwtools/scripts/jenkins/parse-xml-results.py */
-                            git.checkoutHttps('lprfmw', 'fwtools', env.FWTOOLS_TAG)
+                        }
+                        /* Check out fwtools to have access to ./fwtools/scripts/jenkins/parse-xml-results.py */
+                        git.checkoutHttps('lprfmw', 'fwtools', env.FWTOOLS_TAG)
 
-                            String testResultTable = '''
+                        String testResultTable = '''
 | Test Results | Pass   | Fail   | Error | Skip    | Total |
 |--------------|--------|--------|-------|---------|-------|
 '''
-                            /* Publish test summary to PR comment */
-                            testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister.xml')
+                        /* Publish test summary to PR comment */
+                        testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister.xml')
                             common.printBody(testResultTable)
-                        }
+
                         /* Save twister output as artifacts */
                         archiveArtifacts artifacts: 'zephyr/twister-out/*', allowEmptyArchive: true
 
