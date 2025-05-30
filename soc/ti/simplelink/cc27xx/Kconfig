@@ -17,6 +17,8 @@ config SOC_SERIES_CC27XX
 	select HAS_TI_SCFG if !BOOTLOADER_MCUBOOT
 	select HAS_TI_CCFG if !BOOTLOADER_MCUBOOT
 	select EVENTS
+	select DYNAMIC_THREAD
+	select THREAD_STACK_INFO
 
 
 menu "Customer Configuration (CCFG)"
