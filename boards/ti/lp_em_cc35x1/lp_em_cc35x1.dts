@@ -7,6 +7,7 @@
 /dts-v1/;
 
 #include <ti/cc35xxe.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 #include "lp_em_cc35x1-pinctrl.dtsi"
 
 / {
@@ -21,6 +22,65 @@
 		zephyr,code-partition = &dmem_ns;
 	};
 
+	leds {
+		compatible = "gpio-leds";
+		green_led: green_led {
+			gpios = <&gpio30 0 GPIO_ACTIVE_HIGH>;
+			label = "GREEN USER LED";
+		};
+		red_led: red_led {
+			gpios = <&gpio34 0 GPIO_ACTIVE_HIGH>;
+			label = "RED USER LED";
+		};
+		blue_led: blue_led {
+			gpios = <&gpio35 0 GPIO_ACTIVE_HIGH>;
+			label = "BLUE USER LED";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		user_switch_1: user_sw_1 {
+			gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
+			label = "User SW1";
+		};
+		user_switch_2: user_sw_2{
+			gpios = <&gpio36 0 GPIO_ACTIVE_LOW>;
+			label = "User SW2";
+		};
+	};
+
+	aliases {
+		led0 = &green_led;
+		led1 = &red_led;
+		led2 = &blue_led;
+		sw0 = &user_switch_1;
+		sw1 = &user_switch_2;
+	};
+};
+
+&gpio2 {
+	status = "okay";
+};
+
+&gpio26 {
+	status = "okay";
+};
+
+&gpio30 {
+	status = "okay";
+};
+
+&gpio34 {
+	status = "okay";
+};
+
+&gpio35 {
+	status = "okay";
+};
+
+&gpio36 {
+	status = "okay";
 };
 
 &imem_ns {

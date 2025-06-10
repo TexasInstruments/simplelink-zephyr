@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: TI GPIO ports bank node
+
+compatible: "ti,cc35xx-gpio-port-bank"
+
+include: [base.yaml]
+
+properties:
+  ngpios:
+    type: int
+    default: 40
+    description: |
+      Number of GPIOs available on port bank.
