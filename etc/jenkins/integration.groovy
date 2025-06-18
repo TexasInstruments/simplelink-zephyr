@@ -4,7 +4,7 @@
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
-env.FWTOOLS_TAG = '2025.11.27_0'
+env.FWTOOLS_TAG = '2025.12.18_0'
 library("fwtools@${env.FWTOOLS_TAG}")
 
 /* Command syntax help text

@@ -8,8 +8,10 @@
 #include <zephyr/init.h>
 #include <driverlib/setup.h>
 
-const uint_least8_t GPIO_pinLowerBound;
-const uint_least8_t GPIO_pinUpperBound = 25;
+/* This empty function is required by ti_drivers_config.c
+ * placed here in case power management is disabled
+ */
+void customPolicyFxn(void){}
 
 static int ti_cc23x0_init(void)
 {

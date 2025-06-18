@@ -8,6 +8,11 @@
 #include <zephyr/init.h>
 #include <driverlib/setup.h>
 
+/* This empty function is required by ti_drivers_config.c
+ * placed here in case power management is disabled
+ */
+void customPolicyFxn(void){}
+
 static int ti_cc27xx_init(void)
 {
 	/* Perform necessary trim of the device. */
