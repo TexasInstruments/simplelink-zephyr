@@ -10,6 +10,7 @@
 / {
 	chosen {
 		zephyr,flash-controller = &flash_controller;
+		zephyr,entropy = &rng;
 	};
 
 	cpus {
@@ -98,6 +99,11 @@
 			reg = <0x400c0000 0x120>;
 			interrupts = <9 0>;
 			status = "disabled";
+		};
+
+		rng: entropy {
+			compatible = "ti,cc27xx-rng", "simple-bus";
+			status = "okay";
 		};
 	};
 };
