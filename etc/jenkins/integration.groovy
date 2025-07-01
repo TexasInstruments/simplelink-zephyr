@@ -4,7 +4,7 @@
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
-env.FWTOOLS_TAG = '2025.05.22_0'
+env.FWTOOLS_TAG = '2025.07.03_0'
 library("fwtools@${env.FWTOOLS_TAG}")
 
 /* Command syntax help text
@@ -16,7 +16,8 @@ String syntaxHelper = '''
     - If present, do not build and run twister tests.
 - `%% boards [board board board]`
     - Space-separated list of boards that filters all other commands.
-    - If omitted, defaults to nothing, meaning all boards.
+    - If empty, build for all boards.
+    - Use %% boards all_supported_ti for all supported TI boards.
 - `%% testfolders [folder folder folder]`
     - Space-separated list of folders to search for test cases in.
     - If omitted, defaults to nothing, meaning run all tests.
@@ -52,9 +53,13 @@ pipeline
         GUIDELINE_CHECK_FILE = 'guideline_check_output.txt'
         JENKINS_PYTHON_EXEC_NAME = 'python3.10'
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
+
+        SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1'
+        TEST_ALL_SUPPORTED_BOARDS = 'all_supported_ti'
+
         TWISTER_COMMON =
-        '--load-tests testplan.json --force-color --inline-logs -v -N -M\
-        --retry-failed 3 --timeout-multiplier 2 --clobber-output --integration -W'
+        '--force-color --inline-logs -v -N -M\
+        --retry-failed 3 --timeout-multiplier 2 --clobber-output -W'
 
         UID = sh(script: 'id -u', returnStdout: true)
         GID = sh(script: 'id -g', returnStdout: true)
@@ -63,12 +68,12 @@ pipeline
     parameters
     {
         string name: 'BOARDS',
-            defaultValue: '',
+            defaultValue: env.SUPPORTED_BOARDS,
             description: 'Space-separated list of boards to build and test on. If empty, build for all boards'
 
         string name: 'TESTFOLDERS',
             defaultValue: '',
-            description: 'Space-separated list of folders to search for test cases in. If empty, run all tests'
+            description: 'Space-separated list of folders to search for test cases in. If omitted, run all tests'
 
         text name: 'JOB_CONFIGURATION',
             defaultValue: '%% default',
@@ -120,7 +125,12 @@ pipeline
 
                     /* Override default boards if available */
                     if (keywords.containsKey('boards')) {
-                        env.BOARDS_FINAL = keywords['boards']
+                        if (keywords['boards'] == env.TEST_ALL_SUPPORTED_BOARDS) {
+                            env.BOARDS_FINAL = env.SUPPORTED_BOARDS
+                        }
+                        else {
+                            env.BOARDS_FINAL = keywords['boards']
+                        }
                     } else {
                         env.BOARDS_FINAL = params.BOARDS
                     }
@@ -306,7 +316,7 @@ pipeline
                     if (keywords.containsKey('no_twister')) {
                         common.printHeading('Skipped Twister')
                     } else {
-                        common.printHeading(':cyclone: Twister')
+                        common.printHeading(':cyclone: Twister Builds')
 
                         /* Run twister tests as is done in .github/workflows/twister.yml
                            ZEPHYR-166: remove -W to treat warnings are error
@@ -315,15 +325,9 @@ pipeline
                            -T zephyr/tests/drivers/hwinfo/ -W --clobber-output --west-flash --west-runner=openocd
                            Use pull_request_target parts of .github/workflows/twister.yml */
                         int statusTwister = docker_compose.bashGetStatus("""\
-                            cmake --version; \
-                            gcc --version; \
                             cd zephyr; \
                             source zephyr-env.sh; \
-                            export ZEPHYR_TOOLCHAIN_VARIANT=zephyr; \
-                            west list; \
-                            ./scripts/ci/test_plan.py ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}\
-                            -c origin/${env.CHANGE_TARGET}.. --pull-request; \
-                            ./scripts/twister ${env.TWISTER_COMMON}; \
+                            west twister ${env.TWISTER_COMMON} --build-only ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}; \
                         """, label: 'Build twister tests')
 
                         if (statusTwister != 0) {
@@ -339,9 +343,6 @@ pipeline
                         /* Publish test summary to PR comment */
                         testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister.xml')
                             common.printBody(testResultTable)
-
-                        /* Save twister output as artifacts */
-                        archiveArtifacts artifacts: 'zephyr/twister-out/*', allowEmptyArchive: true
 
                         junit testResults: 'zephyr/twister-out/twister.xml',
                         allowEmptyResults: true, skipPublishingChecks: true
