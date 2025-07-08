@@ -11,3 +11,4 @@ tests:
             not CONFIG_GEN_ISR_TABLES
     platform_exclude:
       - mr_canhubk3
+      - lp_em_cc2745r10_q1
