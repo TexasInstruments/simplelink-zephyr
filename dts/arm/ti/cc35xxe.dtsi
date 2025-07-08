@@ -8,14 +8,16 @@
 #include <freq.h>
 #include <arm/armv8-m.dtsi>
 
-#define INT_SP_UART_0_INT_REQ                        16
-#define INT_SP_UART_1_INT_REQ                        17
+#define INT_SP_UART_0_INT_REQ       16
+#define INT_SP_UART_1_INT_REQ       17
+#define INT_OSPR_HSM_HOST_0_SEC_IRQ 34
 /*
- * Note: Zephyr uses exception numbers, vs the IRQ used by the CC32XX SDK
+ * Note: Zephyr uses exception numbers, vs the IRQ used by the TI SimpleLink WFF3 SDK
  * which are offset by 16:
  */
 #define EXP_UARTA0 (INT_SP_UART_0_INT_REQ - 16)
 #define EXP_UARTA1 (INT_SP_UART_1_INT_REQ - 16)
+#define EXP_HSM    (INT_OSPR_HSM_HOST_0_SEC_IRQ - 16)
 
 / {
 	cpus {
@@ -159,6 +161,13 @@
 			compatible = "ti,cc35xx-dma";
 			reg = <0x41a00000 0x10000>;
 			#dma-cells = <1>;
+			status = "disabled";
+		};
+
+		hsm: hsm@41b00000 {
+			compatible = "ti,cc35xx-hsm";
+			interrupts = <EXP_HSM 2>;
+			reg = <0x41b00000 0x100000>;
 			status = "disabled";
 		};
 

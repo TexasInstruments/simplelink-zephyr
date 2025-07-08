@@ -22,6 +22,7 @@
 		zephyr,code-partition = &dmem_ns;
 		zephyr,console = &uart1;
 		zephyr,shell-uart = &uart1;
+		zephyr,entropy = &hsm;
 	};
 
 	leds {
@@ -127,4 +128,8 @@
 	pinctrl-names = "default";
 	dmas = <&dma 0>, <&dma 1>;
 	dma-names = "tx", "rx";
+};
+
+&hsm {
+	status = "okay";
 };
