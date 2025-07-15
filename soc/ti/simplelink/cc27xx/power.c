@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 
@@ -19,6 +20,10 @@
 
 static int power_initialize(void)
 {
+	unsigned int ret;
+
+	ret = irq_lock();
+
 	/* Set non-default cap array trims */
 	CKMDSetInitialCapTrim(33, 33);
 	CKMDSetTargetCapTrim(33, 33);
@@ -30,6 +35,8 @@ static int power_initialize(void)
 	}
 
 	PMCTLSetVoltageRegulator(PMCTL_VOLTAGE_REGULATOR_DCDC);
+
+	irq_unlock(ret);
 
 	return 0;
 }
