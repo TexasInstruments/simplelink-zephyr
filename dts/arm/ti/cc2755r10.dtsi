@@ -17,6 +17,26 @@
 /* Main flash */
 &flash0 {
 	reg = <0x0 DT_SIZE_K(1024)>;
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		slot0_partition: partition@0 {
+			label = "image-0";
+			reg = <0x00000000 0x000e4000>;
+		};
+
+		/*
+		 * Storage partition will be used by NVS
+		 * if enabled. The rest of the flash (96kB)
+		 * is reserved for HSM
+		 */
+		storage_partition: partition@e4000 {
+			label = "storage";
+			reg = <0x000e4000 0x00004000>;
+		};
+	};
 };
 
 /* CCFG */

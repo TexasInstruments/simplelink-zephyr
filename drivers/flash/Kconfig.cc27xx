@@ -9,6 +9,7 @@ config SOC_FLASH_CC27XX
 	depends on DT_HAS_TI_CC27XX_FLASH_CONTROLLER_ENABLED
 	select FLASH_HAS_PAGE_LAYOUT
 	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_HAS_EXPLICIT_ERASE
 	select MPU_ALLOW_FLASH_WRITE if ARM_MPU
 	help
 	  Enables TI SimpleLink CC27XX flash controller driver.
