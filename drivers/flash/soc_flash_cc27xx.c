@@ -73,9 +73,6 @@ static int flash_cc27xx_erase(const struct device *dev, off_t offs,
 	/* Erase sector/page one by one, break out in case of an error */
 	cnt = size / FLASH_ERASE_SIZE;
 	for (i = 0; i < cnt; i++, offs += FLASH_ERASE_SIZE) {
-		while (FlashCheckFsmForReady() != FAPI_STATUS_FSM_READY) {
-			;
-		}
 
 		rc = FlashEraseSector(offs);
 		if (rc != FAPI_STATUS_SUCCESS) {
@@ -125,10 +122,6 @@ static int flash_cc27xx_write(const struct device *dev, off_t offs,
 	}
 
 	key = irq_lock();
-
-	while (FlashCheckFsmForReady() != FAPI_STATUS_FSM_READY) {
-		;
-	}
 
 	rc = FlashProgram((uint8_t *)data, offs, size);
 	if (rc != FAPI_STATUS_SUCCESS) {
