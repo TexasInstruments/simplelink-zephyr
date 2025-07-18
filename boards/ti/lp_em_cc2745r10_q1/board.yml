@@ -3,3 +3,4 @@ board:
   vendor: ti
   socs:
     - name: cc2745r10_q1
+    - name: cc2755r10

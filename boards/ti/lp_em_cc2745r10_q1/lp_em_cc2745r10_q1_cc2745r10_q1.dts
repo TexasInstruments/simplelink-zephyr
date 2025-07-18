@@ -9,15 +9,14 @@
 
 #include <ti/cc2745r10_q1.dtsi>
 #include "boosterpack_connector.dtsi"
-#include "lp_em_cc2745r10_q1-pinctrl.dtsi"
+#include "lp_em_cc2745r10_q1_cc2745r10_q1-pinctrl.dtsi"
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
 
 / {
-	model = "LP_EM_CC2745R10_Q1";
-	compatible = "ti,lp_em_cc2745r10_q1";
+	model = "LP_EM_CC2745R10_Q1 with CC2745R10_Q1 SoC";
 
 	chosen {
 		zephyr,sram = &sram0;
