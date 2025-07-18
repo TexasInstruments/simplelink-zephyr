@@ -15,8 +15,15 @@ config SOC_CC2745R10_Q1
 	help
 	  CC2745R10_Q1
 
+config SOC_CC2755R10
+	bool
+	select SOC_SERIES_CC27XX
+	help
+	  CC2755R10
+
 config SOC_SERIES
 	default "cc27xx" if SOC_SERIES_CC27XX
 
 config SOC
 	default "cc2745r10_q1" if SOC_CC2745R10_Q1
+	default "cc2755r10" if SOC_CC2755R10
