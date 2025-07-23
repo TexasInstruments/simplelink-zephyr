@@ -24,11 +24,21 @@ The CC2745R10_Q1 LaunchPad |trade| development kit features the CC2745R10_Q1 wir
 The board is equipped with two LEDs, two push buttons and BoosterPack connectors
 for expansion.
 
+The board also supports the CC2755R10 device, and is available in two configurations:
+
+- The ``lp_em_cc2745r10_q1/cc2745r10_q1`` configuration should be the default one, and will
+  build for the CC2745R10_Q1 SoC.
+
+- The ``lp_em_cc2745r10_q1/cc2755r10`` configuration should be used if a CC2755R10 device
+  is mounted on the board instead.
+
 The CC2745R10_Q1 wireless MCU has a 96 MHz Arm |reg| Cortex |reg|-M33 SoC and an
 integrated 2.4 GHz transceiver supporting multiple protocols including Bluetooth
 |reg| Low Energy and IEEE |reg| 802.15.4.
 
-See the `TI CC2745R10_Q1 Product Page`_ for additional details.
+The CC2755R10 wireless MCU supports additional protocols such as Matter, Thread, and Zigbee
+
+See the `TI CC2745R10_Q1 Product Page`_ and `TI CC2755R10 Product Page`_ for additional details.
 
 Supported Features
 ==================
@@ -120,3 +130,5 @@ References
 
 .. _TI CC2745R10_Q1 Product Page:
    https://www.ti.com/product/CC2745R10-Q1
+.. _TI CC2755R10 Product Page:
+   https://www.ti.com/product/CC2755R10
