@@ -62,7 +62,11 @@ struct dma_cc23x0_channel {
 };
 
 struct dma_cc23x0_data {
+#ifdef CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED
+	uDMAControlTableEntry *desc;
+#else
 	__aligned(1024) uDMAControlTableEntry desc[UDMA_NUM_CHANNELS];
+#endif /* CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED */
 	struct dma_cc23x0_channel channels[UDMA_NUM_CHANNELS];
 };
 
@@ -472,7 +476,13 @@ static int dma_cc23x0_pm_action(const struct device *dev, enum pm_device_action 
 
 #endif /* CONFIG_PM_DEVICE */
 
+#ifdef CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED
+static struct dma_cc23x0_data cc23x0_data = {
+	.desc = (uDMAControlTableEntry *)CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED_LOCATION,
+};
+#else
 static struct dma_cc23x0_data cc23x0_data;
+#endif /* CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED */
 
 static const struct dma_driver_api dma_cc23x0_api = {
 	.config = dma_cc23x0_config,
