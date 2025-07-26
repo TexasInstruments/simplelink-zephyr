@@ -19,3 +19,24 @@ config SOC_SERIES
 config SOC
 	string
 	default "cc3551e" if SOC_CC3551E
+
+config CC35XXE_SIGN_PRIVATE_KEY_FILE
+	string "Path to the private key used to sign the image"
+
+config CC35XXE_SIGN_PUBLIC_KEY_FILE
+	string "Path to the public key used to sign the image"
+
+config CC35XXE_FLASH_DISCOVERY_CONFIG_OTFDE
+	string "Path to the OTFDE configuration file"
+
+config CC35XXE_FLASH_DISCOVERY_CONFIG_EXT_MEM
+	string "Path to the external memory configuration file"
+
+config CC35XXE_FLASH_DISCOVERY_CONFIG_XSPI
+	string "Path to the xSPI configuration file"
+
+config CC35XXE_FUSE_CONFIG
+	string "Path to the fuse configuration file"
+
+config CC35XXE_ACTION_PARAMS_FILE
+	string "Path to the action parameters file"
