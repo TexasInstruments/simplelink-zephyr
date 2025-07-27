@@ -9,32 +9,32 @@ if BOARD_LP_EM_CC2340R53
 if BT
 
 config ZEPHYR
-  bool
-  default y
+	bool
+	default y
 
 config BT_LL_HEAP_SIZE
-  hex
-  default 0x1880
+	hex
+	default 0x4000
 
 config BT_BUF_EVT_RX_SIZE
-  default 255
+	default 255
 
 config BT_BUF_ACL_RX_SIZE
-  default 255
+	default 255
 
 config BT_BUF_ACL_TX_SIZE
-  default 251
+	default 251
 
 config BT_BUF_CMD_TX_SIZE
-  default 255
+	default 255
 
 config BT_COMPANY_ID
-  default 0x000D
+	default 0x000D
 
 choice BT_RECV_CONTEXT
-  bool
-  default BT_RECV_WORKQ_BT if BT_MESH
-  default BT_RECV_WORKQ_SYS
+	bool
+	default BT_RECV_WORKQ_BT if BT_MESH
+	default BT_RECV_WORKQ_SYS
 endchoice
 
 endif # BT
@@ -43,7 +43,7 @@ if PM
 # Power Management requires increased idle task stack size because of
 # stack usage introduced by "pm_state_set"
 config IDLE_STACK_SIZE
-  default 320
+	default 320
 endif # PM
 
 if ENTROPY_GENERATOR
