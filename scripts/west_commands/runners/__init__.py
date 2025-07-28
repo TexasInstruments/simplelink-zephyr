@@ -52,6 +52,7 @@ _names = [
     'renode-robot',
     'qemu',
     'silabs_commander',
+    'simplelink_toolbox',
     'spi_burn',
     'stm32cubeprogrammer',
     'stm32flash',
