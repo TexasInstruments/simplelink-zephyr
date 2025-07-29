@@ -7,4 +7,6 @@ flash: 8192
 toolchain:
   - zephyr
   - gnuarmemb
+supported:
+  - pinctrl
 vendor: ti
