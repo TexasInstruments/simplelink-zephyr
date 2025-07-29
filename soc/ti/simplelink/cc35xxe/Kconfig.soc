@@ -1,0 +1,19 @@
+# Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_SERIES_CC35XXE
+	bool
+	select SOC_FAMILY_TI_SIMPLELINK
+	help
+	  Enable support for TI SimpleLink CC35xxE SoCs
+
+config SOC_CC3551E
+	bool
+	select SOC_SERIES_CC35XXE
+
+config SOC_SERIES
+	default "cc35xxe" if SOC_SERIES_CC35XXE
+
+config SOC
+	default "cc3551e" if SOC_CC3551E

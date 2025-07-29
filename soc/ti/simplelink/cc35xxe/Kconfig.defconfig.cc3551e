@@ -1,0 +1,16 @@
+# Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+# Texas Instruments SimpleLink CC3551E SoC
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_CC3551E
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 160000000
+
+config SYS_CLOCK_TICKS_PER_SEC
+	default 1000
+
+config NUM_IRQS
+	default 48
+
+endif # SOC_CC3551E
