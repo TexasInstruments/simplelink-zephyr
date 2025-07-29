@@ -5,12 +5,29 @@
 if SOC_CC3551E
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
+	int
 	default 160000000
 
 config SYS_CLOCK_TICKS_PER_SEC
+	int
 	default 1000
 
 config NUM_IRQS
+	int
 	default 48
+
+config XIP
+	bool
+	default n
+
+config FLASH_LOAD_OFFSET
+	hex
+	default 0x101c if XIP
+	default 0x0 if !XIP
+
+config ROM_START_OFFSET
+	hex
+	default 0xe4 if XIP
+	default 0x0 if !XIP
 
 endif # SOC_CC3551E

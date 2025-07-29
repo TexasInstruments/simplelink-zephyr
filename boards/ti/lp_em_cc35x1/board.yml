@@ -1,0 +1,5 @@
+board:
+  name: lp_em_cc35x1
+  vendor: ti
+  socs:
+  - name: cc3551e

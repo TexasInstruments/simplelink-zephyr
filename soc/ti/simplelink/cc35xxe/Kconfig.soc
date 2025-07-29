@@ -13,7 +13,9 @@ config SOC_CC3551E
 	select SOC_SERIES_CC35XXE
 
 config SOC_SERIES
+	string
 	default "cc35xxe" if SOC_SERIES_CC35XXE
 
 config SOC
+	string
 	default "cc3551e" if SOC_CC3551E
