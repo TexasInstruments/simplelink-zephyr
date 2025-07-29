@@ -1,0 +1,41 @@
+#
+# Copyright (c) 2026 Conclusive Engineering Sp. z o.o.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+mainmenu "TI CC35xx firmware update sample"
+
+config TI_FWU_WIFI_AUTO_CONNECT
+	bool "Connect Wi-Fi automatically on boot"
+	default n
+
+config TI_FWU_WIFI_SSID
+	string "Wi-Fi SSID"
+	default ""
+	depends on TI_FWU_WIFI_AUTO_CONNECT
+
+config TI_FWU_WIFI_PASSWORD
+	string "Wi-Fi password"
+	default ""
+	depends on TI_FWU_WIFI_AUTO_CONNECT
+
+choice TI_FWU_WIFI_SECURITY
+	prompt "Wi-Fi security"
+	default TI_FWU_WIFI_SECURITY_WPA3
+	depends on TI_FWU_WIFI_AUTO_CONNECT
+
+config TI_FWU_WIFI_SECURITY_WPA2
+	bool "WPA2 PSK"
+
+config TI_FWU_WIFI_SECURITY_WPA3
+	bool "WPA3 SAE"
+
+endchoice
+
+config TI_FWU_WIFI_CONNECT_TIMEOUT_SEC
+	int "Wi-Fi connect timeout in seconds"
+	default 30
+	depends on TI_FWU_WIFI_AUTO_CONNECT
+
+source "Kconfig.zephyr"

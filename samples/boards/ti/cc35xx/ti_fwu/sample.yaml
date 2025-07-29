@@ -1,0 +1,12 @@
+sample:
+  name: TI CC35xx firmware update
+tests:
+  sample.boards.ti.cc35xx.ti_fwu:
+    platform_allow:
+      - lp_em_cc35x1/cc3551e
+    integration_platforms:
+      - lp_em_cc35x1/cc3551e
+    tags:
+      - ti
+      - fwu
+      - cc35xx

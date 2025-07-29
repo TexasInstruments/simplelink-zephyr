@@ -27,15 +27,15 @@
 #define UART_NODE_AUX DT_CHOSEN(zephyr_console)
 #endif
 
-#define SLEEP_TIME_US 1000
+#define SLEEP_TIME_US   1000
 #define TEST_BUFFER_LEN 10
 
 #define UART_BAUDRATE DT_PROP_OR(UART_NODE, current_speed, 115200)
 
 static const struct device *const uart_dev = DEVICE_DT_GET(UART_NODE);
 
-const uint8_t test_pattern[TEST_BUFFER_LEN] = { 0x11, 0x12, 0x13, 0x14, 0x15,
-						0x16, 0x17, 0x18, 0x19, 0x20 };
+const uint8_t test_pattern[TEST_BUFFER_LEN] = {0x11, 0x12, 0x13, 0x14, 0x15,
+					       0x16, 0x17, 0x18, 0x19, 0x20};
 static uint8_t test_buffer[TEST_BUFFER_LEN];
 static volatile uint8_t uart_error_counter;
 
@@ -70,7 +70,6 @@ static void uart_rx_interrupt_service(const struct device *dev, uint8_t *receive
 				      int *rx_byte_offset)
 {
 	int rx_data_length = 0;
-
 	do {
 		rx_data_length = uart_fifo_read(dev, receive_buffer_pointer + *rx_byte_offset,
 						TEST_BUFFER_LEN);
@@ -84,7 +83,11 @@ static void uart_rx_interrupt_service(const struct device *dev, uint8_t *receive
 static void interrupt_driven_uart_callback_main_uart(const struct device *dev, void *user_data)
 {
 	int err;
+#ifdef CONFIG_SOC_CC3551E
+	static int tx_byte_offset = 1;
+#else
 	static int tx_byte_offset;
+#endif /* CONFIG_SOC_CC3551E */
 	static int rx_byte_offset;
 
 	uart_irq_update(dev);
@@ -137,11 +140,11 @@ ZTEST(uart_elementary, test_uart_proper_configuration)
 
 	int err;
 	struct uart_config test_expected_uart_config;
-	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
-						.parity = UART_CFG_PARITY_NONE,
-						.stop_bits = UART_CFG_STOP_BITS_1,
-						.data_bits = UART_CFG_DATA_BITS_8,
-						.flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS };
+	struct uart_config test_uart_config = {.baudrate = UART_BAUDRATE,
+					       .parity = UART_CFG_PARITY_NONE,
+					       .stop_bits = UART_CFG_STOP_BITS_1,
+					       .data_bits = UART_CFG_DATA_BITS_8,
+					       .flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS};
 
 	err = uart_configure(uart_dev, &test_uart_config);
 	zassert_equal(err, 0, "'uart_configure' api call - unexpected error: %d", err);
@@ -178,11 +181,11 @@ ZTEST(uart_elementary, test_uart_improper_configuration)
 	Z_TEST_SKIP_IFDEF(CONFIG_DUAL_UART_TEST);
 
 	int err;
-	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
-						.parity = 7,
-						.stop_bits = UART_CFG_STOP_BITS_1,
-						.data_bits = UART_CFG_DATA_BITS_8,
-						.flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS };
+	struct uart_config test_uart_config = {.baudrate = UART_BAUDRATE,
+					       .parity = 7,
+					       .stop_bits = UART_CFG_STOP_BITS_1,
+					       .data_bits = UART_CFG_DATA_BITS_8,
+					       .flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS};
 
 	err = uart_configure(uart_dev, &test_uart_config);
 	zassert_not_equal(
@@ -198,11 +201,11 @@ ZTEST(uart_elementary, test_uart_improper_configuration)
 ZTEST(uart_elementary, test_uart_basic_transmission)
 {
 	int err;
-	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
-						.parity = UART_CFG_PARITY_ODD,
-						.stop_bits = UART_CFG_STOP_BITS_1,
-						.data_bits = UART_CFG_DATA_BITS_8,
-						.flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS };
+	struct uart_config test_uart_config = {.baudrate = UART_BAUDRATE,
+					       .parity = UART_CFG_PARITY_ODD,
+					       .stop_bits = UART_CFG_STOP_BITS_1,
+					       .data_bits = UART_CFG_DATA_BITS_8,
+					       .flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS};
 
 	err = uart_configure(uart_dev, &test_uart_config);
 	zassert_equal(err, 0, "Unexpected error when configuring UART0: %d", err);
@@ -215,9 +218,12 @@ ZTEST(uart_elementary, test_uart_basic_transmission)
 	uart_irq_err_enable(uart_dev);
 	uart_irq_rx_enable(uart_dev);
 	uart_irq_tx_enable(uart_dev);
-
-	/* wait for the tramission to finish (no polling is intentional) */
-	k_sleep(K_USEC(100 * SLEEP_TIME_US));
+#ifdef CONFIG_SOC_CC3551E
+	/* Initialize transmission by filling TX FIFO with the first byte of the pattern */
+	uart_fifo_fill(uart_dev, test_pattern, 1);
+#endif /* CONFIG_SOC_CC3551E */
+	/* wait for the transmission to finish (no polling is intentional) */
+	k_sleep(K_USEC(1000 * SLEEP_TIME_US));
 
 	uart_irq_tx_disable(uart_dev);
 	uart_irq_rx_disable(uart_dev);
@@ -235,18 +241,18 @@ ZTEST(uart_elementary, test_uart_basic_transmission)
 ZTEST(uart_elementary, test_uart_dual_port_transmission)
 {
 	int err;
-	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
-						.parity = UART_CFG_PARITY_EVEN,
-						.stop_bits = UART_CFG_STOP_BITS_2,
-						.data_bits = UART_CFG_DATA_BITS_8,
-						.flow_ctrl = UART_CFG_FLOW_CTRL_NONE };
+	struct uart_config test_uart_config = {.baudrate = UART_BAUDRATE,
+					       .parity = UART_CFG_PARITY_EVEN,
+					       .stop_bits = UART_CFG_STOP_BITS_2,
+					       .data_bits = UART_CFG_DATA_BITS_8,
+					       .flow_ctrl = UART_CFG_FLOW_CTRL_NONE};
 
 #if defined(CONFIG_SETUP_MISMATCH_TEST)
-	struct uart_config test_uart_config_aux = { .baudrate = CONFIG_UART_BAUDRATE_MISMATCH,
-						    .parity = UART_CFG_PARITY_EVEN,
-						    .stop_bits = UART_CFG_STOP_BITS_2,
-						    .data_bits = UART_CFG_DATA_BITS_8,
-						    .flow_ctrl = UART_CFG_FLOW_CTRL_NONE };
+	struct uart_config test_uart_config_aux = {.baudrate = CONFIG_UART_BAUDRATE_MISMATCH,
+						   .parity = UART_CFG_PARITY_EVEN,
+						   .stop_bits = UART_CFG_STOP_BITS_2,
+						   .data_bits = UART_CFG_DATA_BITS_8,
+						   .flow_ctrl = UART_CFG_FLOW_CTRL_NONE};
 #endif
 	err = uart_configure(uart_dev, &test_uart_config);
 	zassert_equal(err, 0, "Unexpected error when configuring UART0: %d", err);

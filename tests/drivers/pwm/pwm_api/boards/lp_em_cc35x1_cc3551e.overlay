@@ -1,0 +1,20 @@
+/*
+ * Copyright (c) 2026 Conclusive Engineering Sp. z o.o.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/pwm/pwm.h>
+
+/ {
+	aliases {
+		pwm-test = &pwm4;
+	};
+};
+
+&timer1 {
+	status = "okay";
+};
+
+&pwm4 {
+	status = "okay";
+};

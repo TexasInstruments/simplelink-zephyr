@@ -22,6 +22,8 @@
 #define CRYPTO_DEV_COMPAT st_stm32_cryp
 #elif DT_HAS_COMPAT_STATUS_OKAY(bflb_sec_eng_aes)
 #define CRYPTO_DEV_COMPAT bflb_sec_eng_aes
+#elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc35xx_hsm_crypto)
+#define CRYPTO_DEV_COMPAT ti_cc35xx_hsm_crypto
 #else
 #error "You need to enable one crypto device"
 #endif
@@ -392,10 +394,12 @@ ZTEST(crypto_aes, test_ccm_encrypt)
 	struct cipher_ctx ctx = {
 		.keylen = sizeof(ccm_key),
 		.key.bit_stream = ccm_key,
+		/* clang-format off */
 		.mode_params.ccm_info = {
-			.nonce_len = sizeof(ccm_nonce),
-			.tag_len = 8,
-		},
+				.nonce_len = sizeof(ccm_nonce),
+				.tag_len = 8,
+			},
+		/* clang-format on */
 		.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS,
 	};
 
@@ -445,10 +449,12 @@ ZTEST(crypto_aes, test_ccm_decrypt)
 	struct cipher_ctx ctx = {
 		.keylen = sizeof(ccm_key),
 		.key.bit_stream = ccm_key,
+		/* clang-format off */
 		.mode_params.ccm_info = {
-			.nonce_len = sizeof(ccm_nonce),
-			.tag_len = 8,
-		},
+				.nonce_len = sizeof(ccm_nonce),
+				.tag_len = 8,
+			},
+		/* clang-format on */
 		.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS,
 	};
 
@@ -497,10 +503,12 @@ ZTEST(crypto_aes, test_gcm_encrypt)
 	struct cipher_ctx ctx = {
 		.keylen = sizeof(gcm_key),
 		.key.bit_stream = gcm_key,
+		/* clang-format off */
 		.mode_params.gcm_info = {
-			.nonce_len = sizeof(gcm_nonce),
-			.tag_len = 16,
-		},
+				.nonce_len = sizeof(gcm_nonce),
+				.tag_len = 16,
+			},
+		/* clang-format on */
 		.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS,
 	};
 
@@ -550,10 +558,12 @@ ZTEST(crypto_aes, test_gcm_decrypt)
 	struct cipher_ctx ctx = {
 		.keylen = sizeof(gcm_key),
 		.key.bit_stream = gcm_key,
+		/* clang-format off */
 		.mode_params.gcm_info = {
-			.nonce_len = sizeof(gcm_nonce),
-			.tag_len = 16,
-		},
+				.nonce_len = sizeof(gcm_nonce),
+				.tag_len = 16,
+			},
+		/* clang-format on */
 		.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS,
 	};
 

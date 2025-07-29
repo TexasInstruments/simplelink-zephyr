@@ -8,10 +8,10 @@
 #include "test_uart.h"
 
 #if defined(CONFIG_DCACHE) && defined(CONFIG_DT_DEFINED_NOCACHE)
-#define __NOCACHE	__attribute__ ((__section__(CONFIG_DT_DEFINED_NOCACHE_NAME)))
+#define __NOCACHE   __attribute__((__section__(CONFIG_DT_DEFINED_NOCACHE_NAME)))
 #define NOCACHE_MEM 1
 #elif defined(CONFIG_DCACHE) && defined(CONFIG_NOCACHE_MEMORY)
-#define __NOCACHE	__nocache
+#define __NOCACHE   __nocache
 #define NOCACHE_MEM 1
 #else
 #define NOCACHE_MEM 0
@@ -50,13 +50,11 @@ static ZTEST_BMEM const char *uart_name;
 static void read_abort_timeout(struct k_timer *timer);
 static K_TIMER_DEFINE(read_abort_timer, read_abort_timeout, NULL);
 
-
 #ifdef CONFIG_USERSPACE
 static void set_permissions(void)
 {
-	k_thread_access_grant(k_current_get(), &tx_done, &tx_aborted,
-			      &rx_rdy, &rx_buf_coherency, &rx_buf_released,
-			      &rx_disabled, uart_dev, &read_abort_timer);
+	k_thread_access_grant(k_current_get(), &tx_done, &tx_aborted, &rx_rdy, &rx_buf_coherency,
+			      &rx_buf_released, &rx_disabled, uart_dev, &read_abort_timer);
 
 	for (size_t i = 0; i < ARRAY_SIZE(duts); i++) {
 		k_thread_access_grant(k_current_get(), duts[i].dev);
@@ -106,7 +104,6 @@ static void uart_async_test_init(int idx)
 		set_permissions();
 #endif
 	}
-
 }
 
 struct test_data {
@@ -124,8 +121,8 @@ static struct test_data tdata __used __NOCACHE;
 static ZTEST_BMEM struct test_data tdata;
 #endif /* NOCACHE_MEM */
 
-static void test_single_read_callback(const struct device *dev,
-			       struct uart_event *evt, void *user_data)
+static void test_single_read_callback(const struct device *dev, struct uart_event *evt,
+				      void *user_data)
 {
 	ARG_UNUSED(dev);
 	struct test_data *data = (struct test_data *)user_data;
@@ -172,9 +169,7 @@ static void *single_read_setup(void)
 
 	uart_async_test_init(idx++);
 
-	uart_callback_set(uart_dev,
-			  test_single_read_callback,
-			  (void *) &tdata);
+	uart_callback_set(uart_dev, test_single_read_callback, (void *)&tdata);
 
 	return NULL;
 }
@@ -236,6 +231,12 @@ static void single_read(enum uart_config_data_bits data_bits)
 	}
 	zassert_ok(rv);
 
+	/* CC35xx UART driver does not support Static buffers (from FLASH) for TX,
+	 * so the test case will be run without that check.
+	 */
+
+	Z_TEST_SKIP_IFDEF(CONFIG_SOC_CC3551E);
+
 	zassert_not_equal(memcmp(tx_buf, tdata.rx_first_buffer, 5), 0,
 			  "Initial buffer check failed");
 
@@ -248,8 +249,7 @@ static void single_read(enum uart_config_data_bits data_bits)
 
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(105)), 0, "RX_RDY timeout");
-	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
-		      "Extra RX_RDY received");
+	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN, "Extra RX_RDY received");
 
 	tdata_check_recv_buffers(tx_buf, sent_bytes, data_bits);
 
@@ -258,15 +258,11 @@ static void single_read(enum uart_config_data_bits data_bits)
 
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)),
-		      0,
-		      "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
 	uart_rx_disable(uart_dev);
 
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(1000)), 0,
-		      "RX_DISABLED timeout");
-	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
-		      "Extra RX_RDY received");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(1000)), 0, "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN, "Extra RX_RDY received");
 
 	tdata_check_recv_buffers(tx_buf, sent_bytes, data_bits);
 
@@ -298,9 +294,7 @@ static void *multiple_rx_enable_setup(void)
 	/* Reuse the callback from the single_read test case, as this test case
 	 * does not need anything extra in this regard.
 	 */
-	uart_callback_set(uart_dev,
-			  test_single_read_callback,
-			  (void *)&tdata);
+	uart_callback_set(uart_dev, test_single_read_callback, (void *)&tdata);
 
 	return NULL;
 }
@@ -311,6 +305,12 @@ ZTEST_USER(uart_async_multi_rx, test_multiple_rx_enable)
 	static const uint8_t tx_buf[] = "test";
 	const uint32_t rx_buf_size = sizeof(tx_buf);
 	int ret;
+
+	/* CC35xx UART driver does not support Static buffers (from FLASH) for TX,
+	 * so the test case will be run without that check.
+	 */
+
+	Z_TEST_SKIP_IFDEF(CONFIG_SOC_CC3551E);
 
 	BUILD_ASSERT(sizeof(tx_buf) <= sizeof(tdata.rx_first_buffer), "Invalid buf size");
 
@@ -327,17 +327,14 @@ ZTEST_USER(uart_async_multi_rx, test_multiple_rx_enable)
 	zassert_equal(ret, 0, "uart_rx_disable failed");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
 		      "RX_RDY not expected at this point");
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 
 	k_sem_reset(&rx_buf_released);
 	k_sem_reset(&rx_disabled);
 
 	/* Check that RX can be reenabled after "manual" disabling. */
-	ret = uart_rx_enable(uart_dev, tdata.rx_first_buffer, rx_buf_size,
-			     50 * USEC_PER_MSEC);
+	ret = uart_rx_enable(uart_dev, tdata.rx_first_buffer, rx_buf_size, 50 * USEC_PER_MSEC);
 	zassert_equal(ret, 0, "uart_rx_enable failed");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
 		      "RX_RDY not expected at this point");
@@ -347,12 +344,9 @@ ZTEST_USER(uart_async_multi_rx, test_multiple_rx_enable)
 	zassert_equal(ret, 0, "uart_tx failed");
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
-	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
-		      "Extra RX_RDY received");
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN, "Extra RX_RDY received");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 	zassert_equal(tx_aborted_count, 0, "Unexpected TX abort");
 
 	tdata_check_recv_buffers(tx_buf, sizeof(tx_buf), UART_CFG_DATA_BITS_8);
@@ -365,8 +359,7 @@ ZTEST_USER(uart_async_multi_rx, test_multiple_rx_enable)
 	memset(&tdata, 0, sizeof(tdata));
 
 	/* Check that RX can be reenabled after automatic disabling. */
-	ret = uart_rx_enable(uart_dev, tdata.rx_first_buffer, rx_buf_size,
-			     50 * USEC_PER_MSEC);
+	ret = uart_rx_enable(uart_dev, tdata.rx_first_buffer, rx_buf_size, 50 * USEC_PER_MSEC);
 	zassert_equal(ret, 0, "uart_rx_enable failed");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
 		      "RX_RDY not expected at this point");
@@ -376,12 +369,9 @@ ZTEST_USER(uart_async_multi_rx, test_multiple_rx_enable)
 	zassert_equal(ret, 0, "uart_tx failed");
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
-	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN,
-		      "Extra RX_RDY received");
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), -EAGAIN, "Extra RX_RDY received");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 	zassert_equal(tx_aborted_count, 0, "Unexpected TX abort");
 
 	tdata_check_recv_buffers(tx_buf, sizeof(tx_buf), UART_CFG_DATA_BITS_8);
@@ -403,8 +393,8 @@ static ZTEST_BMEM uint8_t *read_ptr;
 
 static uint8_t *chained_read_buf[2] = {chained_read_buf_0, chained_read_buf_1};
 
-static void test_chained_read_callback(const struct device *dev,
-				struct uart_event *evt, void *user_data)
+static void test_chained_read_callback(const struct device *dev, struct uart_event *evt,
+				       void *user_data)
 {
 	int err;
 
@@ -414,8 +404,7 @@ static void test_chained_read_callback(const struct device *dev,
 		break;
 	case UART_RX_RDY:
 		zassert_true(rx_data_idx + evt->data.rx.len <= sizeof(chained_cpy_buf));
-		memcpy(&chained_cpy_buf[rx_data_idx],
-		       &evt->data.rx.buf[evt->data.rx.offset],
+		memcpy(&chained_cpy_buf[rx_data_idx], &evt->data.rx.buf[evt->data.rx.offset],
 		       evt->data.rx.len);
 		rx_data_idx += evt->data.rx.len;
 		break;
@@ -431,7 +420,6 @@ static void test_chained_read_callback(const struct device *dev,
 	default:
 		break;
 	}
-
 }
 
 static void *chained_read_setup(void)
@@ -450,7 +438,7 @@ ZTEST_USER(uart_async_chain_read, test_chained_read)
 #if NOCACHE_MEM
 	static __aligned(sizeof(void *)) uint8_t tx_buf[10] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t tx_buf[10];
+	__aligned(sizeof(void *)) uint8_t tx_buf[10];
 #endif /* NOCACHE_MEM */
 	int iter = 6;
 	uint32_t rx_timeout_ms = 50;
@@ -462,24 +450,20 @@ ZTEST_USER(uart_async_chain_read, test_chained_read)
 	rx_data_idx = 0;
 
 	for (int i = 0; i < iter; i++) {
-		zassert_not_equal(k_sem_take(&rx_disabled, K_MSEC(10)),
-				  0,
-				  "RX_DISABLED occurred");
+		zassert_not_equal(k_sem_take(&rx_disabled, K_MSEC(10)), 0, "RX_DISABLED occurred");
 		snprintf(tx_buf, sizeof(tx_buf), "Message %d", i);
 		uart_tx(uart_dev, tx_buf, sizeof(tx_buf), 100 * USEC_PER_MSEC);
-		zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0,
-			      "TX_DONE timeout");
+		zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 		k_msleep(rx_timeout_ms + 10);
 		zassert_equal(rx_data_idx, sizeof(tx_buf),
-				"Unexpected amount of data received %d exp:%zu",
-				rx_data_idx, sizeof(tx_buf));
+			      "Unexpected amount of data received %d exp:%zu", rx_data_idx,
+			      sizeof(tx_buf));
 		zassert_equal(memcmp(tx_buf, chained_cpy_buf, sizeof(tx_buf)), 0,
 			      "Buffers not equal exp %s, real %s", tx_buf, chained_cpy_buf);
 		rx_data_idx = 0;
 	}
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
 
 #if NOCACHE_MEM
@@ -489,8 +473,8 @@ static ZTEST_BMEM uint8_t double_buffer[2][12];
 #endif /* NOCACHE_MEM */
 static ZTEST_DMEM uint8_t *next_buf = double_buffer[1];
 
-static void test_double_buffer_callback(const struct device *dev,
-				 struct uart_event *evt, void *user_data)
+static void test_double_buffer_callback(const struct device *dev, struct uart_event *evt,
+					void *user_data)
 {
 	switch (evt->type) {
 	case UART_TX_DONE:
@@ -513,7 +497,6 @@ static void test_double_buffer_callback(const struct device *dev,
 	default:
 		break;
 	}
-
 }
 
 static void *double_buffer_setup(void)
@@ -532,7 +515,7 @@ ZTEST_USER(uart_async_double_buf, test_double_buffer)
 #if NOCACHE_MEM
 	static __aligned(sizeof(void *)) uint8_t tx_buf[4] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t tx_buf[4];
+	__aligned(sizeof(void *)) uint8_t tx_buf[4];
 #endif /* NOCACHE_MEM */
 
 	zassert_equal(uart_rx_enable(uart_dev, double_buffer[0], sizeof(double_buffer[0]),
@@ -542,19 +525,15 @@ ZTEST_USER(uart_async_double_buf, test_double_buffer)
 	for (int i = 0; i < 100; i++) {
 		snprintf(tx_buf, sizeof(tx_buf), "%03d", i);
 		uart_tx(uart_dev, tx_buf, sizeof(tx_buf), 100 * USEC_PER_MSEC);
-		zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0,
-			      "TX_DONE timeout");
-		zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0,
-			      "RX_RDY timeout");
+		zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
+		zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
 		if (read_ptr) {
-			zassert_equal(memcmp(tx_buf, read_ptr, sizeof(tx_buf)),
-					0,
-					"Buffers not equal");
+			zassert_equal(memcmp(tx_buf, read_ptr, sizeof(tx_buf)), 0,
+				      "Buffers not equal");
 		}
 	}
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
 
 #if NOCACHE_MEM
@@ -567,8 +546,8 @@ static ZTEST_BMEM uint8_t test_read_abort_read_buf[100];
 static ZTEST_BMEM int test_read_abort_rx_cnt;
 static ZTEST_BMEM bool test_read_abort_rx_buf_req_once;
 
-static void test_read_abort_callback(const struct device *dev,
-			      struct uart_event *evt, void *user_data)
+static void test_read_abort_callback(const struct device *dev, struct uart_event *evt,
+				     void *user_data)
 {
 	int err;
 
@@ -578,12 +557,10 @@ static void test_read_abort_callback(const struct device *dev,
 	case UART_TX_DONE:
 		k_sem_give(&tx_done);
 		break;
-	case UART_RX_BUF_REQUEST:
-	{
+	case UART_RX_BUF_REQUEST: {
 		if (!test_read_abort_rx_buf_req_once) {
 			k_sem_give(&rx_buf_coherency);
-			uart_rx_buf_rsp(dev,
-					test_read_abort_rx_buf[1],
+			uart_rx_buf_rsp(dev, test_read_abort_rx_buf[1],
 					sizeof(test_read_abort_rx_buf[1]));
 			test_read_abort_rx_buf_req_once = true;
 		}
@@ -591,8 +568,7 @@ static void test_read_abort_callback(const struct device *dev,
 	}
 	case UART_RX_RDY:
 		memcpy(&test_read_abort_read_buf[test_read_abort_rx_cnt],
-		       &evt->data.rx.buf[evt->data.rx.offset],
-		       evt->data.rx.len);
+		       &evt->data.rx.buf[evt->data.rx.offset], evt->data.rx.len);
 		test_read_abort_rx_cnt += evt->data.rx.len;
 		k_sem_give(&rx_rdy);
 		break;
@@ -641,8 +617,8 @@ ZTEST_USER(uart_async_read_abort, test_read_abort)
 	static __aligned(sizeof(void *)) uint8_t rx_buf[100] __used __NOCACHE;
 	static __aligned(sizeof(void *)) uint8_t tx_buf[100] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t rx_buf[100];
-	 __aligned(sizeof(void *)) uint8_t tx_buf[100];
+	__aligned(sizeof(void *)) uint8_t rx_buf[100];
+	__aligned(sizeof(void *)) uint8_t tx_buf[100];
 #endif /* NOCACHE_MEM */
 
 	memset(rx_buf, 0, sizeof(rx_buf));
@@ -672,8 +648,7 @@ ZTEST_USER(uart_async_read_abort, test_read_abort)
 	/* RX will be aborted from k_timer timeout */
 
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 	zassert_false(failed_in_isr, "Unexpected order of uart events");
 	zassert_not_equal(memcmp(tx_buf, test_read_abort_read_buf, 100), 0, "Buffers equal");
 
@@ -687,8 +662,7 @@ ZTEST_USER(uart_async_read_abort, test_read_abort)
 	uart_rx_disable(uart_dev);
 	k_msleep(10);
 	zassert_not_equal(k_sem_take(&rx_buf_coherency, K_NO_WAIT), 0,
-			"All provided buffers are released");
-
+			  "All provided buffers are released");
 }
 
 static ZTEST_BMEM volatile size_t sent;
@@ -699,8 +673,8 @@ static __aligned(sizeof(void *)) uint8_t test_rx_buf[2][100] __used __NOCACHE;
 static ZTEST_BMEM uint8_t test_rx_buf[2][100];
 #endif /* NOCACHE_MEM */
 
-static void test_write_abort_callback(const struct device *dev,
-			       struct uart_event *evt, void *user_data)
+static void test_write_abort_callback(const struct device *dev, struct uart_event *evt,
+				      void *user_data)
 {
 	ARG_UNUSED(dev);
 
@@ -746,7 +720,7 @@ ZTEST_USER(uart_async_write_abort, test_write_abort)
 #if NOCACHE_MEM
 	static __aligned(sizeof(void *)) uint8_t tx_buf[100] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t tx_buf[100];
+	__aligned(sizeof(void *)) uint8_t tx_buf[100];
 #endif /* NOCACHE_MEM */
 
 	memset(test_rx_buf, 0, sizeof(test_rx_buf));
@@ -761,25 +735,19 @@ ZTEST_USER(uart_async_write_abort, test_write_abort)
 
 	uart_tx(uart_dev, tx_buf, 95, 100 * USEC_PER_MSEC);
 	uart_tx_abort(uart_dev);
-	zassert_equal(k_sem_take(&tx_aborted, K_MSEC(100)), 0,
-		      "TX_ABORTED timeout");
+	zassert_equal(k_sem_take(&tx_aborted, K_MSEC(100)), 0, "TX_ABORTED timeout");
 	if (sent != 0) {
-		zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0,
-			      "RX_RDY timeout");
+		zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
 		k_sleep(K_MSEC(30));
 		zassert_equal(sent, received, "Sent is not equal to received.");
 	}
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)),
-		      0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
 
-
-static void test_forever_timeout_callback(const struct device *dev,
-				   struct uart_event *evt, void *user_data)
+static void test_forever_timeout_callback(const struct device *dev, struct uart_event *evt,
+					  void *user_data)
 {
 	ARG_UNUSED(dev);
 
@@ -823,40 +791,33 @@ ZTEST_USER(uart_async_timeout, test_forever_timeout)
 	static __aligned(sizeof(void *)) uint8_t rx_buf[100] __used __NOCACHE;
 	static __aligned(sizeof(void *)) uint8_t tx_buf[100] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t rx_buf[100];
-	 __aligned(sizeof(void *)) uint8_t tx_buf[100];
+	__aligned(sizeof(void *)) uint8_t rx_buf[100];
+	__aligned(sizeof(void *)) uint8_t tx_buf[100];
 #endif /* NOCACHE_MEM */
 
 	memset(rx_buf, 0, sizeof(rx_buf));
-	memset(tx_buf, 1, sizeof(tx_buf));
-
+	for (int i = 0; i < sizeof(tx_buf); i++) {
+		tx_buf[i] = 'a' + (i % ('z' - 'a'));
+	}
 	uart_rx_enable(uart_dev, rx_buf, sizeof(rx_buf), SYS_FOREVER_US);
 
 	uart_tx(uart_dev, tx_buf, 5, SYS_FOREVER_US);
-	zassert_not_equal(k_sem_take(&tx_aborted, K_MSEC(1000)), 0,
-			  "TX_ABORTED timeout");
+	zassert_not_equal(k_sem_take(&tx_aborted, K_MSEC(1000)), 0, "TX_ABORTED timeout");
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
-	zassert_not_equal(k_sem_take(&rx_rdy, K_MSEC(1000)), 0,
-			  "RX_RDY timeout");
+	zassert_not_equal(k_sem_take(&rx_rdy, K_MSEC(1000)), 0, "RX_RDY timeout");
 
-	uart_tx(uart_dev, tx_buf, 95, SYS_FOREVER_US);
+	uart_tx(uart_dev, tx_buf + 5, 95, SYS_FOREVER_US);
 
-	zassert_not_equal(k_sem_take(&tx_aborted, K_MSEC(1000)), 0,
-			  "TX_ABORTED timeout");
+	zassert_not_equal(k_sem_take(&tx_aborted, K_MSEC(1000)), 0, "TX_ABORTED timeout");
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
-
 
 	zassert_equal(memcmp(tx_buf, rx_buf, 100), 0, "Buffers not equal");
 
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)),
-		      0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
-
 
 #if NOCACHE_MEM
 static const uint8_t chained_write_tx_bufs[2][10] = {"Message 1", "Message 2"};
@@ -866,8 +827,8 @@ static ZTEST_DMEM uint8_t chained_write_tx_bufs[2][10] = {"Message 1", "Message 
 static ZTEST_DMEM bool chained_write_next_buf = true;
 static ZTEST_BMEM volatile uint8_t tx_sent;
 
-static void test_chained_write_callback(const struct device *dev,
-				 struct uart_event *evt, void *user_data)
+static void test_chained_write_callback(const struct device *dev, struct uart_event *evt,
+					void *user_data)
 {
 	switch (evt->type) {
 	case UART_TX_DONE:
@@ -915,7 +876,7 @@ ZTEST_USER(uart_async_chain_write, test_chained_write)
 #if NOCACHE_MEM
 	static __aligned(sizeof(void *)) uint8_t rx_buf[20] __used __NOCACHE;
 #else
-	 __aligned(sizeof(void *)) uint8_t rx_buf[20];
+	__aligned(sizeof(void *)) uint8_t rx_buf[20];
 #endif /* NOCACHE_MEM */
 
 	memset(rx_buf, 0, sizeof(rx_buf));
@@ -924,22 +885,14 @@ ZTEST_USER(uart_async_chain_write, test_chained_write)
 
 	uart_tx(uart_dev, chained_write_tx_bufs[0], 10, 100 * USEC_PER_MSEC);
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
-	zassert_equal(k_sem_take(&tx_done, K_MSEC(100)), 0, "TX_DONE timeout");
 	zassert_equal(chained_write_next_buf, false, "Sent no message");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(100)), 0, "RX_RDY timeout");
-	zassert_equal(memcmp(chained_write_tx_bufs[0], rx_buf, 10),
-		      0,
-		      "Buffers not equal");
-	zassert_equal(memcmp(chained_write_tx_bufs[1], rx_buf + 10, 10),
-		      0,
-		      "Buffers not equal");
+	zassert_equal(memcmp(chained_write_tx_bufs[0], rx_buf, 10), 0, "Buffers not equal");
+	zassert_equal(memcmp(chained_write_tx_bufs[1], rx_buf + 10, 10), 0, "Buffers not equal");
 
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)),
-		      0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
 
 #define RX_LONG_BUFFER CONFIG_TEST_LONG_BUFFER_SIZE
@@ -958,8 +911,8 @@ static ZTEST_BMEM volatile uint8_t evt_num;
 static ZTEST_BMEM size_t long_received[2];
 static ZTEST_BMEM uint8_t *long_next_buffer;
 
-static void test_long_buffers_callback(const struct device *dev,
-				struct uart_event *evt, void *user_data)
+static void test_long_buffers_callback(const struct device *dev, struct uart_event *evt,
+				       void *user_data)
 {
 
 	switch (evt->type) {
@@ -1009,17 +962,15 @@ ZTEST_USER(uart_async_long_buf, test_long_buffers)
 	size_t tx_len2 = TX_LONG_BUFFER;
 
 	memset(long_rx_buf, 0, sizeof(long_rx_buf));
-	memset(long_tx_buf, 1, sizeof(long_tx_buf));
+	memset(long_tx_buf, 'A', sizeof(long_tx_buf));
 
-	uart_rx_enable(uart_dev, long_rx_buf, sizeof(long_rx_buf), 10 * USEC_PER_MSEC);
+	uart_rx_enable(uart_dev, long_rx_buf, sizeof(long_rx_buf), 1000 * USEC_PER_MSEC);
 
 	uart_tx(uart_dev, long_tx_buf, tx_len1, 200 * USEC_PER_MSEC);
 	zassert_equal(k_sem_take(&tx_done, K_MSEC(200)), 0, "TX_DONE timeout");
 	zassert_equal(k_sem_take(&rx_rdy, K_MSEC(200)), 0, "RX_RDY timeout");
 	zassert_equal(long_received[0], tx_len1, "Wrong number of bytes received.");
-	zassert_equal(memcmp(long_tx_buf, long_rx_buf, tx_len1),
-		      0,
-		      "Buffers not equal");
+	zassert_equal(memcmp(long_tx_buf, long_rx_buf, tx_len1), 0, "Buffers not equal");
 	k_msleep(10);
 	/* Check if instance is releasing a buffer after the timeout. */
 	bool release_on_timeout = k_sem_take(&rx_buf_released, K_NO_WAIT) == 0;
@@ -1036,9 +987,9 @@ ZTEST_USER(uart_async_long_buf, test_long_buffers)
 	} else {
 		zassert_equal(k_sem_take(&rx_rdy, K_MSEC(200)), 0, "RX_RDY timeout");
 		zassert_equal(long_received[0], RX_LONG_BUFFER - tx_len1,
-				"Wrong number of bytes received.");
+			      "Wrong number of bytes received.");
 		zassert_equal(long_received[1], tx_len2 - (RX_LONG_BUFFER - tx_len1),
-				"Wrong number of bytes received.");
+			      "Wrong number of bytes received.");
 		zassert_equal(memcmp(long_tx_buf, long_rx_buf + tx_len1, long_received[0]), 0,
 			      "Buffers not equal");
 		zassert_equal(memcmp(long_tx_buf, long_rx_buf2, long_received[1]), 0,
@@ -1046,26 +997,23 @@ ZTEST_USER(uart_async_long_buf, test_long_buffers)
 	}
 
 	uart_rx_disable(uart_dev);
-	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)),
-		      0,
-		      "RX_BUF_RELEASED timeout");
-	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0,
-		      "RX_DISABLED timeout");
+	zassert_equal(k_sem_take(&rx_buf_released, K_MSEC(100)), 0, "RX_BUF_RELEASED timeout");
+	zassert_equal(k_sem_take(&rx_disabled, K_MSEC(100)), 0, "RX_DISABLED timeout");
 }
 
 #define VAR_LENGTH_TX_BUF_SIZE 12
 #define VAR_LENGTH_RX_BUF_SIZE (VAR_LENGTH_TX_BUF_SIZE * 4)
 
 #if NOCACHE_MEM
-volatile static uint8_t __aligned(sizeof(void *))
-	var_length_rx_buf[VAR_LENGTH_RX_BUF_SIZE] __used __NOCACHE;
-volatile static uint8_t __aligned(sizeof(void *))
-	var_length_rx_buf_pool[VAR_LENGTH_RX_BUF_SIZE] __used __NOCACHE;
+volatile static uint8_t
+	__aligned(sizeof(void *)) var_length_rx_buf[VAR_LENGTH_RX_BUF_SIZE] __used __NOCACHE;
+volatile static uint8_t
+	__aligned(sizeof(void *)) var_length_rx_buf_pool[VAR_LENGTH_RX_BUF_SIZE] __used __NOCACHE;
 #else
-volatile static ZTEST_BMEM
-	uint8_t __aligned(sizeof(void *)) var_length_rx_buf[VAR_LENGTH_RX_BUF_SIZE];
-volatile static ZTEST_BMEM
-	uint8_t __aligned(sizeof(void *)) var_length_rx_buf_pool[VAR_LENGTH_RX_BUF_SIZE];
+volatile static ZTEST_BMEM uint8_t
+	__aligned(sizeof(void *)) var_length_rx_buf[VAR_LENGTH_RX_BUF_SIZE];
+volatile static ZTEST_BMEM uint8_t
+	__aligned(sizeof(void *)) var_length_rx_buf_pool[VAR_LENGTH_RX_BUF_SIZE];
 #endif /* NOCACHE_MEM */
 volatile static ZTEST_BMEM size_t var_length_buf_rx_idx;
 volatile static ZTEST_BMEM size_t var_length_buf_rx_pool_idx;
@@ -1109,9 +1057,9 @@ static void test_uart_async_var_buf(size_t buf_len, size_t tx_len)
 	int ret;
 
 #if NOCACHE_MEM
-static __aligned(sizeof(void *)) uint8_t tx_buffer[VAR_LENGTH_TX_BUF_SIZE] __used __NOCACHE;
+	static __aligned(sizeof(void *)) uint8_t tx_buffer[VAR_LENGTH_TX_BUF_SIZE] __used __NOCACHE;
 #else
-static ZTEST_BMEM uint8_t tx_buffer[VAR_LENGTH_TX_BUF_SIZE];
+	static ZTEST_BMEM uint8_t tx_buffer[VAR_LENGTH_TX_BUF_SIZE];
 #endif /* NOCACHE_MEM */
 
 	for (size_t i = 0; i < VAR_LENGTH_TX_BUF_SIZE; ++i) {
@@ -1168,35 +1116,25 @@ ZTEST_USER(uart_async_var_buf_length, test_var_buf_length)
 	zassert_ok(uart_configure(uart_dev, &uart_cfg));
 }
 
-ZTEST_SUITE(uart_async_single_read, NULL, single_read_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_single_read, NULL, single_read_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_multi_rx, NULL, multiple_rx_enable_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_multi_rx, NULL, multiple_rx_enable_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_chain_read, NULL, chained_read_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_chain_read, NULL, chained_read_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_double_buf, NULL, double_buffer_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_double_buf, NULL, double_buffer_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_read_abort, NULL, read_abort_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_read_abort, NULL, read_abort_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_chain_write, NULL, chained_write_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_chain_write, NULL, chained_write_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_long_buf, NULL, long_buffers_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_long_buf, NULL, long_buffers_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_var_buf_length, NULL, var_buf_length_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_var_buf_length, NULL, var_buf_length_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_write_abort, NULL, write_abort_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_write_abort, NULL, write_abort_setup, NULL, NULL, NULL);
 
-ZTEST_SUITE(uart_async_timeout, NULL, forever_timeout_setup,
-		NULL, NULL, NULL);
+ZTEST_SUITE(uart_async_timeout, NULL, forever_timeout_setup, NULL, NULL, NULL);
 
 void test_main(void)
 {
