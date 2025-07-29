@@ -8,6 +8,15 @@
 #include <freq.h>
 #include <arm/armv8-m.dtsi>
 
+#define INT_SP_UART_0_INT_REQ                        16
+#define INT_SP_UART_1_INT_REQ                        17
+/*
+ * Note: Zephyr uses exception numbers, vs the IRQ used by the CC32XX SDK
+ * which are offset by 16:
+ */
+#define EXP_UARTA0 (INT_SP_UART_0_INT_REQ - 16)
+#define EXP_UARTA1 (INT_SP_UART_1_INT_REQ - 16)
+
 / {
 	cpus {
 		#address-cells = <1>;
@@ -130,14 +139,18 @@
 
 		uart0: uart@41240000 {
 			compatible = "ti,cc35xx-uart";
+			current-speed = <115200>;
 			reg = <0x41240000 0x1000>;
+			interrupts = <EXP_UARTA0 3>;
 			clocks = <&uartclk>;
 			status = "disabled";
 		};
 
 		uart1: uart@41250000 {
 			compatible = "ti,cc35xx-uart";
+			current-speed = <115200>;
 			reg = <0x41250000 0x1000>;
+			interrupts = <EXP_UARTA1 3>;
 			clocks = <&uartclk>;
 			status = "disabled";
 		};

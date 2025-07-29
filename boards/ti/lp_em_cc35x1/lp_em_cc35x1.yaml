@@ -10,4 +10,5 @@ toolchain:
 supported:
   - pinctrl
   - gpio
+  - serial
 vendor: ti
