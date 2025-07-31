@@ -25,8 +25,9 @@ to add support for specific SimpleLink Wireless MCUs. Please see the
 [Release Notes](#releases) for information about which upstream Zephyr release
 this TI release is based on. Other dependency info is included there as well.
 
-This release only contains
-support for the `CC2340R5` device. The `CC32xx` and `CC13xx_CC26xx` devices are
+This release contains
+support for the `CC2340R5`, `CC2340R53`, `CC2745R10_Q1`, and `CC2755R10` devices.
+The `CC32xx` and `CC13xx_CC26xx` devices are
 not supported in this release. However, the Zephyr community continues to
 support them in the upstream repositories.
 
@@ -36,9 +37,8 @@ Supported by this release:
 
 - [CC2340R52](https://www.ti.com/product/CC2340R5)
 - [CC2340R53](https://www.ti.com/product/CC2340R5)
-    - Tested only on the following examples:
-        - samples/bluetooth/mesh_demo/
-        - samples/bluetooth/mesh/
+- [CC2745R10_Q1](https://www.ti.com/product/CC2745R10-Q1)
+- [CC2755R10](https://www.ti.com/product/CC2755R10)
 
 Supported by the Zephyr community:
 
@@ -57,7 +57,9 @@ Supported by the Zephyr community:
 Supported by this release:
 
 - [lp_em_cc2340r5](https://www.ti.com/tool/LP-EM-CC2340R5)
-- lp_em_cc2340r53
+- [lp_em_cc2340r53](https://www.ti.com/tool/LP-EM-CC2340R5)
+- [lp_em_cc2745r10_q1](https://www.ti.com/product/CC2745R10-Q1)
+- [lp_em_cc2755](https://www.ti.com/product/CC2755R10)
 
 Supported by the Zephyr community:
 
@@ -71,9 +73,8 @@ Supported by the Zephyr community:
 ## Getting Started
 
 For getting started, please refer to the
-[Upstream Zephyr Readme](https://docs.zephyrproject.org/3.7.0/develop/getting_started/index.html)
-for the Zephyr project and follow the same getting-started guide for setting up
-the environment and building your first application.
+[SimpleLink Academy Trainings](https://dev.ti.com/tirex/explore/node?node=A__ABCS5JT7BlsTcu2NNH3HBg__SIMPLELINK-ACADEMY-CC23XX__gsUPh5j__LATEST),
+it has guidance for setting up the Zephyr environment and building your first application.
 
 > **_NOTE:_** When running `west init` in the getting-started guide it's
 > important to instead run `west init -m https://github.com/TexasInstruments/simplelink-zephyr --mr {tag-name} zephyrproject`
