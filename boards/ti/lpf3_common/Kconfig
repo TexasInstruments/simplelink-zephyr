@@ -23,3 +23,8 @@ config TI_MCUMGR_BT_OTA_DFU
 	depends on BT_PERIPHERAL
 	depends on BOOTLOADER_MCUBOOT
 	default n
+
+config BT_LL_HEAP_SIZE
+	hex "TI BLE LL Heap Size"
+	depends on BT
+	default 0x4000

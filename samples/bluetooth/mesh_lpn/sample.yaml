@@ -1,0 +1,10 @@
+sample:
+  name: Bluetooth Mesh LPN
+tests:
+  sample.bluetooth.mesh_lpn:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2340r53
+    integration_platforms:
+      - qemu_x86
+    tags: bluetooth
