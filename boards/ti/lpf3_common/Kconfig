@@ -6,6 +6,7 @@ config TI_MCUMGR_BT_OTA_DFU
 	bool "MCUMgr OTA DFU over Bluetooth"
 	select NET_BUF
 	select ZCBOR
+	select ZEPHYR_ZCBOR_MODULE
 	select CRC
 	select MCUMGR
 	select MCUMGR_TRANSPORT_BT

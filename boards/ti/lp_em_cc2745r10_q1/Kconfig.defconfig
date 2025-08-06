@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+rsource "../lpf3_common/Kconfig.defconfig"
+
 if BOARD_LP_EM_CC2745R10_Q1
 
 if BT
