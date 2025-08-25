@@ -164,7 +164,7 @@ pipeline
                         if [ ! -d .west ]; then \
                             west init -l zephyr > west.init.log; \
                         fi ; \
-                        west config manifest.group-filter -- +ci,-optional,-external; \
+                        west config manifest.group-filter -- +internal,-optional,-external; \
                         west update -o=--depth=1 -n 2>&1 1> west.update.log || \
                         west update -o=--depth=1 -n 2>&1 1> west.update2.log
                         ''',
