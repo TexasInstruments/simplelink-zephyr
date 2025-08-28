@@ -29,4 +29,18 @@
 		bias-disable;
 		input-enable;
 	};
+
+	/* I2C0 */
+	i2c0_scl_default: i2c0_scl_default {
+		pinmux = <27 DIO27_I2C0_SCL>;
+		bias-pull-up;
+		drive-open-drain;
+		input-enable;
+	};
+	i2c0_sda_default: i2c0_sda_default {
+		pinmux = <28 DIO28_I2C0_SDA>;
+		bias-pull-up;
+		drive-open-drain;
+		input-enable;
+	};
 };
