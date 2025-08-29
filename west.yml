@@ -33,7 +33,7 @@ manifest:
   projects:
     - name: hal_ti
       url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
-      revision: 2498e25744168c0f7696975fc636605da5366d4a
+      revision: 600866153dd7f563a36c2cbc5fdfe102cea945de
       groups:
         - internal
     - name: acpica

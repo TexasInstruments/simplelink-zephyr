@@ -208,7 +208,20 @@
 			compatible = "ti,cc35xx-hsm";
 			interrupts = <EXP_HSM 2>;
 			reg = <0x41b00000 0x100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			status = "disabled";
+
+			entropy: entropy@0 {
+				compatible = "ti,cc35xx-hsm-trng";
+				reg = <0>;
+				status = "disabled";
+			};
+			crypto: crypto@1 {
+				compatible = "ti,cc35xx-hsm-crypto";
+				reg = <1>;
+				status = "disabled";
+			};
 		};
 
 		pinctrl: pin-controller@41140000 {
