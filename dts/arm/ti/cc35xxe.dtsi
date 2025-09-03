@@ -176,6 +176,33 @@
 			reg = <0x41140000 0x80000>;
 		};
 
+		flash0: flash@a0000000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xa0000000 0x00033000>, <0x0 0x00033000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
+		flash1: flash@10000000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x10000000 0x001e7000>, <0x00033000 0x001e7000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
+		flash2: flash@a0050000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xa0050000 0x001ea000>, <0x0021a000 0x001ea000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
 		gpios: gpios@41100000 {
 			compatible = "ti,cc35xx-gpio-port-bank";
 			status = "okay";
