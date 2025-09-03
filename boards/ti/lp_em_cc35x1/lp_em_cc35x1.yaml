@@ -12,4 +12,5 @@ supported:
   - gpio
   - serial
   - entropy
+  - counter
 vendor: ti

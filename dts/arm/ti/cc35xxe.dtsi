@@ -13,6 +13,7 @@
 #define INT_SP_SPI_0_EVT_REQ        20
 #define INT_SP_SPI_1_EVT_REQ        21
 #define INT_GPTIMER_0_EVT_CPU_IRQ   22
+#define INT_GPTIMER_1_EVT_CPU_IRQ   23
 #define INT_OSPR_HSM_HOST_0_SEC_IRQ 34
 /*
  * Note: Zephyr uses exception numbers, vs the IRQ used by the TI SimpleLink WFF3 SDK
@@ -23,6 +24,7 @@
 #define EXP_SPI0   (INT_SP_SPI_0_EVT_REQ - 16)
 #define EXP_SPI1   (INT_SP_SPI_1_EVT_REQ - 16)
 #define EXP_GPT0   (INT_GPTIMER_0_EVT_CPU_IRQ - 16)
+#define EXP_GPT1   (INT_GPTIMER_1_EVT_CPU_IRQ - 16)
 #define EXP_HSM    (INT_OSPR_HSM_HOST_0_SEC_IRQ - 16)
 
 / {
@@ -56,6 +58,12 @@
 	};
 
 	spiclk: spi-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <DT_FREQ_M(80)>;
+		#clock-cells = <0>;
+	};
+
+	gptimerclk: gptimer-clock {
 		compatible = "fixed-clock";
 		clock-frequency = <DT_FREQ_M(80)>;
 		#clock-cells = <0>;
@@ -166,6 +174,26 @@
 			reg = <0x41250000 0x1000>;
 			interrupts = <EXP_UARTA1 3>;
 			clocks = <&uartclk>;
+			status = "disabled";
+		};
+
+		timer0: gpt@41260000 {
+			compatible = "ti,cc35xx-lgpt";
+			reg = <0x41260000 0x8000>;
+			interrupts = <EXP_GPT0 0>;
+			clocks = <&gptimerclk>;
+			max-top-value = <0xFFFFFFFF>;
+			clk-prescale = <0xFF>;
+			status = "disabled";
+		};
+
+		timer1: gpt@41268000 {
+			compatible = "ti,cc35xx-lgpt";
+			reg = <0x41268000 0x8000>;
+			interrupts = <EXP_GPT1 0>;
+			clocks = <&gptimerclk>;
+			max-top-value = <0xFFFFFFFF>;
+			clk-prescale = <0xFF>;
 			status = "disabled";
 		};
 
