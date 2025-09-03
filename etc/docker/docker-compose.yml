@@ -4,10 +4,9 @@ version: '3.7'
 services:
   zephyr:
     # Set to current user
-    user: ${USER}
     build:
-      context: ./
-      dockerfile: Dockerfile
+      context: ../../../
+      dockerfile: zephyr/etc/docker/Dockerfile
     # Same as service name
     hostname: zephyr
     environment:
@@ -23,5 +22,7 @@ services:
       # This places us in the general Jenkins workspace, where zephyr
       # is cloned to a subfolder
       - ../../../:/project
-    working_dir: /project
-    network_mode: bridge
+      - /dev/serial:/dev/serial:ro
+    devices:
+      - /dev/bus:/dev/bus
+      - /dev/ttyACM0:/dev/ttyACM0
