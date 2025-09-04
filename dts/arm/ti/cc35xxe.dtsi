@@ -15,17 +15,19 @@
 #define INT_GPTIMER_0_EVT_CPU_IRQ   22
 #define INT_GPTIMER_1_EVT_CPU_IRQ   23
 #define INT_OSPR_HSM_HOST_0_SEC_IRQ 34
+#define INT_NAB_HOST_IRQ            63
 /*
  * Note: Zephyr uses exception numbers, vs the IRQ used by the TI SimpleLink WFF3 SDK
  * which are offset by 16:
  */
-#define EXP_UARTA0 (INT_SP_UART_0_INT_REQ - 16)
-#define EXP_UARTA1 (INT_SP_UART_1_INT_REQ - 16)
-#define EXP_SPI0   (INT_SP_SPI_0_EVT_REQ - 16)
-#define EXP_SPI1   (INT_SP_SPI_1_EVT_REQ - 16)
-#define EXP_GPT0   (INT_GPTIMER_0_EVT_CPU_IRQ - 16)
-#define EXP_GPT1   (INT_GPTIMER_1_EVT_CPU_IRQ - 16)
-#define EXP_HSM    (INT_OSPR_HSM_HOST_0_SEC_IRQ - 16)
+#define EXP_UARTA0   (INT_SP_UART_0_INT_REQ - 16)
+#define EXP_UARTA1   (INT_SP_UART_1_INT_REQ - 16)
+#define EXP_SPI0     (INT_SP_SPI_0_EVT_REQ - 16)
+#define EXP_SPI1     (INT_SP_SPI_1_EVT_REQ - 16)
+#define EXP_GPT0     (INT_GPTIMER_0_EVT_CPU_IRQ - 16)
+#define EXP_GPT1     (INT_GPTIMER_1_EVT_CPU_IRQ - 16)
+#define EXP_HSM      (INT_OSPR_HSM_HOST_0_SEC_IRQ - 16)
+#define EXP_NAB_HOST (INT_NAB_HOST_IRQ - 16)
 
 / {
 	cpus {
@@ -157,6 +159,13 @@
 			compatible = "zephyr,memory-region";
 			reg = <0x14000000 DT_SIZE_M(64)>;
 			zephyr,memory-region = "EXTFLASH";
+		};
+
+		wlan0: hif@408a0000 {
+			compatible = "ti,cc35xx-wlan";
+			reg = <0x408a0000 DT_SIZE_K(64)>;
+			interrupts = <EXP_NAB_HOST 3>;
+			status = "disabled";
 		};
 
 		uart0: uart@41240000 {

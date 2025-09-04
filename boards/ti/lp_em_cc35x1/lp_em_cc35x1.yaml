@@ -13,4 +13,5 @@ supported:
   - serial
   - entropy
   - counter
+  - netif:wifi
 vendor: ti

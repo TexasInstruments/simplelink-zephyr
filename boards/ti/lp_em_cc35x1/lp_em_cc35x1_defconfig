@@ -4,6 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+CONFIG_SHARED_MULTI_HEAP=y
+
 CONFIG_GPIO=y
 CONFIG_SERIAL=y
 
