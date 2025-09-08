@@ -114,6 +114,19 @@
 	status = "okay";
 };
 
+&spi0 {
+	status = "okay";
+	pinctrl-0 = <&spi0_master>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpio26 0 GPIO_ACTIVE_LOW>;
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_slave>;
+	pinctrl-names = "default";
+};
+
 &uart0 {
 	status = "okay";
 	pinctrl-0 = <&uart0_default>;

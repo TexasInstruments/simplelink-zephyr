@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config SPI_CC35XX
+	bool "TI SimpleLink CC35xx SPI driver"
+	default y
+	depends on DT_HAS_TI_CC35XX_SPI_ENABLED
+	select PINCTRL
+	help
+	  Enable support for the TI SimpleLink CC35xx SPI peripheral
