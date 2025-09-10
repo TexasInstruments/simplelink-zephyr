@@ -23,6 +23,7 @@
 		zephyr,console = &uart1;
 		zephyr,shell-uart = &uart1;
 		zephyr,entropy = &entropy;
+		zephyr,rtc = &rtc;
 	};
 
 	leds {
@@ -59,6 +60,7 @@
 		led2 = &blue_led;
 		sw0 = &user_switch_1;
 		sw1 = &user_switch_2;
+		rtc = &rtc;
 	};
 };
 

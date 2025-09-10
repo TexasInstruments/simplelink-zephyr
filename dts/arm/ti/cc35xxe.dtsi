@@ -265,7 +265,6 @@
 			write-block-size = <4>;
 		};
 
-
 		spi0: spi@41220000 {
 			compatible = "ti,cc35xx-spi";
 			#address-cells = <1>;
@@ -284,6 +283,13 @@
 			interrupts = <EXP_SPI1 3>;
 			clocks = <&spiclk>;
 			status = "disabled";
+		};
+
+		rtc: rtc@41108000 {
+			compatible = "ti,cc35xx-rtc-timer";
+			reg = <0x41108000 0x4000>;
+			interrupts = <0 0>;
+			status = "okay";
 		};
 
 		gpios: gpios@41100000 {
