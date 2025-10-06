@@ -54,7 +54,7 @@ pipeline
         JENKINS_PYTHON_EXEC_NAME = 'python3.10'
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
 
-        SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1'
+        SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1/cc2745r10_q1 lp_em_cc2745r10_q1/cc2755r10'
         TEST_ALL_SUPPORTED_BOARDS = 'all_supported_ti'
 
         TWISTER_COMMON =
