@@ -37,6 +37,9 @@ struct uart_cc35xx_dev_data_t {
 	uart_irq_callback_user_data_t cb;
 	void *cb_data;
 #endif
+#ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
+	struct uart_config uart_config;
+#endif
 };
 
 static int uart_cc35xx_init(const struct device *dev)
@@ -182,6 +185,78 @@ static void uart_cc35xx_isr(const struct device *dev)
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
+#ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
+static int uart_cc35xx_configure(const struct device *dev,
+				 const struct uart_config *cfg)
+{
+	const struct uart_cc35xx_dev_config *config = dev->config;
+	struct uart_cc35xx_dev_data_t *data = dev->data;
+	uint32_t conf = 0;
+	/* sys_clk_freq is always 80MHz in cc35xx so we can optimize it */
+	const uint32_t min_baud = 77;      /* ceil (config->sys_clk_freq / 1048559.875) */
+	const uint32_t max_baud = 5039370; /* floor(config->sys_clk_freq / 15.875) */
+
+	switch (cfg->data_bits) {
+	case UART_CFG_DATA_BITS_5:
+		conf |= UART_CONFIG_WLEN_5;
+		break;
+	case UART_CFG_DATA_BITS_6:
+		conf |= UART_CONFIG_WLEN_6;
+		break;
+	case UART_CFG_DATA_BITS_7:
+		conf |= UART_CONFIG_WLEN_7;
+		break;
+	case UART_CFG_DATA_BITS_8:
+		conf |= UART_CONFIG_WLEN_8;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	switch (cfg->parity) {
+	case UART_CFG_PARITY_NONE:
+		conf |= UART_CONFIG_PAR_NONE;
+		break;
+	case UART_CFG_PARITY_EVEN:
+		conf |= UART_CONFIG_PAR_EVEN;
+		break;
+	case UART_CFG_PARITY_ODD:
+		conf |= UART_CONFIG_PAR_ODD;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	switch (cfg->stop_bits) {
+	case UART_CFG_STOP_BITS_1:
+		conf |= UART_CONFIG_STOP_ONE;
+		break;
+	case UART_CFG_STOP_BITS_2:
+		conf |= UART_CONFIG_STOP_TWO;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	if (cfg->baudrate < min_baud || cfg->baudrate > max_baud) {
+		return -ENOTSUP;
+	}
+
+	UARTConfigSetExpClk(config->base, config->sys_clk_freq, cfg->baudrate, conf);
+	data->uart_config = *cfg;
+	return 0;
+}
+
+static int uart_cc35xx_config_get(const struct device *dev,
+				  struct uart_config *cfg)
+{
+	struct uart_cc35xx_dev_data_t *data = dev->data;
+
+	*cfg = data->uart_config;
+	return 0;
+}
+#endif /* CONFIG_UART_USE_RUNTIME_CONFIGURE */
+
 static int uart_cc35xx_poll_in(const struct device *dev, unsigned char *c)
 {
 	return uart_cc35xx_fifo_read(dev, c, 1);
@@ -200,6 +275,12 @@ static void uart_cc35xx_poll_out(const struct device *dev, unsigned char c)
 static const struct uart_driver_api uart_cc35xx_driver_api = {
 	.poll_in = uart_cc35xx_poll_in,
 	.poll_out = uart_cc35xx_poll_out,
+
+#ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
+	.configure = uart_cc35xx_configure,
+	.config_get = uart_cc35xx_config_get,
+#endif
+
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.fifo_fill = uart_cc35xx_fifo_fill,
 	.fifo_read = uart_cc35xx_fifo_read,

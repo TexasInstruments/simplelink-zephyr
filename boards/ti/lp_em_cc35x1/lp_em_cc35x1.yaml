@@ -8,10 +8,17 @@ toolchain:
   - zephyr
   - gnuarmemb
 supported:
+  - spi
+  - uart
+  - drivers
+  - flash
   - pinctrl
   - gpio
   - serial
   - entropy
   - counter
   - netif:wifi
+  - rtc
+testing:
+  default: true
 vendor: ti

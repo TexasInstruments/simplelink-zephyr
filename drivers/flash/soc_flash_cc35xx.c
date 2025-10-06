@@ -83,18 +83,23 @@ __ramfunc static int flash_cc35xx_erase(const struct device *dev, off_t offset, 
 
 	k_mutex_lock(&flash_cc35xx_mutex, K_FOREVER);
 	for (; size; size -= erase_size, addr += erase_size) {
-		key = irq_lock();
-		ret = FlashSectorErase(addr, CC35XX_ERASE_OPCODE, CC35XX_ERASE_TIMEOUT);
-		/* BUG: FlashSectorErase() is supposed to wait for flash busy flag to
-		 * go off after erasing sector. But it appears there is a bug somewhere
-		 * with the logic, and if we unlock interrupts right after we exit that
-		 * function, chip - most often than not - will go into lockup state
-		 * due to XIP operation on busy flash. Adding busy-loop that is long
-		 * enough works around that problem. Value has been chosen arbitrarily
-		 * based on tests
-		 */
-		CPUDelay(2097152l);
-		irq_unlock(key);
+		for (int tries = 3; tries; tries--) {
+			key = irq_lock();
+			ret = FlashSectorErase(addr, CC35XX_ERASE_OPCODE, CC35XX_ERASE_TIMEOUT);
+			/* BUG: FlashSectorErase() is supposed to wait for flash busy flag to
+			 * go off after erasing sector. But it appears there is a bug somewhere
+			 * with the logic, and if we unlock interrupts right after we exit that
+			 * function, chip - most often than not - will go into lockup state
+			 * due to XIP operation on busy flash. Adding busy-loop that is long
+			 * enough works around that problem. Value has been chosen arbitrarily
+			 * based on tests
+			 */
+			CPUDelay(2097152l);
+			irq_unlock(key);
+			if (ret == 0) {
+				break;
+			}
+		}
 		if (ret) {
 			break;
 		}
@@ -175,8 +180,8 @@ static const struct flash_driver_api flash_cc35xx_api = {
 
 #define FLASH_CC35XX_DEVICE(n)                                                                     \
 	static const struct flash_pages_layout flash_cc35xx_layout_##n = {                         \
-		.pages_size = DT_INST_PROP(n, write_block_size),                                   \
-		.pages_count = DT_INST_REG_SIZE_BY_IDX(n, 0) / DT_INST_PROP(n, write_block_size),  \
+		.pages_size = DT_INST_PROP(n, erase_block_size),                                   \
+		.pages_count = DT_INST_REG_SIZE_BY_IDX(n, 0) / DT_INST_PROP(n, erase_block_size),  \
 	};                                                                                         \
 	static const struct flash_parameters flash_cc35xx_parameters_##n = {                       \
 		.write_block_size = DT_INST_PROP(n, write_block_size),                             \

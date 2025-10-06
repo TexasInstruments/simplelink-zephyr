@@ -49,7 +49,9 @@ static void spi_cc35xx_read_rx_fifo(const struct device *dev)
 		if (spi_context_rx_buf_on(ctx)) {
 			*ctx->rx_buf = rxd;
 		}
-		spi_context_update_rx(ctx, 1, 1);
+		if (spi_context_rx_on(ctx)) {
+			spi_context_update_rx(ctx, 1, 1);
+		}
 	}
 }
 
@@ -132,7 +134,7 @@ static int spi_cc35xx_configure(const struct device *dev, const struct spi_confi
 		SPI_CTL0_SPH_SECOND : SPI_CTL0_SPH_FIRST;
 
 	SPIConfigSetExpClk(cfg->base, cfg->sys_clk_freq, prot, mode, freq, 8);
-	sys_write32(SPI_IFLS_RXSEL_LVL_1_2 | SPI_IFLS_TXSEL_LVL_1_2, cfg->base + SPI_O_IFLS);
+	sys_write32(SPI_IFLS_RXSEL_LEVEL_1 | SPI_IFLS_TXSEL_LVL_1_2, cfg->base + SPI_O_IFLS);
 	if (config->operation & SPI_TRANSFER_LSB) {
 		sys_write32((sys_read32(cfg->base + SPI_O_CTL1) & ~SPI_CTL1_MSB_M) |
 				SPI_CTL1_MSB_LSB,

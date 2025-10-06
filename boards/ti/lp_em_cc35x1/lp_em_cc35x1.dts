@@ -127,6 +127,19 @@
 	pinctrl-names = "default";
 };
 
+&flash2 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@0 {
+			label = "storage";
+			reg = <0x00000000 0x001ea000>;
+		};
+	};
+};
+
 &uart0 {
 	status = "okay";
 	pinctrl-0 = <&uart0_default>;
