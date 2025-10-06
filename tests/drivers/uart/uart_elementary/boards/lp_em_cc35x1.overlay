@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+#include <zephyr/dt-bindings/pinctrl/ti-cc35xx-pinctrl.h>
+
+&pinctrl {
+	uart0_default_alt: uart0_default_alt {
+		group1 {
+			pinmux = <P17_UART0_TX>, <P18_UART0_RX>;
+		};
+	};
+};
+
+dut: &uart0 {
+	current-speed = <115200>;
+	compatible = "ti,cc35xx-uart";
+	status = "okay";
+	pinctrl-0 = <&uart0_default_alt>;
+	pinctrl-names = "default";
+};

@@ -1,0 +1,169 @@
+/*
+ * Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <ti/cc35xxe.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include "lp_em_cc35x1-pinctrl.dtsi"
+
+/ {
+	model = "TI CC35X1E LaunchPad";
+	compatible = "ti,launchpad-cc35x1e";
+
+	chosen {
+		zephyr,sram = &dmem_ns;
+		zephyr,flash = &extflash_ns;
+		zephyr,itcm = &itcm_ns;
+		zephyr,dtcm = &dtcm_ns;
+		zephyr,code-partition = &dmem_ns;
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+		zephyr,entropy = &entropy;
+		zephyr,rtc = &rtc;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		green_led: green_led {
+			gpios = <&gpios 30 GPIO_ACTIVE_HIGH>;
+			label = "GREEN USER LED";
+		};
+		red_led: red_led {
+			gpios = <&gpios 34 GPIO_ACTIVE_HIGH>;
+			label = "RED USER LED";
+		};
+		blue_led: blue_led {
+			gpios = <&gpios 35 GPIO_ACTIVE_HIGH>;
+			label = "BLUE USER LED";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		user_switch_1: user_sw_1 {
+			gpios = <&gpios 2 GPIO_ACTIVE_LOW>;
+			label = "User SW1";
+		};
+		user_switch_2: user_sw_2{
+			gpios = <&gpios 36 GPIO_ACTIVE_LOW>;
+			label = "User SW2";
+		};
+	};
+
+	aliases {
+		led0 = &green_led;
+		led1 = &red_led;
+		led2 = &blue_led;
+		sw0 = &user_switch_1;
+		sw1 = &user_switch_2;
+		rtc = &rtc;
+	};
+};
+
+
+&imem_ns {
+	status = "okay";
+};
+
+&dmem_ns {
+	status = "okay";
+};
+
+&itcm_ns {
+	status = "okay";
+};
+
+&dtcm_ns {
+	status = "okay";
+};
+
+&itcm {
+	status = "okay";
+};
+
+&dtcm {
+	status = "okay";
+};
+
+&dma {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+	pinctrl-0 = <&spi0_master>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpios 26 GPIO_ACTIVE_LOW>;
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_slave>;
+	pinctrl-names = "default";
+};
+
+&flash2 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@0 {
+			label = "storage";
+			reg = <0x00000000 0x001ea000>;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+	dmas = <&dma 2>, <&dma 3>;
+	dma-names = "tx", "rx";
+};
+
+&uart1 {
+	status = "okay";
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+	dmas = <&dma 0>, <&dma 1>;
+	dma-names = "tx", "rx";
+};
+
+&hsm {
+	status = "okay";
+};
+
+&entropy {
+	status = "okay";
+};
+
+&crypto {
+	status = "okay";
+};
+
+&gpio0_31 {
+	green_led_hog {
+		gpio-hog;
+		gpios = <30 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};
+
+&gpio32_63 {
+	red_led_hog {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+	blue_led_hog {
+		gpio-hog;
+		gpios = <3 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+};

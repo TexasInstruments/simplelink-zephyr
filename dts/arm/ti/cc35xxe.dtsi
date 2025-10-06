@@ -1,0 +1,334 @@
+/*
+ * Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <mem.h>
+#include <freq.h>
+#include <arm/armv8-m.dtsi>
+
+#define INT_SP_UART_0_INT_REQ       16
+#define INT_SP_UART_1_INT_REQ       17
+#define INT_SP_SPI_0_EVT_REQ        20
+#define INT_SP_SPI_1_EVT_REQ        21
+#define INT_GPTIMER_0_EVT_CPU_IRQ   22
+#define INT_GPTIMER_1_EVT_CPU_IRQ   23
+#define INT_OSPR_HSM_HOST_0_SEC_IRQ 34
+#define INT_NAB_HOST_IRQ            63
+/*
+ * Note: Zephyr uses exception numbers, vs the IRQ used by the TI SimpleLink WFF3 SDK
+ * which are offset by 16:
+ */
+#define EXP_UARTA0   (INT_SP_UART_0_INT_REQ - 16)
+#define EXP_UARTA1   (INT_SP_UART_1_INT_REQ - 16)
+#define EXP_SPI0     (INT_SP_SPI_0_EVT_REQ - 16)
+#define EXP_SPI1     (INT_SP_SPI_1_EVT_REQ - 16)
+#define EXP_GPT0     (INT_GPTIMER_0_EVT_CPU_IRQ - 16)
+#define EXP_GPT1     (INT_GPTIMER_1_EVT_CPU_IRQ - 16)
+#define EXP_HSM      (INT_OSPR_HSM_HOST_0_SEC_IRQ - 16)
+#define EXP_NAB_HOST (INT_NAB_HOST_IRQ - 16)
+
+/ {
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-m33";
+			reg = <0>;
+		};
+	};
+
+	sysclk: system-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <DT_FREQ_M(160)>;
+		#clock-cells = <0>;
+	};
+
+	rtc_xtal: clock-rtc-xtal {
+		compatible = "fixed-clock";
+		clock-frequency = <32768>;
+		#clock-cells = <0>;
+	};
+
+	uartclk: uart-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <DT_FREQ_M(80)>;
+		#clock-cells = <0>;
+	};
+
+	spiclk: spi-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <DT_FREQ_M(80)>;
+		#clock-cells = <0>;
+	};
+
+	gptimerclk: gptimer-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <DT_FREQ_M(80)>;
+		#clock-cells = <0>;
+	};
+
+	soc {
+		/* I-Cache and ITCM size options can be configured independently The user can
+		 * decide how to split ITCM and I-Cache in the following configurations:
+		 * 1. 32kB I-Cache + 32kB ITCM
+		 * 2. 64kB I-Cache + 0kB ITCM
+		 */
+		icache_ns: icache_ns@0 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x0 DT_SIZE_K(32)>;
+			zephyr,memory-region = "ICACHE_NS";
+		};
+
+		icache: icache@4000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x4000000 DT_SIZE_K(32)>;
+			zephyr,memory-region = "ICACHE";
+		};
+
+		itcm_ns: itcm_ns@0 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "arm,itcm";
+			reg = <0x0 DT_SIZE_K(32)>;
+			zephyr,memory-region = "ITCM_NS";
+		};
+
+		itcm: itcm@4000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "arm,itcm";
+			reg = <0x4000000 DT_SIZE_K(32)>;
+			zephyr,memory-region = "ITCM";
+		};
+
+		imem_ns: imem_ns@8000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x8000000 DT_SIZE_K(160)>;
+			zephyr,memory-region = "IMEM_NS";
+		};
+
+		imem: imem@c000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0xc000000 DT_SIZE_K(160)>;
+			zephyr,memory-region = "IMEM";
+		};
+
+		dtcm_ns: dtcm_ns@20000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "arm,dtcm";
+			reg = <0x20000000 DT_SIZE_K(128)>;
+			zephyr,memory-region = "DTCM_NS";
+		};
+
+		dtcm: dtcm@24000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "arm,dtcm";
+			reg = <0x24000000 DT_SIZE_K(128)>;
+			zephyr,memory-region = "DTCM";
+		};
+
+		dmem_ns: dmem_ns@28000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x28000000 DT_SIZE_K(256)>;
+			zephyr,memory-region = "DMEM_NS";
+		};
+
+		dmem: dmem@2c000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x2c000000 DT_SIZE_K(192)>;
+			zephyr,memory-region = "DMEM";
+		};
+
+		extflash_ns: extflash@10000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region";
+			reg = <0x10000000 DT_SIZE_M(64)>;
+			zephyr,memory-region = "EXTFLASH_NS";
+		};
+
+		extflash: extflash@14000000 {
+			status = "disabled";
+			compatible = "zephyr,memory-region";
+			reg = <0x14000000 DT_SIZE_M(64)>;
+			zephyr,memory-region = "EXTFLASH";
+		};
+
+		wlan0: hif@408a0000 {
+			compatible = "ti,cc35xx-wlan";
+			reg = <0x408a0000 DT_SIZE_K(64)>;
+			interrupts = <EXP_NAB_HOST 3>;
+			status = "disabled";
+		};
+
+		uart0: uart@41240000 {
+			compatible = "ti,cc35xx-uart";
+			current-speed = <115200>;
+			reg = <0x41240000 0x1000>;
+			interrupts = <EXP_UARTA0 3>;
+			clocks = <&uartclk>;
+			status = "disabled";
+		};
+
+		uart1: uart@41250000 {
+			compatible = "ti,cc35xx-uart";
+			current-speed = <115200>;
+			reg = <0x41250000 0x1000>;
+			interrupts = <EXP_UARTA1 3>;
+			clocks = <&uartclk>;
+			status = "disabled";
+		};
+
+		timer0: gpt@41260000 {
+			compatible = "ti,cc35xx-lgpt";
+			reg = <0x41260000 0x8000>;
+			interrupts = <EXP_GPT0 0>;
+			clocks = <&gptimerclk>;
+			max-top-value = <0xFFFFFFFF>;
+			clk-prescale = <0xFF>;
+			status = "disabled";
+		};
+
+		timer1: gpt@41268000 {
+			compatible = "ti,cc35xx-lgpt";
+			reg = <0x41268000 0x8000>;
+			interrupts = <EXP_GPT1 0>;
+			clocks = <&gptimerclk>;
+			max-top-value = <0xFFFFFFFF>;
+			clk-prescale = <0xFF>;
+			status = "disabled";
+		};
+
+		dma: dma@41a00000 {
+			compatible = "ti,cc35xx-dma";
+			reg = <0x41a00000 0x10000>;
+			#dma-cells = <1>;
+			status = "disabled";
+		};
+
+		hsm: hsm@41b00000 {
+			compatible = "ti,cc35xx-hsm";
+			interrupts = <EXP_HSM 2>;
+			reg = <0x41b00000 0x100000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+
+			entropy: entropy@0 {
+				compatible = "ti,cc35xx-hsm-trng";
+				reg = <0>;
+				status = "disabled";
+			};
+			crypto: crypto@1 {
+				compatible = "ti,cc35xx-hsm-crypto";
+				reg = <1>;
+				status = "disabled";
+			};
+		};
+
+		pinctrl: pin-controller@41140000 {
+			compatible = "ti,cc35xx-pinctrl";
+			reg = <0x41140000 0x80000>;
+		};
+
+		flash0: flash@a0000000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xa0000000 0x00033000>, <0x0 0x00033000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
+		flash1: flash@10000000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x10000000 0x001e7000>, <0x00033000 0x001e7000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
+		flash2: flash@a0050000 {
+			compatible = "ti,cc35xx-nv-flash";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xa0050000 0x001ea000>, <0x0021a000 0x001ea000>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			write-block-size = <4>;
+		};
+
+		spi0: spi@41220000 {
+			compatible = "ti,cc35xx-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x41220000 0x10000>;
+			interrupts = <EXP_SPI0 3>;
+			clocks = <&spiclk>;
+			status = "disabled";
+		};
+
+		spi1: spi@41230000 {
+			compatible = "ti,cc35xx-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x41230000 0x10000>;
+			interrupts = <EXP_SPI1 3>;
+			clocks = <&spiclk>;
+			status = "disabled";
+		};
+
+		rtc: rtc@41108000 {
+			compatible = "ti,cc35xx-rtc-timer";
+			reg = <0x41108000 0x4000>;
+			interrupts = <0 0>;
+			status = "okay";
+		};
+
+		gpios: gpios@41140000 {
+			compatible = "ti,cc35xx-gpio";
+			#address-cells = <0>;
+			#size-cells = <0>;
+			#gpio-cells = <2>;
+			status = "okay";
+			reg = <0x41140000 DT_SIZE_K(512)>;
+			gpio-map-mask = <0xffffffe0 0xffffffc0>;
+			gpio-map-pass-thru = <0x1f 0x3f>;
+			gpio-map = <
+				0x00 0x0 &gpio0_31 0x0 0x0
+				0x20 0x0 &gpio32_63 0x0 0x0
+			>;
+
+			gpio0_31: gpio0_31 {
+				compatible = "ti,cc35xx-gpio-port";
+				status = "okay";
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-index-offset = <(0*32)>;
+				interrupts = <17 1>;
+				ngpios = <32>;
+			};
+
+			gpio32_63: gpio32_63 {
+				compatible = "ti,cc35xx-gpio-port";
+				status = "okay";
+				gpio-controller;
+				#gpio-cells = <2>;
+				gpio-index-offset = <(1*32)>;
+				interrupts = <17 1>;
+				ngpios = <12>;
+			};
+		};
+	};
+};
+
+&nvic {
+	arm,num-irq-priority-bits = <3>;
+};

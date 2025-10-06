@@ -113,8 +113,19 @@ CONFIG_BT_BUF_CMD_TX_SIZE=65
 You can then build MCUboot and the Bluetooth Peripheral sample using the following
 commands
 
+Building MCUboot Project
 ```
 west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_f3 bootloader/mcuboot/boot/zephyr
+```
+
+For CC27XX SoC Family, the `ti-max-sectors-onchip-cc27xx` snippet must be used
+when building the MCUboot project
+```
+west build -p=always -b lp_em_cc2340r5 -d build_mcuboot_f3 -S ti-max-sectors-onchip-cc27xx bootloader/mcuboot/boot/zephyr
+```
+
+Building Bluetooth Peripheral Sample
+```
 west build -p=always -b lp_em_cc2340r5 -d build_peripheral_fota_f3 zephyr/samples/bluetooth/peripheral
 ```
 

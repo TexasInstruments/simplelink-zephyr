@@ -1,0 +1,7 @@
+# TI CC35X1 LaunchPad board
+# Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_LP_EM_CC35X1
+	bool
+	select SOC_CC3551E

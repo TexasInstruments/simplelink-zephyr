@@ -56,3 +56,7 @@ config SIMPLELINK_F3_RF_SETTING_PREGEN
 	default y
 	help
 		Use the pre-generated radio settings
+
+# CC35XX SDK HAL configuration
+config HAS_CC35XX_SDK
+	bool

@@ -1,0 +1,134 @@
+# Copyright (c) 2025 Conclusive Engineering Sp. z o.o.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+function(zephyr_simplelink_tasks)
+  set(SOC_DIR ${CMAKE_CURRENT_LIST_DIR})
+
+  string(CONFIGURE "${CONFIG_CC35XXE_SIGN_PUBLIC_KEY_FILE}" pubkey)
+  string(CONFIGURE "${CONFIG_CC35XXE_SIGN_PRIVATE_KEY_FILE}" privkey)
+  string(CONFIGURE "${CONFIG_CC35XXE_FLASH_DISCOVERY_CONFIG_OTFDE}" otfde)
+  string(CONFIGURE "${CONFIG_CC35XXE_FLASH_DISCOVERY_CONFIG_EXT_MEM}" ext_mem)
+  string(CONFIGURE "${CONFIG_CC35XXE_FLASH_DISCOVERY_CONFIG_XSPI}" xspi)
+  string(CONFIGURE "${CONFIG_CC35XXE_FUSE_CONFIG}" fuse_config)
+  string(CONFIGURE "${CONFIG_CC35XXE_ACTION_PARAMS_FILE}" action_params)
+
+  # Use default keys if not set
+  if("${pubkey}" STREQUAL "")
+    set(pubkey "${SOC_DIR}/keys/cc35x1e_lp_em_pub_key.pem")
+  endif()
+
+  if(NOT EXISTS "${pubkey}")
+    message(FATAL_ERROR "Public key file not found: ${pubkey}")
+  endif()
+
+  if("${privkey}" STREQUAL "")
+    set(privkey "${SOC_DIR}/keys/cc35x1e_lp_em_prv_key.pem")
+  endif()
+
+  if(NOT EXISTS "${privkey}")
+    message(FATAL_ERROR "Private key file not found: ${privkey}")
+  endif()
+
+  # Use default config jsons if not set
+  if("${otfde}" STREQUAL "")
+    set(otfde "${BOARD_DIR}/config/flash_disc_param_otfde.json")
+  endif()
+
+  if(NOT EXISTS "${otfde}")
+    message(FATAL_ERROR "OTFDE config file not found: ${otfde}")
+  endif()
+
+  if("${ext_mem}" STREQUAL "")
+    set(ext_mem "${BOARD_DIR}/config/flash_disc_param_ext_mem.json")
+  endif()
+
+  if(NOT EXISTS "${ext_mem}")
+    message(FATAL_ERROR "External memory config file not found: ${ext_mem}")
+  endif()
+
+  if("${xspi}" STREQUAL "")
+    set(xspi "${BOARD_DIR}/config/flash_disc_param_xspi.json")
+  endif()
+
+  if(NOT EXISTS "${xspi}")
+    message(FATAL_ERROR "xSPI config file not found: ${xspi}")
+  endif()
+
+  if("${fuse_config}" STREQUAL "")
+    set(fuse_config "${BOARD_DIR}/config/fuse_prog_inst_param.json")
+  endif()
+
+  if(NOT EXISTS "${fuse_config}")
+    message(FATAL_ERROR "Fuse config file not found: ${fuse_config}")
+  endif()
+
+  if("${action_params}" STREQUAL "")
+    set(action_params "${BOARD_DIR}/config/action_params.json")
+  endif()
+
+  if(NOT EXISTS "${action_params}")
+    message(FATAL_ERROR "Action parameters file not found: ${action_params}")
+  endif()
+
+  set(outdir ${ZEPHYR_BINARY_DIR}/flash)
+  set(output ${ZEPHYR_BINARY_DIR}/${KERNEL_NAME})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder build programming_image
+               --flash_discovery_config_otfde ${otfde}
+               --flash_discovery_config_ext_mem ${ext_mem}
+               --flash_discovery_config_xspi ${xspi}
+               --fuses_programming_instructions ${fuse_config}
+               --dir_out_path ${outdir}
+               --use_my_jsons)
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder sign programming_image
+               --unsign_image ${outdir}/programming_instructions_image.unsign.bin
+               --private_key ${privkey} --public_key ${pubkey}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder build action_request
+               --type programming
+               --params_json ${action_params}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder sign action_request
+               --unsign_request ${outdir}/programming_action_request.unsign.bin
+               --private_key ${privkey} --public_key ${pubkey}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder build action_request
+               --type debug
+               --params_json ${action_params}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder sign action_request
+               --unsign_request ${outdir}/debug_action_request.unsign.bin
+               --private_key ${privkey} --public_key ${pubkey}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder build vendor_image
+               --vendor_out_file ${output}.elf
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_commands COMMAND
+               simplelink-wifi-toolbox flash-images-builder sign vendor_image
+               --unsign_image ${outdir}/vendor_image.unsign.bin
+               --private_key ${privkey} --public_key ${pubkey}
+               --dir_out_path ${outdir})
+
+  set_property(GLOBAL APPEND PROPERTY extra_post_build_byproducts
+               "${outdir}/programming_instructions_image.sign.bin"
+               "${outdir}/programming_action_request.sign.bin"
+               "${outdir}/debug_action_request.sign.bin"
+               "${outdir}/vendor_image.sign.bin")
+endfunction()
+
+zephyr_simplelink_tasks()

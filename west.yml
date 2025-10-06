@@ -26,16 +26,11 @@ manifest:
     - name: babblesim
       url-base: https://github.com/BabbleSim
 
-  group-filter: [-babblesim, -optional]
+  group-filter: [-babblesim, -optional, -internal]
 
   #
   # Please add items below based on alphabetical order
   projects:
-    - name: hal_ti
-      url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
-      revision: 46407c76196-ti-9.10-internal
-      groups:
-        - internal
     - name: acpica
       revision: 8d24867bc9c9d81c81eeac59391cda59333affd4
       path: modules/lib/acpica
@@ -252,7 +247,7 @@ manifest:
         - hal
     - name: simplelink-hal_ti
       remote: downstream
-      revision: a0a0f18a9a93780354bb3a810980ac7b797ac83b
+      revision: 5d9e22de88114dd8285b753febbda98e7453ea57
       path: modules/hal/ti
       groups:
         - hal
@@ -351,6 +346,11 @@ manifest:
     - name: zcbor
       revision: 75d088037eb237b18e7ec1f47c9ce494b9b95aab
       path: modules/lib/zcbor
+    - name: hal_ti
+      url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
+      revision: 46407c76196-ti-9.10-internal
+      groups:
+        - internal
 
   self:
     path: zephyr

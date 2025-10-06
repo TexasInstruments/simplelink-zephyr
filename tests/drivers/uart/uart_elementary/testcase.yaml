@@ -12,6 +12,7 @@ tests:
       - nrf54l15pdk/nrf54l15/cpuapp
       - nrf54l15pdk/nrf54l15/cpuflpr
       - nrf5340dk/nrf5340/cpuapp
+      - lp_em_cc35x1
   drivers.uart.uart_elementary_dual_nrf54h:
     filter: CONFIG_SERIAL_SUPPORT_INTERRUPT
     platform_allow:
