@@ -3,6 +3,11 @@ common:
   tags:
     - arm
     - fpu
+  platform_exclude:
+    - lp_em_cc2745r10_q1/cc2745r10_q1
+    - lp_em_cc2745r10_q1/cc2755r10
+    - lp_em_cc2340r5
+    - lp_em_cc2340r53
   arch_allow: arm
 tests:
   arch.arm.swap.common:
