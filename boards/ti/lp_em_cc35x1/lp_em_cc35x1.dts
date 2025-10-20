@@ -29,15 +29,15 @@
 	leds {
 		compatible = "gpio-leds";
 		green_led: green_led {
-			gpios = <&gpio30 0 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpios 30 GPIO_ACTIVE_HIGH>;
 			label = "GREEN USER LED";
 		};
 		red_led: red_led {
-			gpios = <&gpio34 0 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpios 34 GPIO_ACTIVE_HIGH>;
 			label = "RED USER LED";
 		};
 		blue_led: blue_led {
-			gpios = <&gpio35 0 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpios 35 GPIO_ACTIVE_HIGH>;
 			label = "BLUE USER LED";
 		};
 	};
@@ -45,11 +45,11 @@
 	buttons {
 		compatible = "gpio-keys";
 		user_switch_1: user_sw_1 {
-			gpios = <&gpio2 0 GPIO_ACTIVE_LOW>;
+			gpios = <&gpios 2 GPIO_ACTIVE_LOW>;
 			label = "User SW1";
 		};
 		user_switch_2: user_sw_2{
-			gpios = <&gpio36 0 GPIO_ACTIVE_LOW>;
+			gpios = <&gpios 36 GPIO_ACTIVE_LOW>;
 			label = "User SW2";
 		};
 	};
@@ -64,29 +64,6 @@
 	};
 };
 
-&gpio2 {
-	status = "okay";
-};
-
-&gpio26 {
-	status = "okay";
-};
-
-&gpio30 {
-	status = "okay";
-};
-
-&gpio34 {
-	status = "okay";
-};
-
-&gpio35 {
-	status = "okay";
-};
-
-&gpio36 {
-	status = "okay";
-};
 
 &imem_ns {
 	status = "okay";
@@ -120,7 +97,7 @@
 	status = "okay";
 	pinctrl-0 = <&spi0_master>;
 	pinctrl-names = "default";
-	cs-gpios = <&gpio26 0 GPIO_ACTIVE_LOW>;
+	cs-gpios = <&gpios 26 GPIO_ACTIVE_LOW>;
 };
 
 &spi1 {
@@ -168,4 +145,25 @@
 
 &crypto {
 	status = "okay";
+};
+
+&gpio0_31 {
+	green_led_hog {
+		gpio-hog;
+		gpios = <30 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};
+
+&gpio32_63 {
+	red_led_hog {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+	blue_led_hog {
+		gpio-hog;
+		gpios = <3 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
 };

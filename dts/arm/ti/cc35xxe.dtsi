@@ -292,292 +292,38 @@
 			status = "okay";
 		};
 
-		gpios: gpios@41100000 {
-			compatible = "ti,cc35xx-gpio-port-bank";
+		gpios: gpios@41140000 {
+			compatible = "ti,cc35xx-gpio";
+			#address-cells = <0>;
+			#size-cells = <0>;
+			#gpio-cells = <2>;
 			status = "okay";
-			ngpios = <40>;
-			interrupts = <17 1>;
-			reg = <0x41100000 0x4000>;
+			reg = <0x41140000 DT_SIZE_K(512)>;
+			gpio-map-mask = <0xffffffe0 0xffffffc0>;
+			gpio-map-pass-thru = <0x1f 0x3f>;
+			gpio-map = <
+				0x00 0x0 &gpio0_31 0x0 0x0
+				0x20 0x0 &gpio32_63 0x0 0x0
+			>;
 
-			gpio2: gpio2 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
+			gpio0_31: gpio0_31 {
+				compatible = "ti,cc35xx-gpio-port";
+				status = "okay";
 				gpio-controller;
 				#gpio-cells = <2>;
-				gpio-index = <2>;
+				gpio-index-offset = <(0*32)>;
+				interrupts = <17 1>;
+				ngpios = <32>;
 			};
-			gpio3: gpio3 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
+
+			gpio32_63: gpio32_63 {
+				compatible = "ti,cc35xx-gpio-port";
+				status = "okay";
 				gpio-controller;
 				#gpio-cells = <2>;
-				gpio-index = <3>;
-			};
-			gpio4: gpio4 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <4>;
-			};
-			gpio5: gpio5 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <5>;
-			};
-			gpio6: gpio6 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <6>;
-			};
-			gpio10: gpio10 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <10>;
-			};
-			gpio11: gpio11 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <11>;
-			};
-			gpio12: gpio12 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <12>;
-			};
-			gpio13: gpio13 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <13>;
-			};
-			gpio14: gpio14 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <14>;
-			};
-			gpio15: gpio15 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <15>;
-			};
-			gpio16: gpio16 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <16>;
-			};
-			gpio17: gpio17 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <17>;
-			};
-			gpio18: gpio18 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <18>;
-			};
-			gpio19: gpio19 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <19>;
-			};
-			gpio20: gpio20 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <20>;
-			};
-			gpio21: gpio21 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <21>;
-			};
-			gpio22: gpio22 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <22>;
-			};
-			gpio23: gpio23 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <23>;
-			};
-			gpio24: gpio24 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <24>;
-			};
-			gpio25: gpio25 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <25>;
-			};
-			gpio26: gpio26 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <26>;
-			};
-			gpio27: gpio27 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <27>;
-			};
-			gpio28: gpio28 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <28>;
-			};
-			gpio29: gpio29 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <29>;
-			};
-			gpio30: gpio30 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <30>;
-			};
-			gpio31: gpio31 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <31>;
-			};
-			gpio32: gpio32 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <32>;
-			};
-			gpio33: gpio33 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <33>;
-			};
-			gpio34: gpio34 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <34>;
-			};
-			gpio35: gpio35 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <35>;
-			};
-			gpio36: gpio36 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <36>;
-			};
-			gpio37: gpio37 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <37>;
-			};
-			gpio38: gpio38 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <38>;
-			};
-			gpio39: gpio39 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <39>;
-			};
-			gpio40: gpio40 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <40>;
-			};
-			gpio41: gpio41 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <41>;
-			};
-			gpio42: gpio42 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <42>;
-			};
-			gpio43: gpio43 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <43>;
-			};
-			gpio44: gpio44 {
-				compatible = "ti,cc35xx-gpio-port-pin";
-				status = "disabled";
-				gpio-controller;
-				#gpio-cells = <2>;
-				gpio-index = <44>;
+				gpio-index-offset = <(1*32)>;
+				interrupts = <17 1>;
+				ngpios = <12>;
 			};
 		};
 	};
