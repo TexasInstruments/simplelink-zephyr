@@ -21,11 +21,11 @@
 
 	/* UART1 */
 	uart1_tx_default: uart1_tx_default {
-		pinmux = <3 DIO3_UART1_TXD>;
+		pinmux = <21 DIO21_UART1_TXD>;
 		bias-disable;
 	};
 	uart1_rx_default: uart1_rx_default {
-		pinmux = <4 DIO4_UART1_RXD>;
+		pinmux = <22 DIO22_UART1_RXD>;
 		bias-disable;
 		input-enable;
 	};
@@ -42,5 +42,61 @@
 		bias-pull-up;
 		drive-open-drain;
 		input-enable;
+	};
+
+	/* SPI0 */
+	spi0_sck_default: spi0_sck_default {
+		pinmux = <3 DIO3_SPI0_SCLK>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_mosi_default: spi0_mosi_default {
+		pinmux = <5 DIO5_SPI0_PICO>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_miso_default: spi0_miso_default {
+		pinmux = <4 DIO4_SPI0_POCI>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_cs_default: spi0_cs_default {
+		pinmux = <19 DIO19_GPIO19>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+
+	spi0_sck_sleep: spi0_sck_sleep {
+		pinmux = <3 DIO3_GPIO3>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_mosi_sleep: spi0_mosi_sleep {
+		pinmux = <5 DIO5_GPIO5>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_miso_sleep: spi0_miso_sleep {
+		pinmux = <4 DIO4_GPIO4>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+	spi0_cs_sleep: spi0_cs_sleep {
+		pinmux = <19 DIO19_GPIO19>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+
+	spi0_flash_cs: spi0_flash_cs {
+		pinmux = <19 DIO19_GPIO19>;
+		bias-pull-up;
 	};
 };

@@ -10,4 +10,7 @@ toolchain:
   - xtools
 supported:
   - gpio
+  - dma
+  - crypto
+  - spi
 vendor: ti

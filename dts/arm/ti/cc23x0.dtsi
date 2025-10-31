@@ -114,7 +114,7 @@
 		};
 
 		spi0: spi@40030000 {
-			compatible = "ti,cc23x0-spi";
+			compatible = "ti,cc23x0-cc27xx-spi";
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40030000 0x164>;
@@ -134,7 +134,7 @@
 		};
 
 		aes: aes@400c0000 {
-			compatible = "ti,cc23x0-aes";
+			compatible = "ti,cc23xx-cc27xx-aes";
 			reg = <0x400c0000 0x120>;
 			interrupts = <9 0>;
 			dmas = <&dma 4 3>, <&dma 5 4>;
@@ -165,7 +165,7 @@
 		};
 
 		dma: dma@40026000 {
-			compatible = "ti,cc23x0-dma";
+			compatible = "ti,cc23x0-cc27xx-dma";
 			reg = <0x40026000 0x524>;
 			interrupts = <8 0>;
 			#dma-cells = <2>;

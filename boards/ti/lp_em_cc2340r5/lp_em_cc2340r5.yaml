@@ -12,4 +12,7 @@ supported:
   - gpio
   - adc
   - pwm
+  - dma
+  - crypto
+  - spi
 vendor: ti

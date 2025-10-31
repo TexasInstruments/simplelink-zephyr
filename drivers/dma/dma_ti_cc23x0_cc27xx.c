@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT ti_cc23x0_dma
+#define DT_DRV_COMPAT ti_cc23x0_cc27xx_dma
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(dma_cc23x0, CONFIG_DMA_LOG_LEVEL);
+LOG_MODULE_REGISTER(dma_cc23x0_cc27xx, CONFIG_DMA_LOG_LEVEL);
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/dma.h>
@@ -17,20 +17,30 @@ LOG_MODULE_REGISTER(dma_cc23x0, CONFIG_DMA_LOG_LEVEL);
 
 #include <driverlib/clkctl.h>
 #include <driverlib/udma.h>
+#include <driverlib/evtsvt.h>
 
 #include <inc/hw_evtsvt.h>
 #include <inc/hw_memmap.h>
 #include <inc/hw_types.h>
 
 /*
- * Channels 0 to 5 are assigned to peripherals.
- * Channels 6 and 7 are assigned to SW-initiated transfers.
+ * For CC23XX Channels 0 to 5 are DCH channels assigned to peripherals.
+ * Channels 6 and 7 are ECH channels with no specific assignment.
+ * For CC27XX Channels 0 to 7 are DCH channels assigned to peripherals.
+ * Channels 8 to 11 are ECH channels with no specific assignment.
  */
-#define DMA_CC23_PERIPH_CH_MAX	5
-#define DMA_CC23_SW_CH_MIN	6
-#define DMA_CC23_SW_CH_MAX	7
 
-#define DMA_CC23_IS_SW_CH(ch)	((ch) >= DMA_CC23_SW_CH_MIN)
+#if CONFIG_SOC_SERIES_CC27XX
+	#define DMA_CC23X0_CC27XX_PERIPH_CH_MAX  7
+	#define DMA_CC23X0_CC27XX_ECH_CH_MIN     8
+	#define DMA_CC23X0_CC27XX_ECH_CH_MAX     11
+#elif CONFIG_SOC_SERIES_CC23X0
+	#define DMA_CC23X0_CC27XX_PERIPH_CH_MAX  5
+	#define DMA_CC23X0_CC27XX_ECH_CH_MIN     6
+	#define DMA_CC23X0_CC27XX_ECH_CH_MAX     7
+#endif
+
+#define DMA_CC23X0_CC27XX_IS_ECH_CH(ch) ((ch) >= DMA_CC23X0_CC27XX_ECH_CH_MIN)
 
 /*
  * In basic mode, the DMA controller performs transfers as long as there are more items
@@ -39,18 +49,20 @@ LOG_MODULE_REGISTER(dma_cc23x0, CONFIG_DMA_LOG_LEVEL);
  * Auto mode is similar to basic mode, except that when a transfer request is received,
  * the transfer completes, even if the DMA request is removed. This mode is suitable for
  * software-triggered transfers.
+ *
+ * Other DMA modes are currently not supported.
  */
-#define DMA_CC23_MODE(ch)	(DMA_CC23_IS_SW_CH(ch) ? UDMA_MODE_AUTO : UDMA_MODE_BASIC)
+#define DMA_CC23X0_CC27XX_MODE(ch)                                                                 \
+	(DMA_CC23X0_CC27XX_IS_ECH_CH(ch) ? UDMA_MODE_AUTO : UDMA_MODE_BASIC)
 
-/* Each DMA channel is multiplexed between two peripherals which ID is in range 0 to 7 */
-#define DMA_CC23_IPID_MASK	GENMASK(2, 0)
-#define DMA_CC23_CHXSEL_REG(ch)	HWREG(EVTSVT_BASE + EVTSVT_O_DMACH0SEL + sizeof(uint32_t) * (ch))
+#define DMA_CC23X0_CC27XX_CHXSEL_REG(ch)                                                           \
+	HWREG(EVTSVT_BASE + EVTSVT_O_DMACH0SEL + sizeof(uint32_t) * (ch))
 
 #ifdef CONFIG_PM_DEVICE
-#define DMA_CC23_ALL_CH_MASK	GENMASK(DMA_CC23_SW_CH_MAX, 0)
+#define DMA_CC23X0_CC27XX_ALL_CH_MASK GENMASK(DMA_CC23X0_CC27XX_ECH_CH_MAX, 0)
 #endif
 
-struct dma_cc23x0_channel {
+struct dma_cc23x0_cc27xx_channel {
 	uint8_t data_size;
 	dma_callback_t cb;
 	void *user_data;
@@ -61,13 +73,10 @@ struct dma_cc23x0_channel {
 #endif
 };
 
-struct dma_cc23x0_data {
-#ifdef CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED
-	uDMAControlTableEntry *desc;
-#else
+/* Alternate Control table entries are currently not supported */
+struct dma_cc23x0_cc27xx_data {
 	__aligned(1024) uDMAControlTableEntry desc[UDMA_NUM_CHANNELS];
-#endif /* CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED */
-	struct dma_cc23x0_channel channels[UDMA_NUM_CHANNELS];
+	struct dma_cc23x0_cc27xx_channel channels[UDMA_NUM_CHANNELS];
 };
 
 /*
@@ -76,17 +85,17 @@ struct dma_cc23x0_data {
  * If a peripheral channel is used, then the completion will be signaled on the
  * peripheral's interrupt.
  */
-static void dma_cc23x0_isr(const struct device *dev)
+static void dma_cc23x0_cc27xx_isr(const struct device *dev)
 {
-	struct dma_cc23x0_data *data = dev->data;
-	struct dma_cc23x0_channel *ch_data;
+	struct dma_cc23x0_cc27xx_data *data = dev->data;
+	struct dma_cc23x0_cc27xx_channel *ch_data;
 	uint32_t done_flags;
 	int i;
 
 	done_flags = uDMAIntStatus();
 
-	for (i = DMA_CC23_SW_CH_MIN ; i < DMA_CC23_SW_CH_MAX ; i++) {
-		if (done_flags & BIT(i)) {
+	for (i = 0; i < UDMA_NUM_CHANNELS; i++) {
+		if ((done_flags & BIT(i)) && !DMA_CC23X0_CC27XX_IS_ECH_CH(i)) {
 			LOG_DBG("DMA transfer completed on channel %d", i);
 
 			ch_data = &data->channels[i];
@@ -99,9 +108,10 @@ static void dma_cc23x0_isr(const struct device *dev)
 	}
 }
 
-static uint32_t dma_cc23x0_set_addr_adj(uint32_t *control, uint16_t addr_adj,
-					uint32_t inc_flags, uint32_t no_inc_flags)
+static uint32_t dma_cc23x0_cc27xx_set_addr_adj(uint32_t *control, uint16_t addr_adj,
+				uint32_t inc_flags, uint32_t no_inc_flags, uint32_t inc_mask)
 {
+	*control = *control & ~inc_mask;
 	switch (addr_adj) {
 	case DMA_ADDR_ADJ_INCREMENT:
 		*control |= inc_flags;
@@ -116,11 +126,11 @@ static uint32_t dma_cc23x0_set_addr_adj(uint32_t *control, uint16_t addr_adj,
 	return 0;
 }
 
-static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
-			     struct dma_config *config)
+static int dma_cc23x0_cc27xx_config(const struct device *dev, uint32_t channel,
+				    struct dma_config *config)
 {
-	struct dma_cc23x0_data *data = dev->data;
-	struct dma_cc23x0_channel *ch_data;
+	struct dma_cc23x0_cc27xx_data *data = dev->data;
+	struct dma_cc23x0_cc27xx_channel *ch_data;
 	struct dma_block_config *block = config->head_block;
 	uint32_t control;
 	uint32_t data_size;
@@ -138,7 +148,7 @@ static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
-	if (config->dma_slot > DMA_CC23_IPID_MASK) {
+	if (config->dma_slot > EVTSVT_IPID_MAX_VAL) {
 		LOG_ERR("Invalid trigger");
 		return -EINVAL;
 	}
@@ -195,15 +205,15 @@ static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
-	ret = dma_cc23x0_set_addr_adj(&control, block->source_addr_adj,
-				      src_inc_flags, UDMA_SRC_INC_NONE);
+	ret = dma_cc23x0_cc27xx_set_addr_adj(&control, block->source_addr_adj, src_inc_flags,
+						UDMA_SRC_INC_NONE, UDMA_SRC_INC_M);
 	if (ret) {
 		LOG_ERR("Invalid source address adjustment type");
 		return ret;
 	}
 
-	ret = dma_cc23x0_set_addr_adj(&control, block->dest_addr_adj,
-				      dst_inc_flags, UDMA_DST_INC_NONE);
+	ret = dma_cc23x0_cc27xx_set_addr_adj(&control, block->dest_addr_adj, dst_inc_flags,
+						UDMA_DST_INC_NONE, UDMA_DST_INC_M);
 	if (ret) {
 		LOG_ERR("Invalid dest address adjustment type");
 		return ret;
@@ -211,17 +221,24 @@ static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
 
 	xfer_size = block->block_size / data_size;
 	if (!xfer_size || xfer_size > UDMA_XFER_SIZE_MAX) {
-		LOG_ERR("Invalid block size (must be in range %d to %d)",
-			data_size, data_size * UDMA_XFER_SIZE_MAX);
+		LOG_ERR("Invalid block size (must be in range %d to %d)", data_size,
+			data_size * UDMA_XFER_SIZE_MAX);
 		return -EINVAL;
+
 	}
 
 	burst_len = config->source_burst_length / data_size;
-	if (burst_len <= UDMA_XFER_SIZE_MAX && IS_POWER_OF_TWO(burst_len)) {
+	if (config->source_burst_length != data_size * burst_len) {
+		LOG_ERR("Source burst length is not a multiple of data size");
+		return -EINVAL;
+	} else if (config->source_burst_length != config->dest_burst_length) {
+		LOG_ERR("Source and destination burst lengths are not equal");
+		return -EINVAL;
+	} else if ((burst_len <= UDMA_XFER_SIZE_MAX) && IS_POWER_OF_TWO(burst_len)) {
 		control |= LOG2(burst_len) << UDMA_ARB_S;
 	} else {
-		LOG_ERR("Invalid burst length (must be a power of 2 between %d and %d)",
-			data_size, data_size * UDMA_XFER_SIZE_MAX);
+		LOG_ERR("Computed burst length must be a power of 2 between %d and %d)",
+				 data_size, data_size * UDMA_XFER_SIZE_MAX);
 		return -EINVAL;
 	}
 
@@ -234,19 +251,19 @@ static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
 		return -EBUSY;
 	}
 
-	if (DMA_CC23_IS_SW_CH(channel)) {
-		uDMAEnableSwEventInt(BIT(channel));
+	if (DMA_CC23X0_CC27XX_IS_ECH_CH(channel)) {
+		LOG_ERR("ECH channels are not supported");
+		return -ENOTSUP;
 	} else {
 		/* Select peripheral */
-		DMA_CC23_CHXSEL_REG(channel) = config->dma_slot;
+		LOG_DBG("Using DCH Channel %d with trigger %d", channel, config->dma_slot);
+		EVTSVTConfigureDma(EVTSVT_O_DMACH0SEL + sizeof(uint32_t) * (channel),
+							config->dma_slot);
 	}
-
 	uDMASetChannelControl(&data->desc[channel], control);
-
-	uDMASetChannelTransfer(&data->desc[channel], DMA_CC23_MODE(channel),
-			       (void *)block->source_address,
-			       (void *)block->dest_address,
-			       xfer_size);
+	uDMASetChannelTransfer(&data->desc[channel], DMA_CC23X0_CC27XX_MODE(channel),
+			(void *)block->source_address, (void *)block->dest_address,
+			xfer_size);
 
 #ifdef CONFIG_PM_DEVICE
 	pm_device_state_get(dev, &pm_state);
@@ -271,62 +288,52 @@ static int dma_cc23x0_config(const struct device *dev, uint32_t channel,
 		ch_data->dma_cfg.source_data_size = config->source_data_size;
 		ch_data->dma_cfg.dest_data_size = config->dest_data_size;
 		ch_data->dma_cfg.source_burst_length = config->source_burst_length;
+		ch_data->dma_cfg.dest_burst_length = config->dest_burst_length;
 		ch_data->dma_cfg.dma_callback = config->dma_callback;
 		ch_data->dma_cfg.user_data = config->user_data;
 
-		LOG_DBG("Configured channel %d for %08x to %08x (%u bytes)",
-			channel,
-			block->source_address,
-			block->dest_address,
-			block->block_size);
+		LOG_DBG("Configured channel %d for %08x to %08x (%u bytes)", channel,
+			block->source_address, block->dest_address, block->block_size);
 	}
 #else
-	LOG_DBG("Configured channel %d for %08x to %08x (%u bytes)",
-		channel,
-		block->source_address,
-		block->dest_address,
-		block->block_size);
+	LOG_DBG("Configured channel %d for %08x to %08x (%u bytes)", channel, block->source_address,
+		block->dest_address, block->block_size);
 #endif
 
 	return 0;
 }
 
-static int dma_cc23x0_start(const struct device *dev, uint32_t channel)
+static int dma_cc23x0_cc27xx_stop(const struct device *dev, uint32_t channel)
 {
-	if (uDMAIsChannelEnabled(BIT(channel))) {
-		return -EBUSY;
+
+	if (DMA_CC23X0_CC27XX_IS_ECH_CH(channel)) {
+		LOG_ERR("ECH channels are not supported");
+		return -ENOTSUP;
 	}
 
-	uDMAEnableChannel(BIT(channel));
-
-	if (DMA_CC23_IS_SW_CH(channel)) {
-		/* Request DMA channel to start a memory to memory transfer */
-		uDMARequestChannel(BIT(channel));
-	}
-
-	return 0;
-}
-
-static int dma_cc23x0_stop(const struct device *dev, uint32_t channel)
-{
 	uDMADisableChannel(BIT(channel));
 
 	return 0;
 }
 
-static int dma_cc23x0_reload(const struct device *dev, uint32_t channel,
-			     uint32_t src, uint32_t dst, size_t size)
+static int dma_cc23x0_cc27xx_reload(const struct device *dev, uint32_t channel, uint32_t src,
+				    uint32_t dst, size_t size)
 {
-	struct dma_cc23x0_data *data = dev->data;
-	struct dma_cc23x0_channel *ch_data = &data->channels[channel];
+	struct dma_cc23x0_cc27xx_data *data = dev->data;
+	struct dma_cc23x0_cc27xx_channel *ch_data = &data->channels[channel];
 	uint32_t xfer_size = size / ch_data->data_size;
+
+	if (DMA_CC23X0_CC27XX_IS_ECH_CH(channel)) {
+		LOG_ERR("ECH channels are not supported");
+		return -ENOTSUP;
+	}
 
 	if (uDMAIsChannelEnabled(BIT(channel))) {
 		return -EBUSY;
 	}
 
-	uDMASetChannelTransfer(&data->desc[channel], DMA_CC23_MODE(channel),
-			       (void *)src, (void *)dst, xfer_size);
+	uDMASetChannelTransfer(&data->desc[channel], DMA_CC23X0_CC27XX_MODE(channel), (void *)src,
+			       (void *)dst, xfer_size);
 
 #ifdef CONFIG_PM_DEVICE
 	/* Save context */
@@ -335,71 +342,88 @@ static int dma_cc23x0_reload(const struct device *dev, uint32_t channel,
 	ch_data->dma_blk_cfg.block_size = size;
 #endif
 
-	LOG_DBG("Reloaded channel %d for %08x to %08x (%u bytes)",
-		channel, src, dst, size);
+	LOG_DBG("Reloaded channel %d for %08x to %08x (%u bytes)", channel, src, dst, size);
 
 	return 0;
 }
 
-static int dma_cc23x0_get_status(const struct device *dev, uint32_t channel,
-				 struct dma_status *stat)
+static int dma_cc23x0_cc27xx_get_status(const struct device *dev, uint32_t channel,
+					struct dma_status *stat)
 {
-	struct dma_cc23x0_data *data = dev->data;
 	uint8_t ch_sel;
+
+	if (DMA_CC23X0_CC27XX_IS_ECH_CH(channel)) {
+		LOG_ERR("ECH channels are not supported");
+		return -ENOTSUP;
+	}
 
 	if (channel >= UDMA_NUM_CHANNELS || !stat) {
 		return -EINVAL;
 	}
 
-	ch_sel = DMA_CC23_CHXSEL_REG(channel) & DMA_CC23_IPID_MASK;
-	switch (channel) {
-	case 0:
-		if (ch_sel == 0) {
-			/* spi0txtrg */
-			stat->dir = MEMORY_TO_PERIPHERAL;
-		} else {
-			/* uart0rxtrg */
-			stat->dir = PERIPHERAL_TO_MEMORY;
-		}
-		break;
-	case 1:
-		if (ch_sel == 1) {
-			/* spi0rxtrg */
-			stat->dir = PERIPHERAL_TO_MEMORY;
-		} else {
-			/* uart0txtrg */
-			stat->dir = MEMORY_TO_PERIPHERAL;
-		}
-		break;
-	case 2:
-	case 4:
-		/* ch2: uart0txtrg | ch4: laestrga */
-		stat->dir = MEMORY_TO_PERIPHERAL;
-		break;
-	case 3:
-	case 5:
-		/* ch3: adc0trg or uart0rxtrg | ch5: laestrgb or adc0trg */
+	ch_sel = DMA_CC23X0_CC27XX_CHXSEL_REG(channel) & EVTSVT_IPID_MAX_VAL;
+	switch (ch_sel) {
+	case EVTSVT_DMA_TRIG_UART0RXTRG:
+	case EVTSVT_DMA_TRIG_SPI0RXTRG:
+	case EVTSVT_DMA_TRIG_LAESTRGB:
 		stat->dir = PERIPHERAL_TO_MEMORY;
 		break;
+	case EVTSVT_DMA_TRIG_LAESTRGA:
+	case EVTSVT_DMA_TRIG_ADC0TRG:
+	case EVTSVT_DMA_TRIG_SPI0TXTRG:
+	case EVTSVT_DMA_TRIG_UART0TXTRG:
+		stat->dir = MEMORY_TO_PERIPHERAL;
+		break;
+	#if CONFIG_SOC_SERIES_CC27XX
+	case EVTSVT_DMA_TRIG_UART1RXTRG:
+	case EVTSVT_DMA_TRIG_SPI1RXTRG:
+	case EVTSVT_DMA_TRIG_CANTRGB:
+		stat->dir = PERIPHERAL_TO_MEMORY;
+		break;
+	case EVTSVT_DMA_TRIG_UART1TXTRG:
+	case EVTSVT_DMA_TRIG_SPI1TXTRG:
+	case EVTSVT_DMA_TRIG_CANTRGA:
+		stat->dir = MEMORY_TO_PERIPHERAL;
+		break;
+	case EVTSVT_DMA_TRIG_LRFDTRG:
+		stat->dir = MEMORY_TO_MEMORY;
+	#endif
 	default:
-		/* ch6, ch7: SW trg */
 		stat->dir = MEMORY_TO_MEMORY;
 		break;
-	}
-
-	stat->busy = uDMAIsChannelEnabled(BIT(channel));
-
-	stat->pending_length = uDMAGetChannelSize(&data->desc[channel]);
-	if (data->desc[channel].control & UDMA_SIZE_16) {
-		stat->pending_length <<= 1;
-	} else if (data->desc[channel].control & UDMA_SIZE_32) {
-		stat->pending_length <<= 2;
 	}
 
 	return 0;
 }
 
-static int dma_cc23x0_enable(struct dma_cc23x0_data *data)
+static int dma_cc23x0_cc27xx_start(const struct device *dev, uint32_t channel)
+{
+
+	if (DMA_CC23X0_CC27XX_IS_ECH_CH(channel)) {
+		LOG_ERR("ECH channels are not supported");
+		return -ENOTSUP;
+	}
+
+	if (uDMAIsChannelEnabled(BIT(channel))) {
+		return -EBUSY;
+	}
+
+	uDMAEnable();
+	uDMAEnableChannel(BIT(channel));
+
+	struct dma_status status;
+
+	if (dma_cc23x0_cc27xx_get_status(dev, channel, &status) >= 0) {
+		LOG_DBG("Channel %d has direction %d", channel, status.dir);
+		if (status.dir == MEMORY_TO_MEMORY) {
+			uDMARequestChannel(BIT(channel));
+		}
+	}
+
+	return 0;
+}
+
+static int dma_cc23x0_cc27xx_enable(struct dma_cc23x0_cc27xx_data *data)
 {
 	CLKCTLEnable(CLKCTL_BASE, CLKCTL_DMA);
 
@@ -411,23 +435,20 @@ static int dma_cc23x0_enable(struct dma_cc23x0_data *data)
 	return 0;
 }
 
-static int dma_cc23x0_init(const struct device *dev)
+static int dma_cc23x0_cc27xx_init(const struct device *dev)
 {
-	IRQ_CONNECT(DT_INST_IRQN(0),
-		    DT_INST_IRQ(0, priority),
-		    dma_cc23x0_isr,
-		    DEVICE_DT_INST_GET(0),
-		    0);
+	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority), dma_cc23x0_cc27xx_isr,
+		    DEVICE_DT_INST_GET(0), 0);
 	irq_enable(DT_INST_IRQN(0));
 
-	return dma_cc23x0_enable(dev->data);
+	return dma_cc23x0_cc27xx_enable(dev->data);
 }
 
 #ifdef CONFIG_PM_DEVICE
 
-static int dma_cc23x0_pm_action(const struct device *dev, enum pm_device_action action)
+static int dma_cc23x0_cc27xx_pm_action(const struct device *dev, enum pm_device_action action)
 {
-	struct dma_cc23x0_data *data = dev->data;
+	struct dma_cc23x0_cc27xx_data *data = dev->data;
 	int i = 0;
 
 	switch (action) {
@@ -449,7 +470,7 @@ static int dma_cc23x0_pm_action(const struct device *dev, enum pm_device_action 
 		 * Despite this assumption, ensure that none transfer is ongoing in case
 		 * PM state lock was not properly handled by DMA clients.
 		 */
-		if (uDMAIsChannelEnabled(DMA_CC23_ALL_CH_MASK)) {
+		if (uDMAIsChannelEnabled(DMA_CC23X0_CC27XX_ALL_CH_MASK)) {
 			return -EBUSY;
 		}
 
@@ -458,12 +479,12 @@ static int dma_cc23x0_pm_action(const struct device *dev, enum pm_device_action 
 
 		return 0;
 	case PM_DEVICE_ACTION_RESUME:
-		dma_cc23x0_enable(data);
+		dma_cc23x0_cc27xx_enable(data);
 
 		/* Restore context for the channels that were configured before */
 		ARRAY_FOR_EACH_PTR(data->channels, ch_data) {
 			if (ch_data->configured) {
-				dma_cc23x0_config(dev, i, &ch_data->dma_cfg);
+				dma_cc23x0_cc27xx_config(dev, i, &ch_data->dma_cfg);
 			}
 			i++;
 		}
@@ -476,26 +497,17 @@ static int dma_cc23x0_pm_action(const struct device *dev, enum pm_device_action 
 
 #endif /* CONFIG_PM_DEVICE */
 
-#ifdef CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED
-static struct dma_cc23x0_data cc23x0_data = {
-	.desc = (uDMAControlTableEntry *)CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED_LOCATION,
-};
-#else
-static struct dma_cc23x0_data cc23x0_data;
-#endif /* CONFIG_DMA_TI_CONTROL_TABLE_PREALLOCATED */
+static struct dma_cc23x0_cc27xx_data cc23x0_data;
 
-static const struct dma_driver_api dma_cc23x0_api = {
-	.config = dma_cc23x0_config,
-	.start = dma_cc23x0_start,
-	.stop = dma_cc23x0_stop,
-	.reload = dma_cc23x0_reload,
-	.get_status = dma_cc23x0_get_status,
+static const struct dma_driver_api dma_cc23x0_cc27xx_api = {
+	.config = dma_cc23x0_cc27xx_config,
+	.start = dma_cc23x0_cc27xx_start,
+	.stop = dma_cc23x0_cc27xx_stop,
+	.reload = dma_cc23x0_cc27xx_reload,
+	.get_status = dma_cc23x0_cc27xx_get_status,
 };
 
-PM_DEVICE_DT_INST_DEFINE(0, dma_cc23x0_pm_action);
+PM_DEVICE_DT_INST_DEFINE(0, dma_cc23x0_cc27xx_pm_action);
 
-DEVICE_DT_INST_DEFINE(0, &dma_cc23x0_init,
-		      PM_DEVICE_DT_INST_GET(0),
-		      &cc23x0_data, NULL,
-		      PRE_KERNEL_1, CONFIG_DMA_INIT_PRIORITY,
-		      &dma_cc23x0_api);
+DEVICE_DT_INST_DEFINE(0, &dma_cc23x0_cc27xx_init, PM_DEVICE_DT_INST_GET(0), &cc23x0_data, NULL,
+		      PRE_KERNEL_1, CONFIG_DMA_INIT_PRIORITY, &dma_cc23x0_cc27xx_api);

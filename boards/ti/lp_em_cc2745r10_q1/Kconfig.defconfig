@@ -12,23 +12,6 @@ config ZEPHYR
 	bool
 	default y
 
-# The BLE Controller for cc27xx currently uses mbedTLS (SW-based) crypto APIs.
-# Therefore, we need to enable mbedTLS at the application. Otherwise, no crypto
-# device will be defined.
-config CRYPTO
-	default y
-config CRYPTO_CC27XX
-	default n
-config MBEDTLS
-	default y
-choice MBEDTLS_IMPLEMENTATION
-	default MBEDTLS_BUILTIN
-endchoice
-config CRYPTO_MBEDTLS_SHIM
-	default y
-config MBEDTLS_CIPHER_CCM_ENABLED
-	default y
-
 config BT_LL_HEAP_SIZE
 	hex
 	default 0x4E00
@@ -55,5 +38,11 @@ choice BT_RECV_CONTEXT
 endchoice
 
 endif # BT
+
+# The SPI driver only supports DMA mode
+if SPI
+config SPI_CC23X0_CC27XX_DMA_DRIVEN
+	default y
+endif # SPI
 
 endif # BOARD_LP_EM_CC2745R10_Q1

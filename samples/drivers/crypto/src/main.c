@@ -31,10 +31,8 @@ LOG_MODULE_REGISTER(main);
 #define CRYPTO_DEV_COMPAT nordic_nrf_ecb
 #elif DT_HAS_COMPAT_STATUS_OKAY(renesas_smartbond_crypto)
 #define CRYPTO_DEV_COMPAT renesas_smartbond_crypto
-#elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc27xx_aes)
-#define CRYPTO_DEV_COMPAT ti_cc27xx_aes
-#elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc23x0_aes)
-#define CRYPTO_DEV_COMPAT ti_cc23x0_aes
+#elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc23xx_cc27xx_aes)
+#define CRYPTO_DEV_COMPAT ti_cc23xx_cc27xx_aes
 #elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc35xx_hsm_crypto)
 #define CRYPTO_DEV_COMPAT ti_cc35xx_hsm_crypto
 #else

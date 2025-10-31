@@ -83,6 +83,8 @@
 			reg = <0x40034000 0x4C>;
 			interrupts = <11 0>;
 			clocks = <&sysclk>;
+			dmas = <&dma 2 6>, <&dma 3 7>;
+			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 
@@ -91,6 +93,8 @@
 			reg = <0x40035000 0x4C>;
 			interrupts = <22 0>;
 			clocks = <&sysclk>;
+			dmas = <&dma 0 12>, <&dma 1 13>;
+			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 
@@ -103,16 +107,37 @@
 			status = "disabled";
 		};
 
+		spi0: spi@40030000 {
+			compatible = "ti,cc23x0-cc27xx-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40030000 0x164>;
+			interrupts = <10 0>;
+			dmas = <&dma 0 0>, <&dma 1 1>;
+			dma-names = "tx", "rx";
+			status = "disabled";
+		};
+
 		aes: aes@400c0000 {
-			compatible = "ti,cc27xx-aes";
+			compatible = "ti,cc23xx-cc27xx-aes";
 			reg = <0x400c0000 0x120>;
 			interrupts = <9 0>;
+			dmas = <&dma 4 3>, <&dma 5 4>;
+			dma-names = "cha", "chb";
 			status = "disabled";
 		};
 
 		rng: entropy {
 			compatible = "ti,cc27xx-rng", "simple-bus";
 			status = "okay";
+		};
+
+		dma: dma@400C4000 {
+			compatible = "ti,cc23x0-cc27xx-dma";
+			reg = <0x400c4000 0x524>;
+			interrupts = <8 0>;
+			#dma-cells = <2>;
+			status = "disabled";
 		};
 	};
 };
