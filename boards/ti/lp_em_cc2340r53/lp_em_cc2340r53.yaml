@@ -12,4 +12,5 @@ supported:
   - gpio
   - adc
   - pwm
+  - dma
 vendor: ti

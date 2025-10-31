@@ -128,3 +128,7 @@
 &aes {
 	status = "okay";
 };
+
+&dma {
+	status = "okay";
+};

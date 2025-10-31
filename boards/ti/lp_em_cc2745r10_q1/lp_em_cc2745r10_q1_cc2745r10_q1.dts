@@ -128,3 +128,7 @@ ti_bt_hci: ti_bt_hci {
 &aes {
 	status = "okay";
 };
+
+&dma {
+	status = "okay";
+};
