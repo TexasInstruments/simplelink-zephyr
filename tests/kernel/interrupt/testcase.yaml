@@ -2,7 +2,14 @@ tests:
   arch.interrupt:
     # nios2 excluded, see #22956
     arch_exclude: nios2
-    platform_exclude: qemu_cortex_m0
+    platform_exclude:
+      - qemu_cortex_m0
+      # Currently LPF3 devices are configured to tick rates higher than the
+      # test support
+      - lp_em_cc2340r5
+      - lp_em_cc2340r53
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10_q1
     tags:
       - kernel
       - interrupt
@@ -19,7 +26,14 @@ tests:
     filter: not CONFIG_TRUSTED_EXECUTION_NONSECURE and CONFIG_MINIMAL_LIBC_SUPPORTED
     # nios2 excluded, see #22956
     arch_exclude: nios2
-    platform_exclude: qemu_cortex_m0
+    platform_exclude:
+      - qemu_cortex_m0
+      # Currently LPF3 devices are configured to tick rates higher than the
+      # test support
+      - lp_em_cc2340r5
+      - lp_em_cc2340r53
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10_q1
     tags:
       - kernel
       - interrupt
@@ -43,6 +57,12 @@ tests:
       # On it8xxx2_evb, current trigger_irq implementation of RISC-V architecture
       # does not trigger interrupts
       - it8xxx2_evb
+      # Currently LPF3 devices are configured to tick rates higher than the
+      # test support
+      - lp_em_cc2340r5
+      - lp_em_cc2340r53
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10_q1
     arch_exclude:
       # same as for qemu_cortex_m0, #22956
       - nios2
@@ -58,7 +78,14 @@ tests:
     filter: not CONFIG_TRUSTED_EXECUTION_NONSECURE
   arch.shared_interrupt.lto:
     # excluded because of failures during test_prevent_interruption
-    platform_exclude: qemu_cortex_m0
+    platform_exclude:
+      - qemu_cortex_m0
+      # Currently LPF3 devices are configured to tick rates higher than the
+      # test support
+      - lp_em_cc2340r5
+      - lp_em_cc2340r53
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10_q1
     arch_exclude:
       # same as above, #22956
       - nios2

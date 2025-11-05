@@ -1,0 +1,9 @@
+&lgpt1 {
+    clk-prescale = <31>;
+};
+
+/ {
+	aliases {
+		pwm-0 = &pwm5;
+	};
+};

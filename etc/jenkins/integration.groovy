@@ -4,7 +4,7 @@
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
-env.FWTOOLS_TAG = '2025.07.03_0'
+env.FWTOOLS_TAG = '2025.11.27_0'
 library("fwtools@${env.FWTOOLS_TAG}")
 
 /* Command syntax help text
@@ -41,8 +41,7 @@ pipeline
         /* Documentation target, see doc/Makefile */
         DOC_TARGET = 'html-fast'
 
-        /* Set up common docker-compose args */
-        DOCKER_COMPOSE_ADDITIONAL_ARGS = '-u jenkins'
+        /* Set up common docker compose args */
         DOCKER_COMPOSE_FILE = 'zephyr/etc/docker/docker-compose.yml'
         DOCKER_IMAGE_NAME = 'zephyr'
         /* These args come from .github/workflows/doc-build.yml and are used in the docs build step */
@@ -51,18 +50,30 @@ pipeline
         --keep-going -T\' -e SPHINXOPTS_EXTRA=\'-t publish\''
 
         GUIDELINE_CHECK_FILE = 'guideline_check_output.txt'
+
+        GIT_CONFIG_COUNT = 1
+
+        GIT_CONFIG_KEY_0 = 'http.postBuffer'
+
+        GIT_CONFIG_VALUE_0 = 524288000
+
         JENKINS_PYTHON_EXEC_NAME = 'python3.10'
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
 
         SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1/cc2745r10_q1 lp_em_cc2745r10_q1/cc2755r10'
         TEST_ALL_SUPPORTED_BOARDS = 'all_supported_ti'
 
-        TWISTER_COMMON =
-        '--force-color --inline-logs -v -N -M\
-        --retry-failed 3 --timeout-multiplier 2 --clobber-output -W'
+        TEST_SUBDIRECTORY = '.'
 
-        UID = sh(script: 'id -u', returnStdout: true)
-        GID = sh(script: 'id -g', returnStdout: true)
+        TWISTER_COMMON =
+        '--force-color --inline-logs -v -N \
+        --retry-failed 3 --timeout-multiplier 2 --clobber-output -W \
+        -j $(nproc)'
+
+        /* Avoid building large binary files */
+        TWISTER_KCONFIG_OVERRIDES = '-x CONFIG_BUILD_OUTPUT_BIN=n'
+
+        ZEPHYR_SDK_VERSION = '0.16.9'
     }
 
     parameters
@@ -137,6 +148,7 @@ pipeline
 
                     /* Don't pass -p if no boards specified */
                     if (env.BOARDS_FINAL != '') {
+                        env.LAB_DEVICE_LABELS = env.BOARDS_FINAL.split(' ').collect { (it.split('/').last() + '_ZEPHYR').toUpperCase() }.join(' ')
                         env.BOARDS_FINAL = '-p ' + env.BOARDS_FINAL.split(' ').join(' -p ')
                     }
 
@@ -152,9 +164,7 @@ pipeline
                         env.TESTFOLDERS_FINAL = '-T ' + env.TESTFOLDERS_FINAL.split(' ').join(' -T ')
                     }
 
-                    /* Build docker image, setting adding jenkins user */
-                    docker_compose.build(args: '--build-arg UID=$UID --build-arg GID=$GID \
-                    --build-arg UNAME="$(whoami)"')
+                    docker_compose.build(args: "--build-arg ZEPHYR_SDK_VERSION=${env.ZEPHYR_SDK_VERSION}")
 
                     /* Setup west and get modules. Ensure west update is successful and remove modules/hal/ti to
                        ensure we are using the internal hal_ti module. West update is done twice since the first call
@@ -164,7 +174,7 @@ pipeline
                         if [ ! -d .west ]; then \
                             west init -l zephyr > west.init.log; \
                         fi ; \
-                        west config manifest.group-filter -- +internal,-optional,-external; \
+                        west config manifest.group-filter -- +internal,-optional,-external ; \
                         west update -o=--depth=1 -n 2>&1 1> west.update.log || \
                         west update -o=--depth=1 -n 2>&1 1> west.update2.log
                         ''',
@@ -179,7 +189,7 @@ pipeline
                     if (westStatus != 0) {
                         common.printHeading(':warning: Environment setup failed')
                         common.printBody("Check west logs in build [artifacts](${env.RUN_ARTIFACTS_DISPLAY_URL})")
-                        unstable('Build marked unstable due to west issues')
+                        unstable("Build marked unstable due to west issues. Status code ${westStatus}")
                     }
                 }
             }
@@ -219,6 +229,7 @@ pipeline
 
                     /* Run coding guideline checks as is done in .github/workflows/coding_guidelines.yml */
                     int statusGuidelines = docker_compose.bashGetStatus("""\
+                        touch ${env.GUIDELINE_CHECK_FILE}; \
                         cd zephyr; \
                         source zephyr-env.sh; \
                         ./scripts/ci/guideline_check.py \
@@ -232,15 +243,15 @@ pipeline
                     if (statusCompliance != 0) {
                         common.printHeading(':warning: Compliance Checks Failed')
                         common.printBody("Compliance results: ([Full report](${env.JOB_URL}/Compliance_20Reports/))")
-                        unstable('Compliance check failures')
+                        unstable("Compliance check failures. Status code ${statusCompliance}")
                     } else {
                         common.printHeading(':white_check_mark: Compliance Checks Passed')
                     }
-
-                    if (statusGuidelines != 0) {
+                    String guidelineCheckContents = readFile(env.GUIDELINE_CHECK_FILE)
+                    if (statusGuidelines != 0 && guidelineCheckContents.size() != 0) {
                         common.printHeading(':warning: Coding Guideline Checks Failed')
-                        common.printBody(readFile(env.GUIDELINE_CHECK_FILE))
-                        unstable('Coding guideline check failures')
+                        common.printBody(guidelineCheckContents)
+                        unstable("Coding guideline check failures. Status code ${statusGuidelines}")
                     } else {
                         common.printHeading(':white_check_mark: Coding Guideline Checks Passed')
                     }
@@ -276,11 +287,14 @@ pipeline
 
                         docker_compose.bash("""\
                             cd zephyr ; \
+                            source zephyr-env.sh; \
+                            printenv;
                             make -C doc ${env.DOC_TARGET}
                         """,additionalArgs: env.DOCKER_SPHINX_ADDITIONAL_ARGS, label: 'Build docs')
 
                         docker_compose.bash("""\
                             cd zephyr ; \
+                            source zephyr-env.sh; \
                             ${env.JENKINS_PYTHON_EXEC_NAME} -m coverxygen --xml-dir  doc/_build/html/doxygen/xml/ \
                             --src-dir include/ --output doc-coverage.info; \
                             lcov --remove doc-coverage.info */deprecated > new.info; \
@@ -316,23 +330,28 @@ pipeline
                     if (keywords.containsKey('no_twister')) {
                         common.printHeading('Skipped Twister')
                     } else {
-                        common.printHeading(':cyclone: Twister Builds')
+                        common.printHeading(':cyclone: Twister')
+                        common.printHeading('Test Suite Builds')
 
                         /* Run twister tests as is done in .github/workflows/twister.yml
                            ZEPHYR-166: remove -W to treat warnings are error
-                           ZEPHYR-167: add device testing with
-                           west twister --device-testing --device-serial /dev/ttyACM0 --platform lp_em_cc2340r5
-                           -T zephyr/tests/drivers/hwinfo/ -W --clobber-output --west-flash --west-runner=openocd
                            Use pull_request_target parts of .github/workflows/twister.yml */
                         int statusTwister = docker_compose.bashGetStatus("""\
                             cd zephyr; \
                             source zephyr-env.sh; \
-                            west twister ${env.TWISTER_COMMON} --build-only ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}; \
+                            west twister --prep-artifacts-for-testing ${env.TWISTER_COMMON} ${env.TWISTER_KCONFIG_OVERRIDES} ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}; \
                         """, label: 'Build twister tests')
 
                         if (statusTwister != 0) {
-                            unstable('Build marked unstable due to twister failures')
+                            unstable("Build marked unstable due to twister failures. Status code ${statusTwister}")
                         }
+
+                        stash(
+                            name: 'firmware_images',
+                            includes: ".west/**/*,zephyr/twister-out/**/*",
+                            allowEmpty: true
+                        )
+
                         /* Check out fwtools to have access to ./fwtools/scripts/jenkins/parse-xml-results.py */
                         git.checkoutHttps('lprfmw', 'fwtools', env.FWTOOLS_TAG)
 
@@ -341,11 +360,20 @@ pipeline
 |--------------|--------|--------|-------|---------|-------|
 '''
                         /* Publish test summary to PR comment */
-                        testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister.xml')
-                            common.printBody(testResultTable)
+                        sh('cp zephyr/twister-out/twister.xml zephyr/twister-out/twister_build.xml')
 
-                        junit testResults: 'zephyr/twister-out/twister.xml',
+                        testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister_build.xml')
+                        common.printBody(testResultTable)
+
+                        junit testResults: 'zephyr/twister-out/twister_build.xml',
                         allowEmptyResults: true, skipPublishingChecks: true
+
+                        env.LOCATION = 'oslo'
+
+                        /* Only mount devices when required */
+                        common.printHeading('Tests Results')
+                        test.allDevices(env.LAB_DEVICE_LABELS, '', additionalNodeSpec: env.LOCATION + "&& zephyr", twister: true)
+
                     }
                 }
             }

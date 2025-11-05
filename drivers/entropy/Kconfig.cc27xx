@@ -16,6 +16,15 @@ config ENTROPY_CC27XX_RNG
 
 if ENTROPY_CC27XX_RNG
 
+config HEAP_MEM_POOL_ADD_SIZE_ENTROPY
+	int
+	default 3072
+	help
+	  Add heap memory if entropy driver is enabled.
+	  Entropy driver depends on large amount of radio noise for
+	  generating entropy, which is dynamically allocated and freed
+	  during entropy driver initialization.
+
 config ENTROPY_CC27XX_NOISE_INPUT_WORD_LENGTH
 	int "Number of words from the Radio noise to use to generate 32-byte entropy"
 	default 512
@@ -26,7 +35,8 @@ config ENTROPY_CC27XX_NOISE_INPUT_WORD_LENGTH
 	  32 bytes of entropy. Increasing this value will increase the time it takes
 	  to generate the entropy, but may improve the quality of the entropy.
 	  The maximum value is 1024 words. The value must be a multiple of 32.
-	  Increasing this value will also increase the stack usage in the system.
+	  Increasing this value will also increase heap usage, and the config value
+	  HEAP_MEM_POOL_ADD_SIZE_BOARD must be increased accordingly.
 
 config ENTROPY_CC27XX_ENTROPY_BYTE_LENGTH
 	int "Number of bytes of entropy to generate"

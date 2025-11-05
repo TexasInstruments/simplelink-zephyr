@@ -1,7 +1,7 @@
 .. _ble_mesh_lpn:
 
 Bluetooth: Mesh LPN
-###############
+###################
 
 Overview
 ********

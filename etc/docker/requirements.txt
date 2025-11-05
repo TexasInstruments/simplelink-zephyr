@@ -46,3 +46,10 @@ pyserial
 
 # Doxygen doxmlparser
 doxmlparser
+
+
+west == 1.3.0               # WEST, Zephyr's 'meta tool'
+conan == 1.66.0
+construct
+# TODO: Remove once crc tool support is merged in upstream zephyr (ZEPHYR-170)
+ti-simplelink-crc-tool

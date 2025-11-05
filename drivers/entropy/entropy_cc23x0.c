@@ -280,11 +280,18 @@ static int entropy_cc23x0_init(const struct device *dev)
 	int_fast16_t	rcl_status;
 	int_fast16_t	sha256_sw_status;
 	size_t          noise_length = CONFIG_ENTROPY_CC23X0_NOISE_INPUT_WORD_LENGTH * 4;
+
 	/* Each 32-bytes of entropy will be generated from given noise input array */
-	uint32_t rcl_noise[CONFIG_ENTROPY_CC23X0_NOISE_INPUT_WORD_LENGTH] = {0};
+	uint32_t *rcl_noise;
+
+	rcl_noise = k_malloc(noise_length);
+	if (rcl_noise == NULL) {
+		return -ENOSR;
+	}
+
 	/* Since the value of entropy length has already been verified, performing
-	 * a simple division and taking the floor value here suffice.
-	 */
+	* a simple division and taking the floor value here suffice.
+	*/
 	uint16_t entropy_iter = CONFIG_ENTROPY_CC23X0_ENTROPY_BYTE_LENGTH /
 				SHA256_DIGEST_LENGTH_BYTES;
 
@@ -294,7 +301,7 @@ static int entropy_cc23x0_init(const struct device *dev)
 	for (int i = 0; i < entropy_iter; i++) {
 		/* Clear noise data array and retrieve RCL noise */
 		memset(rcl_noise, 0, noise_length);
-		rcl_status = get_rcl_noise(rcl_noise, ARRAY_SIZE(rcl_noise));
+		rcl_status = get_rcl_noise(rcl_noise, CONFIG_ENTROPY_CC23X0_NOISE_INPUT_WORD_LENGTH);
 
 		if (CONFIG_ENTROPY_CC23X0_RCT_ENABLED || CONFIG_ENTROPY_CC23X0_APT_ENABLED) {
 			/* Perform Health Checks on the noise data before generating entropy */
@@ -307,15 +314,17 @@ static int entropy_cc23x0_init(const struct device *dev)
 								rcl_noise, noise_length,
 					(uint32_t *)(entropy + (i * SHA256_DIGEST_LENGTH_BYTES)));
 			if (sha256_sw_status != SHA2SW_STATUS_SUCCESS) {
+				k_free(rcl_noise);
 				return -EIO;
 			}
 			entropy_pool_level += SHA256_DIGEST_LENGTH_BYTES;
 		} else {
 			/* Error retrieving noise from RCL or not suitable noise data */
+			k_free(rcl_noise);
 			return rcl_status;
 		}
 	}
-
+	k_free(rcl_noise);
 	return 0;
 }
 

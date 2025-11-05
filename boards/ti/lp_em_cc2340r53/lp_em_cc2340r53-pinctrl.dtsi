@@ -108,11 +108,11 @@
 		pinmux = <16 DIO16_T1_C0N>;
 		bias-disable;
 	};
-	pwm4_default: lgpt1_chan2_default {
+	pwm4_default: lgpt1_chan1_default {
 		pinmux = <17 DIO17_T1_C1N>;
 		bias-disable;
 	};
-	pwm5_default: lgpt1_chan3_default {
+	pwm5_default: lgpt1_chan2_default {
 		pinmux = <14 DIO14_T1_C2N>;
 		bias-disable;
 	};

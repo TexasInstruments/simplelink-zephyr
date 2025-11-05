@@ -1,13 +1,11 @@
 # This file is intended to be used only in TI's internal Continuous Integration
 # (CI) system and will not function outside.
-version: '3.7'
 services:
   zephyr:
     # Set to current user
-    user: ${USER}
     build:
-      context: ./
-      dockerfile: Dockerfile
+      context: ../../../
+      dockerfile: zephyr/etc/docker/Dockerfile
     # Same as service name
     hostname: zephyr
     environment:
@@ -23,5 +21,3 @@ services:
       # This places us in the general Jenkins workspace, where zephyr
       # is cloned to a subfolder
       - ../../../:/project
-    working_dir: /project
-    network_mode: bridge

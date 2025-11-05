@@ -42,10 +42,26 @@ struct hci_driver_data {
  */
 #define BLE_SYNC_INIT_TIMEOUT_SEC   10
 #define BLE_SYNC_INIT_TIMEOUT_TICKS 10000 /* K_SECONDS(BLE_SYNC_INIT_TIMEOUT_SEC) */
+
+/* Offsets for HCI Command Complete Event fields */
+#define HCI_CMD_COMPLETE_EVT_CODE_OFFSET       1
+#define HCI_CMD_COMPLETE_PARAMS_LEN_OFFSET     2
+#define HCI_CMD_COMPLETE_NUM_CMD_PKTS_OFFSET   3
+#define HCI_CMD_COMPLETE_OPCODE_LSB_OFFSET     4
+#define HCI_CMD_COMPLETE_OPCODE_MSB_OFFSET     5
+#define HCI_CMD_COMPLETE_STATUS_OFFSET         6
+#define HCI_CMD_COMPLETE_PARAMS_START_OFFSET   7
+#define HCI_VS_PARAMS_LEN_OFFSET               2
+#define HCI_VS_STATUS_OFFSET                   5
+#define HCI_VS_OPCODE_LSB_OFFSET               6
+#define HCI_VS_OPCODE_MSB_OFFSET               7
+#define HCI_VS_MIN_LENGTH                      8
+
 /*******************************************************************************
  * LOCAL FUNCTIONS PROTOTYPES
  */
 static int hci_driver_ll_send_to_host_cb(uint8 *pHciPkt, uint16 pktLen);
+static int convert_vs_le_meta_event(uint8 *pHciPkt, uint16 *pktLen);
 /* static void vs_set_bd_addr(); */
 
 /*******************************************************************************
@@ -234,15 +250,114 @@ static int hci_driver_send(const struct device *dev, struct net_buf *buf)
 	return 0; /* Assuming 0 indicates success */
 }
 
+/*******************************************************************************
+ * @fn          convert_vs_le_meta_event
+ * @brief Converts a VS LE meta event to a command complete event.
+ *
+ * This function processes a Vendor Specific (VS) Low Energy (LE) meta event,
+ * extracting relevant information from the provided input buffer and converting
+ * it into an command complete event structure.
+ *
+ * @param[in]  pHciPkt  Pointer to the input buffer containing the raw VS LE meta event data.
+ * @param[in]  pktLen   Pointer to length of the input buffer in bytes.
+ * @param[out] pHciPkt  Pointer to the output structure where the converted event data
+ *                      will be stored.
+ * @param[out] pktLen   Pointer to the length of the output structure in bytes.
+ *
+ * @return 0 on success, -EINVAL on null pointers or invalid length.
+ */
+static int convert_vs_le_meta_event(uint8 *pHciPkt, uint16 *pktLen)
+{
+	int ret_val = 0;
+	uint8_t opcode_lsb;
+	uint8_t opcode_msb;
+	uint8_t params_len = 0;
+	uint8_t len_offset = 0;
+	uint8_t status;
+	uint8_t *params = NULL;
+
+	/* Check minimum length for Vendor-Specific LE Meta Event */
+	if ((pHciPkt == NULL) || (pktLen == NULL) || (*pktLen < HCI_VS_MIN_LENGTH)) {
+		ret_val = -EINVAL;
+	} else {
+		/* Extract all needed fields from vendor-specific LE Meta Event: */
+		/* Extract opcode */
+		opcode_lsb = pHciPkt[HCI_VS_OPCODE_LSB_OFFSET];
+		opcode_msb = pHciPkt[HCI_VS_OPCODE_MSB_OFFSET];
+
+		/* Extracts the parameters length from the vendor-specific (VS) HCI packet.
+		 * The parameters length (`params_len`) is calculated by taking the VS parameter length,
+		 * and subtracting the difference between the VS header length (`HCI_VS_MIN_LENGTH`)
+		 * and the location of the VS parameter length field. This ensures that only the actual
+		 * parameter data length is extracted, excluding the header bytes.*/
+		params_len = pHciPkt[HCI_VS_PARAMS_LEN_OFFSET] - HCI_VS_MIN_LENGTH +
+		             HCI_VS_PARAMS_LEN_OFFSET + 1;
+
+		if ((params_len > 0) && (*pktLen > HCI_VS_MIN_LENGTH)) {
+			/* Extract parameters */
+			params = &pHciPkt[HCI_VS_MIN_LENGTH];
+		}
+
+		/* Extract status */
+		status = pHciPkt[HCI_VS_STATUS_OFFSET];
+
+		/* Build HCI Command Complete Event (0x0E): */
+
+		/* Set event code for Command Complete */
+		pHciPkt[HCI_CMD_COMPLETE_EVT_CODE_OFFSET] = BT_HCI_EVT_CMD_COMPLETE;
+
+		/* Set parameters length */
+		len_offset = HCI_CMD_COMPLETE_STATUS_OFFSET - HCI_CMD_COMPLETE_PARAMS_LEN_OFFSET;
+		pHciPkt[HCI_CMD_COMPLETE_PARAMS_LEN_OFFSET] = len_offset + params_len;
+
+		/* Set Num_HCI_Command_Packets */
+		pHciPkt[HCI_CMD_COMPLETE_NUM_CMD_PKTS_OFFSET] = 1;
+
+		/* Set OpCode LSB and MSB */
+		pHciPkt[HCI_CMD_COMPLETE_OPCODE_LSB_OFFSET] = opcode_lsb;
+		pHciPkt[HCI_CMD_COMPLETE_OPCODE_MSB_OFFSET] = opcode_msb;
+
+		/* Set status */
+		pHciPkt[HCI_CMD_COMPLETE_STATUS_OFFSET] = status;
+
+		/* Copy all event parameters (if any) */
+		if ((params != NULL) && (params_len > 0)) {
+			if ((HCI_CMD_COMPLETE_PARAMS_START_OFFSET + params_len) <= *pktLen) {
+				memmove(&pHciPkt[HCI_CMD_COMPLETE_PARAMS_START_OFFSET],
+						params, params_len);
+			} else {
+				/* Invalid length, do nothing */
+				ret_val = -EINVAL;
+			}
+		}
+
+		/* Set the new pktLen */
+		*pktLen = (HCI_CMD_COMPLETE_PARAMS_LEN_OFFSET + 1) +
+					pHciPkt[HCI_CMD_COMPLETE_PARAMS_LEN_OFFSET];
+	}
+
+	return ret_val;
+}
+
 struct net_buf *hci_evt_create(uint8 *pHciPkt, uint16 pktLen)
 {
 	struct net_buf *buf;
+	uint8_t status = 0;
 
 	enum bt_buf_type buf_type = bt_buf_type_in[pHciPkt[0] /* pktType */];
 
 	if (buf_type == HCI_TYPE_INVALID) {
 		LOG_ERR("Received Invalid pkt type from the Controller: %u", pHciPkt[0]);
 		return NULL;
+	}
+
+	if ((buf_type == BT_BUF_EVT) && (pHciPkt[1] == BT_HCI_EVT_VENDOR)) {
+		/* Convert Vendor-Specific LE Meta Event to Command Complete Event */
+		status = convert_vs_le_meta_event(pHciPkt, &pktLen);
+		if (status != 0) {
+			LOG_ERR("Failed to convert VS LE Meta Event to Command Complete Event");
+			return NULL;
+		}
 	}
 
 	if (buf_type == BT_BUF_EVT) {

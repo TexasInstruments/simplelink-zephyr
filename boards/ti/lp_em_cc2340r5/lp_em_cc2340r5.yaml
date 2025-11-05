@@ -11,4 +11,5 @@ toolchain:
 supported:
   - gpio
   - adc
+  - pwm
 vendor: ti
