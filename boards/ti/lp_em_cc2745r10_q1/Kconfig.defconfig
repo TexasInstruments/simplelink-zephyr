@@ -56,12 +56,4 @@ endchoice
 
 endif # BT
 
-if ENTROPY_GENERATOR
-# Need to increase the main stack size if entropy driver is enabled.
-# Entropy driver depends on large amount of radio noise for
-# generating entropy.
-config MAIN_STACK_SIZE
-	default 3072
-endif # ENTROPY_GENERATOR
-
 endif # BOARD_LP_EM_CC2745R10_Q1
