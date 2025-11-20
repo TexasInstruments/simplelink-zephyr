@@ -26,7 +26,7 @@ to add support for specific SimpleLink Wireless MCUs. Please see the
 this TI release is based on. Other dependency info is included there as well.
 
 This release contains
-support for the `CC2340R5`, `CC2340R53`, `CC2745R10_Q1`, and `CC2755R10` devices.
+support for the `CC2340R5`, `CC2340R53`, `CC2745R10_Q1`, `CC2755R10`, `CC3551E` devices.
 The `CC32xx` and `CC13xx_CC26xx` devices are
 not supported in this release. However, the Zephyr community continues to
 support them in the upstream repositories.
@@ -39,6 +39,7 @@ Supported by this release:
 - [CC2340R53](https://www.ti.com/product/CC2340R5)
 - [CC2745R10_Q1](https://www.ti.com/product/CC2745R10-Q1)
 - [CC2755R10](https://www.ti.com/product/CC2755R10)
+- [CC3551E](https://www.ti.com/product/CC3551E)
 
 Supported by the Zephyr community:
 
@@ -60,6 +61,7 @@ Supported by this release:
 - [lp_em_cc2340r53](https://www.ti.com/tool/LP-EM-CC2340R5)
 - [lp_em_cc2745r10_q1](https://www.ti.com/product/CC2745R10-Q1)
 - [lp_em_cc2755](https://www.ti.com/product/CC2755R10)
+- [lp_em_cc35x1](https://www.ti.com/tool/LP-EM-CC35X1)
 
 Supported by the Zephyr community:
 
@@ -149,6 +151,11 @@ is available. The recommended version to use is V7.94f which has been used for
 validation. Note that it is also possible to build an application in Zephyr
 targeting `CC2340R5`, and to use [Code Composer Studio](https://www.ti.com/tool/CCSTUDIO)
 to both flash and debug the application using the XDS110 debugger.
+
+### Programming the lp_em_cc35x1
+
+The SimpleLink Wi-Fi toolbox is required from TI to program the lp_em_cc35x1.
+The toolbox is available for download [here](https://www.ti.com/drr/opn/SIMPLELINK-WIFI-SDK-PREVIEW).
 
 ## Versioning
 
