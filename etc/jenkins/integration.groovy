@@ -42,7 +42,6 @@ pipeline
         DOC_TARGET = 'html-fast'
 
         /* Set up common docker-compose args */
-        //DOCKER_COMPOSE_ADDITIONAL_ARGS = '-u jenkins'
         DOCKER_COMPOSE_FILE = 'zephyr/etc/docker/docker-compose.yml'
         DOCKER_IMAGE_NAME = 'zephyr'
         /* These args come from .github/workflows/doc-build.yml and are used in the docs build step */

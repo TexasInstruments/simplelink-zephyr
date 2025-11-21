@@ -25,4 +25,4 @@ services:
       - /dev/serial:/dev/serial:ro
     devices:
       - /dev/bus:/dev/bus
-      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev:/dev
