@@ -348,7 +348,7 @@ manifest:
       path: modules/lib/zcbor
     - name: hal_ti
       url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
-      revision: 46407c76196-ti-9.10-internal
+      revision: 218d961-ti-9.14-internal
       groups:
         - internal
 
