@@ -1,6 +1,5 @@
 # This file is intended to be used only in TI's internal Continuous Integration
 # (CI) system and will not function outside.
-version: '3.7'
 services:
   zephyr:
     # Set to current user
@@ -22,7 +21,3 @@ services:
       # This places us in the general Jenkins workspace, where zephyr
       # is cloned to a subfolder
       - ../../../:/project
-      - /dev/serial:/dev/serial:ro
-    devices:
-      - /dev/bus:/dev/bus
-      - /dev:/dev

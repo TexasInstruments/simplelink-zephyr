@@ -4,7 +4,7 @@
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
-env.FWTOOLS_TAG = '2025.11.07_0'
+env.FWTOOLS_TAG = '2025.11.27_0'
 library("fwtools@${env.FWTOOLS_TAG}")
 
 /* Command syntax help text
@@ -41,7 +41,7 @@ pipeline
         /* Documentation target, see doc/Makefile */
         DOC_TARGET = 'html-fast'
 
-        /* Set up common docker-compose args */
+        /* Set up common docker compose args */
         DOCKER_COMPOSE_FILE = 'zephyr/etc/docker/docker-compose.yml'
         DOCKER_IMAGE_NAME = 'zephyr'
         /* These args come from .github/workflows/doc-build.yml and are used in the docs build step */
@@ -50,6 +50,13 @@ pipeline
         --keep-going -T\' -e SPHINXOPTS_EXTRA=\'-t publish\''
 
         GUIDELINE_CHECK_FILE = 'guideline_check_output.txt'
+
+        GIT_CONFIG_COUNT = 1
+
+        GIT_CONFIG_KEY_0 = 'http.postBuffer'
+
+        GIT_CONFIG_VALUE_0 = 524288000
+
         JENKINS_PYTHON_EXEC_NAME = 'python3.10'
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
 
@@ -60,7 +67,8 @@ pipeline
 
         TWISTER_COMMON =
         '--force-color --inline-logs -v -N \
-        --retry-failed 3 --timeout-multiplier 2 --clobber-output -W'
+        --retry-failed 3 --timeout-multiplier 2 --clobber-output -W \
+        -j $(nproc)'
 
         /* Avoid building large binary files */
         TWISTER_KCONFIG_OVERRIDES = '-x CONFIG_BUILD_OUTPUT_BIN=n'
@@ -362,6 +370,7 @@ pipeline
 
                         env.LOCATION = 'oslo'
 
+                        /* Only mount devices when required */
                         common.printHeading('Tests Results')
                         test.allDevices(env.LAB_DEVICE_LABELS, '', additionalNodeSpec: env.LOCATION + "&& zephyr", twister: true)
 
