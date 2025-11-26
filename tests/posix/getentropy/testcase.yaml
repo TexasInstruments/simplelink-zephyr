@@ -1,6 +1,11 @@
 common:
   filter: dt_chosen_enabled("zephyr,entropy") and CONFIG_ENTROPY_HAS_DRIVER and
     not CONFIG_NATIVE_LIBC
+  platform_exclude:
+    - lp_em_cc2340r5
+    - lp_em_cc2340r53
+    - lp_em_cc2745r10_q1/cc2745r10_q1
+    - lp_em_cc2745r10_q1/cc2755r10_q1
   integration_platforms:
     - native_sim
   tags:
