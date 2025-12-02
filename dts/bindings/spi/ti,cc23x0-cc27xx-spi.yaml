@@ -1,9 +1,9 @@
 # Copyright (c) 2024 BayLibre, SAS
 # SPDX-License-Identifier: Apache-2.0
 
-description: TI SimpleLink CC23x0 SPI node
+description: TI SimpleLink CC23x0_CC27xx SPI node
 
-compatible: "ti,cc23x0-spi"
+compatible: "ti,cc23x0-cc27xx-spi"
 
 include: [spi-controller.yaml, pinctrl-device.yaml, base.yaml]
 
