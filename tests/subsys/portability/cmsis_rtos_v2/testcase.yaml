@@ -1,6 +1,13 @@
 tests:
   portability.cmsis_rtos_v2:
-    platform_exclude: m2gl025_miv
+    platform_exclude:
+      - m2gl025_miv
+      # Currently LPF3 devices are configured to tick rates higher than the
+      # tests support
+      - lp_em_cc2340r5
+      - lp_em_cc2340r53
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10_q1
     tags: cmsis_rtos
     min_ram: 32
     min_flash: 34
