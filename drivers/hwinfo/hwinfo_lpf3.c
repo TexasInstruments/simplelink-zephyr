@@ -18,7 +18,7 @@
 #include DeviceFamily_constructPath(inc/hw_memmap.h)
 
 /* Number of bytes in device ID */
-#define CC23X0_DEVID_SIZE 16
+#define DEVID_SIZE 16
 #define EUI64_SIZE 8
 
 int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
@@ -56,6 +56,17 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 	case PMCTL_RESET_SWD:
 		*cause = RESET_DEBUG;
 		break;
+#if CONFIG_SOC_SERIES_CC27XX
+	case PMCTL_RESET_EM_SENSOR:
+		*cause = RESET_SECURITY;
+		break;
+	case PMCTL_RESET_TAMPER:
+		*cause = RESET_SECURITY;
+		break;
+	case PMCTL_RESET_SRAM_PARITY_ERROR:
+		*cause = RESET_PARITY;
+		break;
+#endif
 	}
 
 	return 0;
@@ -63,6 +74,7 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 
 int z_impl_hwinfo_get_supported_reset_cause(uint32_t *supported)
 {
+	#if CONFIG_SOC_SERIES_CC23X0
 	*supported = (RESET_POR
 			  | RESET_PIN
 		      | RESET_BROWNOUT
@@ -72,6 +84,19 @@ int z_impl_hwinfo_get_supported_reset_cause(uint32_t *supported)
 			  | RESET_WATCHDOG
 			  | RESET_CPU_LOCKUP
 			  | RESET_DEBUG);
+	#elif CONFIG_SOC_SERIES_CC27XX
+	*supported = (RESET_POR
+			  | RESET_PIN
+		      | RESET_BROWNOUT
+		      | RESET_CLOCK
+		      | RESET_SOFTWARE
+		      | RESET_TEMPERATURE
+			  | RESET_WATCHDOG
+			  | RESET_CPU_LOCKUP
+			  | RESET_DEBUG
+			  | RESET_SECURITY
+			  | RESET_PARITY);
+	#endif
 
 	return 0;
 }
@@ -83,8 +108,8 @@ int z_impl_hwinfo_clear_reset_cause(void)
 
 ssize_t z_impl_hwinfo_get_device_id(uint8_t *buffer, size_t length)
 {
-	if (length > CC23X0_DEVID_SIZE) {
-		length = CC23X0_DEVID_SIZE;
+	if (length > DEVID_SIZE) {
+		length = DEVID_SIZE;
 	}
 
 	memcpy(buffer, &(fcfg->deviceInfo.dieId), length);
