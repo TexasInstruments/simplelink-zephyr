@@ -40,14 +40,6 @@ config IDLE_STACK_SIZE
   default 320
 endif # PM
 
-if ENTROPY_GENERATOR
-# Need to increase the main stack size if entropy driver is enabled.
-# Entropy driver depends on large amount of radio noise for
-# generating entropy.
-config MAIN_STACK_SIZE
-	default 3072
-endif # ENTROPY_GENERATOR
-
 # The SPI driver only supports DMA mode
 if SPI
 config SPI_CC23X0_CC27XX_DMA_DRIVEN

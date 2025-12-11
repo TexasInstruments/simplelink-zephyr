@@ -14,8 +14,7 @@ config ZEPHYR
 
 config BT_LL_HEAP_SIZE
 	hex
-	default 0x1880 if BT_MESH
-	default 0x4000
+	default 0x1880
 
 config BT_BUF_EVT_RX_SIZE
 	default 255
@@ -46,14 +45,6 @@ if PM
 config IDLE_STACK_SIZE
 	default 320
 endif # PM
-
-if ENTROPY_GENERATOR
-# Need to increase the main stack size if entropy driver is enabled.
-# Entropy driver depends on large amount of radio noise for
-# generating entropy.
-config MAIN_STACK_SIZE
-	default 3072
-endif # ENTROPY_GENERATOR
 
 # The SPI driver only supports DMA mode
 if SPI
