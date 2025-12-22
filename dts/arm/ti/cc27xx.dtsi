@@ -139,6 +139,16 @@
 			#dma-cells = <2>;
 			status = "disabled";
 		};
+
+		adc0: adc@40050000 {
+			compatible = "ti,lpf3-adc";
+			reg = <0x40050000 0xe30>;
+			interrupts = <15 0>;
+			#io-channel-cells = <1>;
+			dmas = <&dma 3 5>;
+			dma-names = "dma";
+			status = "disabled";
+		};
 	};
 };
 

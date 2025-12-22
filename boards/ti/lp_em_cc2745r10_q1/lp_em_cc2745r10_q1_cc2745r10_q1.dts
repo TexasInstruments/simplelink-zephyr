@@ -162,3 +162,14 @@ ti_bt_hci: ti_bt_hci {
 &dma {
 	status = "okay";
 };
+
+&adc0 {
+	status = "okay";
+	pinctrl-0 = <&adc0_ch3
+		     &adc0_ch4
+		     &adc0_ch5
+		     &adc0_ch6
+		     &adc0_ch7
+		     &adc0_ch8>;
+	pinctrl-names = "default";
+};
