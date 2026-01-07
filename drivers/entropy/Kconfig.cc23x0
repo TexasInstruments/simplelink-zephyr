@@ -28,6 +28,7 @@ config HEAP_MEM_POOL_ADD_SIZE_ENTROPY
 config ENTROPY_CC23X0_NOISE_INPUT_WORD_LENGTH
 	int "Number of words from the Radio noise to use to generate 32-byte entropy"
 	default 512
+	range 256 1024
 	help
 	  The size in words of the buffer used to get the noise from Radio.
 	  This is the amount of noise that will be used to generate 32 bytes of entropy.
@@ -36,11 +37,11 @@ config ENTROPY_CC23X0_NOISE_INPUT_WORD_LENGTH
 	  to generate the entropy, but may improve the quality of the entropy.
 	  The maximum value is 1024 words. The value must be a multiple of 32.
 	  Increasing this value will also increase heap usage, and the config value
-	  HEAP_MEM_POOL_ADD_SIZE_BOARD must be increased accordingly.
+	  HEAP_MEM_POOL_ADD_SIZE_ENTROPY must be increased accordingly.
 
 config ENTROPY_CC23X0_ENTROPY_BYTE_LENGTH
 	int "Number of bytes of entropy to generate"
-	default 128
+	default 256
 	help
 	  The size in bytes of the entropy to generate. The minimum value is 64 bytes.
 	  But, it is recommended to use 128 bytes to provide entropy for other generators

@@ -53,3 +53,21 @@ if BT_MESH_LOW_POWER
 
 endif # BT_MESH_LOW_POWER
 endif # BT_MESH
+
+# Choose non-hardware based RNG
+choice RNG_GENERATOR_CHOICE
+	default XOSHIRO_RANDOM_GENERATOR
+endchoice
+
+# Use CTR DRBG since the entropy driver is not designed to provide continuous RNG
+choice CSPRNG_GENERATOR_CHOICE
+	default CTR_DRBG_CSPRNG_GENERATOR
+endchoice
+
+# By default mbedTLS uses RAM for AES tables, which are too big
+if MBEDTLS
+	config MBEDTLS_AES_ROM_TABLES
+		default y
+	config TEST_EXTRA_STACK_SIZE
+	default 1024
+endif # MBEDTLS
