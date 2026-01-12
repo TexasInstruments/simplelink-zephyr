@@ -81,7 +81,7 @@ ti_bt_hci: ti_bt_hci {
 			reg = <0x00000000 0x0000a000>;
 		};
 
-		/* 233472 Bytes (0x39000) per slot for application */
+		/* 446464 Bytes (0x6d000) per slot for application */
 		slot0_partition: partition@a000 {
 			label = "image-0";
 			reg = <0x0000a000 0x0006d000>;
