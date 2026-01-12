@@ -21,6 +21,7 @@ config SOC_SERIES_CC27XX
 	select DYNAMIC_THREAD
 	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
+	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
 
 
 menu "Customer Configuration (CCFG)"
