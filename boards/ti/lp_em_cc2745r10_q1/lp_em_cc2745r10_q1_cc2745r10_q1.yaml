@@ -13,4 +13,5 @@ supported:
   - dma
   - crypto
   - spi
+  - adc
 vendor: ti

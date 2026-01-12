@@ -99,4 +99,46 @@
 		pinmux = <19 DIO19_GPIO19>;
 		bias-pull-up;
 	};
+	/* ADC channels. */
+
+	adc0_ch0: adc0_ch0 {
+		pinmux = <28 DIO28_ADC0_AREFM>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch1: adc0_ch1 {
+		pinmux = <27 DIO27_ADC1_AREFP>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch3: adc0_ch3 {
+		pinmux = <22 DIO22_ADC3>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch4: adc0_ch4 {
+		pinmux = <21 DIO21_ADC4_LPCP_LPCM>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch5: adc0_ch5 {
+		pinmux = <20 DIO20_ADC5_LPCP_LPCM>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch6: adc0_ch6 {
+		pinmux = <19 DIO19_ADC6_LPCP>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch7: adc0_ch7 {
+		pinmux = <18 DIO18_ADC7>;
+		bias-disable;
+		input-enable;
+	};
+	adc0_ch8: adc0_ch8 {
+		pinmux = <17 DIO17_ADC8>;
+		bias-disable;
+		input-enable;
+	};
 };
