@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Texas Instruments Incorporated
+ * Copyright (c) 2026 Texas Instruments Incorporated
  * Copyright (c) 2024 Baylibre, SAS
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -307,6 +307,14 @@ static int power_initialize(void)
 	 * exceeds -50 degrees Celsius, and drifts 2 degrees or more.
 	 */
 	PowerLPF3_enableHFXTCompensation(-50, 2);
+
+	#ifdef CONFIG_GPIO
+	/* Enable pad power to use GPIOs by setting VDDIOPGIO. This is only done for
+	 * CC27XX to support split rails.
+	 */
+	PMCTLEnableVddioGpioPadPower();
+
+	#endif
 
 	irq_unlock(ret);
 
