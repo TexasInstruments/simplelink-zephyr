@@ -22,6 +22,9 @@ config SOC_SERIES_CC27XX
 	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
 	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
+	select HAS_PM
+	select PM_DEVICE if PM
+	select HAS_POWEROFF
 
 
 menu "Customer Configuration (CCFG)"

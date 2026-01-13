@@ -9,6 +9,8 @@ zephyr_sources(scfg.c)
 zephyr_sources(power.c)
 zephyr_include_directories(.)
 
+zephyr_library_sources_ifdef(CONFIG_POWEROFF poweroff.c)
+
 zephyr_linker_sources_ifdef(CONFIG_HAS_TI_CCFG SECTIONS ccfg.ld)
 
 zephyr_linker_sources_ifdef(CONFIG_HAS_TI_SCFG SECTIONS scfg.ld)
