@@ -21,6 +21,31 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-m33";
 			reg = <0>;
+			cpu-power-states = <&state0 &state1 &state2>;
+		};
+
+		power-states {
+			state0: state0 {
+				compatible = "zephyr,power-state";
+				power-state-name = "runtime-idle";
+				min-residency-us = <350>;
+			};
+
+			state1: state1 {
+				compatible = "zephyr,power-state";
+				power-state-name = "standby";
+				min-residency-us = <350>;
+				exit-latency-us = <150>;
+			};
+
+			/* PM_STATE_SOFT_OFF can be entered only by calling pm_state_force */
+			state2: state2 {
+				compatible = "zephyr,power-state";
+				power-state-name = "soft-off";
+				min-residency-us = <0>;
+				exit-latency-us = <0>;
+				status = "disabled";
+			};
 		};
 	};
 
@@ -132,7 +157,7 @@
 			status = "okay";
 		};
 
-		dma: dma@400C4000 {
+		dma: dma@400c4000 {
 			compatible = "ti,cc23x0-cc27xx-dma";
 			reg = <0x400c4000 0x524>;
 			interrupts = <8 0>;
