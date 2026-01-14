@@ -75,14 +75,14 @@
 			};
 
 			/* CCFG flash sector */
-			flash1: flash@4E020000 {
+			flash1: flash@4e020000 {
 				compatible = "soc-nv-flash";
 				erase-block-size = <DT_SIZE_K(2)>;
 				write-block-size = <0x10>;
 			};
 
 			/* SCFG flash sector */
-			flash2: flash@4E040000 {
+			flash2: flash@4e040000 {
 				compatible = "soc-nv-flash";
 				erase-block-size = <DT_SIZE_K(2)>;
 				write-block-size = <0x10>;
@@ -105,7 +105,7 @@
 
 		uart0: uart@40034000{
 			compatible = "ti,cc27xx-uart";
-			reg = <0x40034000 0x4C>;
+			reg = <0x40034000 0x4c>;
 			interrupts = <11 0>;
 			clocks = <&sysclk>;
 			dmas = <&dma 2 6>, <&dma 3 7>;
@@ -115,7 +115,7 @@
 
 		uart1: uart@40035000{
 			compatible = "ti,cc27xx-uart";
-			reg = <0x40035000 0x4C>;
+			reg = <0x40035000 0x4c>;
 			interrupts = <22 0>;
 			clocks = <&sysclk>;
 			dmas = <&dma 0 12>, <&dma 1 13>;
