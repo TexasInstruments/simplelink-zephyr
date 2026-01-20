@@ -10,6 +10,7 @@ tests:
       - lp_em_cc2340r53
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10_q1
+      - lp_em_cc2755p10
     tags:
       - kernel
       - interrupt
@@ -34,6 +35,7 @@ tests:
       - lp_em_cc2340r53
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10_q1
+      - lp_em_cc2755p10
     tags:
       - kernel
       - interrupt
@@ -63,6 +65,7 @@ tests:
       - lp_em_cc2340r53
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10_q1
+      - lp_em_cc2755p10
     arch_exclude:
       # same as for qemu_cortex_m0, #22956
       - nios2
@@ -86,6 +89,7 @@ tests:
       - lp_em_cc2340r53
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10_q1
+      - lp_em_cc2755p10
     arch_exclude:
       # same as above, #22956
       - nios2
