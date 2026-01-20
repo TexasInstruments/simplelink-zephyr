@@ -1,6 +1,6 @@
 /* This file is intended to be used only in TI's internal Continuous Integration
    (CI) system and will not function outside. */
-
+import java.util.regex.Matcher
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
@@ -60,6 +60,7 @@ pipeline
         GIT_CONFIG_VALUE_0 = 524288000
 
         JENKINS_PYTHON_EXEC_NAME = 'python3.10'
+
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
 
         SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1/cc2745r10_q1 lp_em_cc2745r10_q1/cc2755r10'
@@ -115,7 +116,6 @@ pipeline
                     dir('zephyr') {
                         common.nodeSetup()
                     }
-
                     /* Get keywords from pull request and override arguments with them if available
                        An empty map is returned if there are no keywords
                        An example map would be { "sysconfig": "", "test": "empty" } */
@@ -246,6 +246,22 @@ pipeline
                         common.printHeading(':warning: Compliance Checks Failed')
                         common.printBody("Compliance results: ([Full report](${env.JOB_URL}/Compliance_20Reports/))")
                         unstable("Compliance check failures. Status code ${statusCompliance}")
+
+                        dir('zephyr')
+                        {
+                            /* Check for jenkins merge commit */
+                            String previousCommitMsg = sh(
+                            script: 'git log -1 --pretty=format:"%s"',
+                            returnStdout: true
+                            ).trim()
+
+                            // More specific pattern to extract the commit hash
+                            Boolean matcher = previousCommitMsg ==~ /^Merge commit '([a-f0-9]{40})' into HEAD$/
+
+                            if (matcher) {
+                                common.printBody("Jenkins has created a merge commit, causing some compliance check failures. Rebase your work on the target branch to fix this!")
+                            }
+                        }
                     } else {
                         common.printHeading(':white_check_mark: Compliance Checks Passed')
                     }
