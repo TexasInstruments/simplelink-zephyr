@@ -15,4 +15,5 @@ supported:
   - spi
   - adc
   - pm
+  - watchdog
 vendor: ti

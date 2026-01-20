@@ -205,3 +205,7 @@
 	pinctrl-names = "default";
 	status = "okay";
 };
+
+&wdt0 {
+	status = "okay";
+};
