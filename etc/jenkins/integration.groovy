@@ -14,13 +14,15 @@ String syntaxHelper = '''
 ## Syntax Help:
 - `%% no_twister`
     - If present, do not build and run twister tests.
-- `%% boards [board board board]`
+- `%% boards board [board board board ...]`
     - Space-separated list of boards that filters all other commands.
     - If empty, build for all boards.
     - Use %% boards all_supported_ti for all supported TI boards.
-- `%% testfolders [folder folder folder]`
+    - Example: %% boards lp_em_cc2340r5 lp_em_cc2745r10_q1/cc2745r10_q1
+- `%% testfolders folder [folder folder folder ...]`
     - Space-separated list of folders to search for test cases in.
-    - If omitted, defaults to nothing, meaning run all tests.
+    - If omitted, defaults to nothing, which runs all tests.
+    - Example: %% testfolders tests/drivers/entropy tests/subsys/random
 - `%% no_docs`
     - If present, do not build docs. Otherwise do it if docs files have changed.
 - `%% help`
