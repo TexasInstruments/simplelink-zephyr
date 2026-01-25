@@ -10,11 +10,36 @@ if TI_MCUMGR_BT_OTA_DFU
 endif # TI_MCUMGR_BT_OTA_DFU
 
 if BT
+	config ZEPHYR
+		bool
+		default y
+
 	config CRYPTO
 		default y
 
 	config ENTROPY_GENERATOR
 		default y
+
+	config BT_BUF_EVT_RX_SIZE
+		default 255
+
+	config BT_BUF_ACL_RX_SIZE
+		default 255
+
+	config BT_BUF_ACL_TX_SIZE
+		default 255
+
+	config BT_BUF_CMD_TX_SIZE
+		default 255
+
+	config BT_COMPANY_ID
+		default 0x000D
+
+	choice BT_RECV_CONTEXT
+		bool
+		default BT_RECV_WORKQ_BT if BT_MESH
+		default BT_RECV_WORKQ_SYS
+	endchoice
 endif # BT
 
 if BT_MESH
