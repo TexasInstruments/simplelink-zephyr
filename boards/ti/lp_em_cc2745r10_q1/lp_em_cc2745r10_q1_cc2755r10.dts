@@ -173,3 +173,7 @@
 		     &adc0_ch8>;
 	pinctrl-names = "default";
 };
+
+&wdt0 {
+	status = "okay";
+};
