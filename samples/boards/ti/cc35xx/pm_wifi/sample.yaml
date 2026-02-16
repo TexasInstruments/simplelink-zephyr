@@ -1,0 +1,15 @@
+sample:
+  name: CC35xx WiFi power management
+  description: Demonstrates CC35xx WiFi power save and host standby.
+tests:
+  sample.boards.ti.cc35xx.pm_wifi:
+    platform_allow:
+      - lp_em_cc35x1
+    tags:
+      - pm
+      - wifi
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "pm_wifi: low-power mode=.*"

@@ -37,6 +37,10 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_id);
 
+#if defined(CONFIG_BT_HCI_TI_CC3XXX_PRIVACY_WORKAROUND)
+int bt_hci_ti_cc3xxx_privacy_workaround(const uint8_t local_irk[16]);
+#endif
+
 struct bt_adv_id_check_data {
 	uint8_t id;
 	bool adv_enabled;
@@ -433,7 +437,11 @@ int bt_id_set_adv_private_addr(struct bt_le_ext_adv *adv)
 			le_rpa_timeout_submit();
 		}
 
+#if defined(CONFIG_BT_HCI_TI_CC3XXX_PRIVACY_WORKAROUND)
+		return bt_hci_ti_cc3xxx_privacy_workaround(bt_dev.irk[adv->id]);
+#else
 		return 0;
+#endif
 	}
 
 	if (adv == bt_le_adv_lookup_legacy() && adv->id == BT_ID_DEFAULT) {
@@ -450,7 +458,11 @@ int bt_id_set_adv_private_addr(struct bt_le_ext_adv *adv)
 			atomic_set_bit(adv->flags, BT_ADV_RPA_VALID);
 		}
 
+#if defined(CONFIG_BT_HCI_TI_CC3XXX_PRIVACY_WORKAROUND)
+		return bt_hci_ti_cc3xxx_privacy_workaround(bt_dev.irk[adv->id]);
+#else
 		return 0;
+#endif
 	}
 
 	err = adv_rpa_get(adv, &rpa);
@@ -473,7 +485,11 @@ int bt_id_set_adv_private_addr(struct bt_le_ext_adv *adv)
 		LOG_INF("RPA: %s", bt_addr_str(&rpa));
 	}
 
+#if defined(CONFIG_BT_HCI_TI_CC3XXX_PRIVACY_WORKAROUND)
+	return bt_hci_ti_cc3xxx_privacy_workaround(bt_dev.irk[adv->id]);
+#else
 	return 0;
+#endif
 }
 #else
 int bt_id_set_private_addr(uint8_t id)

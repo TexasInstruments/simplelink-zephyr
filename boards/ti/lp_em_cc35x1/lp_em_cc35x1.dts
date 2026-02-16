@@ -9,11 +9,10 @@
 #include <ti/cc35xxe.dtsi>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/adc/adc.h>
-#include <zephyr/dt-bindings/dma/ti-cc35xx-dma.h>
-#include "lp_em_cc35x1-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pwm/pwm.h>
 #include <zephyr/dt-bindings/i2s/ti-cc35xx-i2s.h>
 #include <zephyr/dt-bindings/dma/ti-cc35xx-dma.h>
+#include "lp_em_cc35x1-pinctrl.dtsi"
 
 / {
 	model = "TI CC35X1E LaunchPad";
@@ -78,6 +77,28 @@
 		adc0 = &adc0;
 		dma0 = &dma;
 	};
+
+	cpus {
+		cpu@0 {
+			cpu-power-states = <&pm_idle &pm_standby>;
+		};
+
+		power-states {
+			pm_idle: pm_idle {
+				compatible = "zephyr,power-state";
+				power-state-name = "runtime-idle";
+				min-residency-us = <100>;
+				exit-latency-us = <10>;
+			};
+
+			pm_standby: pm_standby {
+				compatible = "zephyr,power-state";
+				power-state-name = "standby";
+				min-residency-us = <1000000>;
+				exit-latency-us = <1000>;
+			};
+		};
+	};
 };
 
 
@@ -118,12 +139,20 @@
 	pinctrl-0 = <&spi0_master>;
 	pinctrl-names = "default";
 	cs-gpios = <&gpios 26 GPIO_ACTIVE_LOW>;
+	dmas = <&dma 4 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_SPI_0)>,
+			<&dma 5 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_SPI_0)>;
+	dma-names = "tx", "rx";
+
 };
 
 &spi1 {
 	status = "okay";
 	pinctrl-0 = <&spi1_slave>;
 	pinctrl-names = "default";
+
+	dmas = <&dma 8 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_SPI_1)>,
+			<&dma 9 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_SPI_1)>;
+	dma-names = "tx", "rx";
 };
 
 &flash0 {
@@ -245,12 +274,9 @@
 };
 
 &uart2 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&uart2_default>;
 	pinctrl-names = "default";
-	dmas = <&dma 4 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_UARTLIN_2)>,
-			<&dma 5 CC35XX_DMA_SET_CONFIG(CC35xx_DMA_PERIPH_UARTLIN_2)>;
-	dma-names = "rx", "tx";
 };
 
 &wdt0 {

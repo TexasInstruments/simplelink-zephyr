@@ -27,7 +27,8 @@ this TI release is based on. Other dependency info is included there as well.
 
 This release contains
 support for the `CC2340R5`, `CC2340R53`, `CC2745R10_Q1`, `CC2755R10`,
-and `CC3551E` devices. The `CC32xx` and `CC13xx_CC26xx` devices are
+and `CC3551E` devices. As well as the `CC3351` companion IC.
+The `CC32xx` and `CC13xx_CC26xx` devices are
 not supported in this release. However, the Zephyr community continues to
 support them in the upstream repositories.
 
@@ -40,6 +41,7 @@ Supported by this release:
 - [CC2745R10_Q1](https://www.ti.com/product/CC2745R10-Q1)
 - [CC2755R10](https://www.ti.com/product/CC2755R10)
 - [CC3551E](https://www.ti.com/product/CC3551E)
+- [CC3351](https://www.ti.com/product/CC3351)
 
 Supported by the Zephyr community:
 

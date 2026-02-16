@@ -46,13 +46,13 @@ LOG_MODULE_REGISTER(bt_mesh_net);
 /* Seq limit after IV Update is triggered */
 #define IV_UPDATE_SEQ_LIMIT CONFIG_BT_MESH_IV_UPDATE_SEQ_LIMIT
 
-#define IVI(pdu)           ((pdu)[0] >> 7)
-#define NID(pdu)           ((pdu)[0] & 0x7f)
-#define CTL(pdu)           ((pdu)[1] >> 7)
-#define TTL(pdu)           ((pdu)[1] & 0x7f)
-#define SEQ(pdu)           (sys_get_be24(&pdu[2]))
-#define SRC(pdu)           (sys_get_be16(&(pdu)[5]))
-#define DST(pdu)           (sys_get_be16(&(pdu)[7]))
+#define BT_MESH_NET_IVI(pdu)           ((pdu)[0] >> 7)
+#define BT_MESH_NET_NID(pdu)           ((pdu)[0] & 0x7f)
+#define BT_MESH_NET_CTL(pdu)           ((pdu)[1] >> 7)
+#define BT_MESH_NET_TTL(pdu)           ((pdu)[1] & 0x7f)
+#define BT_MESH_NET_SEQ(pdu)           (sys_get_be24(&pdu[2]))
+#define BT_MESH_NET_SRC(pdu)           (sys_get_be16(&(pdu)[5]))
+#define BT_MESH_NET_DST(pdu)           (sys_get_be16(&(pdu)[7]))
 
 /* Mesh network information for persistent storage. */
 struct net_val {
@@ -142,15 +142,15 @@ static bool msg_cache_match(struct net_buf_simple *pdu)
 	uint16_t i;
 
 	for (i = msg_cache_next; i > 0U;) {
-		if (msg_cache[--i].src == SRC(pdu->data) &&
-		    msg_cache[i].seq == (SEQ(pdu->data) & BIT_MASK(17))) {
+		if (msg_cache[--i].src == BT_MESH_NET_SRC(pdu->data) &&
+		    msg_cache[i].seq == (BT_MESH_NET_SEQ(pdu->data) & BIT_MASK(17))) {
 			return true;
 		}
 	}
 
 	for (i = ARRAY_SIZE(msg_cache); i > msg_cache_next;) {
-		if (msg_cache[--i].src == SRC(pdu->data) &&
-		    msg_cache[i].seq == (SEQ(pdu->data) & BIT_MASK(17))) {
+		if (msg_cache[--i].src == BT_MESH_NET_SRC(pdu->data) &&
+		    msg_cache[i].seq == (BT_MESH_NET_SEQ(pdu->data) & BIT_MASK(17))) {
 			return true;
 		}
 	}
@@ -398,18 +398,18 @@ static void bt_mesh_net_local(struct k_work *work)
 				.net_idx = buf->sub->net_idx,
 				/* Initialize AppIdx to a sane value */
 				.app_idx = BT_MESH_KEY_UNUSED,
-				.recv_ttl = TTL(buf->data),
+				.recv_ttl = BT_MESH_NET_TTL(buf->data),
 				/* TTL=1 only goes to local IF */
 				.send_ttl = 1U,
-				.addr = SRC(buf->data),
-				.recv_dst = DST(buf->data),
+				.addr = BT_MESH_NET_SRC(buf->data),
+				.recv_dst = BT_MESH_NET_DST(buf->data),
 				.recv_rssi = 0,
 			},
 			.net_if = BT_MESH_NET_IF_LOCAL,
 			.sub = buf->sub,
-			.old_iv = (IVI(buf->data) != (bt_mesh.iv_index & 0x01)),
-			.ctl = CTL(buf->data),
-			.seq = SEQ(buf->data),
+			.old_iv = (BT_MESH_NET_IVI(buf->data) != (bt_mesh.iv_index & 0x01)),
+			.ctl = BT_MESH_NET_CTL(buf->data),
+			.seq = BT_MESH_NET_SEQ(buf->data),
 			.new_key = SUBNET_KEY_TX_IDX(buf->sub),
 			.local_match = 1U,
 			.friend_match = 0U,
@@ -601,7 +601,7 @@ void bt_mesh_net_loopback_clear(uint16_t net_idx)
 		struct loopback_buf *buf = CONTAINER_OF(node, struct loopback_buf, node);
 
 		if (net_idx == BT_MESH_KEY_ANY || net_idx == buf->sub->net_idx) {
-			LOG_DBG("Dropped 0x%06x", SEQ(buf->data));
+			LOG_DBG("Dropped 0x%06x", BT_MESH_NET_SEQ(buf->data));
 			k_mem_slab_free(&loopback_buf_pool, (void *)buf);
 		} else {
 			sys_slist_append(&new_list, &buf->node);
@@ -617,14 +617,14 @@ static bool net_decrypt(struct bt_mesh_net_rx *rx, struct net_buf_simple *in,
 {
 	bool proxy = (rx->net_if == BT_MESH_NET_IF_PROXY_CFG);
 
-	if (NID(in->data) != cred->nid) {
+	if (BT_MESH_NET_NID(in->data) != cred->nid) {
 		return false;
 	}
 
-	LOG_DBG("NID 0x%02x", NID(in->data));
-	LOG_DBG("IVI %u net->iv_index 0x%08x", IVI(in->data), bt_mesh.iv_index);
+	LOG_DBG("NID 0x%02x", BT_MESH_NET_NID(in->data));
+	LOG_DBG("IVI %u net->iv_index 0x%08x", BT_MESH_NET_IVI(in->data), bt_mesh.iv_index);
 
-	rx->old_iv = (IVI(in->data) != (bt_mesh.iv_index & 0x01));
+	rx->old_iv = (BT_MESH_NET_IVI(in->data) != (bt_mesh.iv_index & 0x01));
 
 	net_buf_simple_reset(out);
 	net_buf_simple_add_mem(out, in->data, in->len);
@@ -634,7 +634,7 @@ static bool net_decrypt(struct bt_mesh_net_rx *rx, struct net_buf_simple *in,
 		return false;
 	}
 
-	rx->ctx.addr = SRC(out->data);
+	rx->ctx.addr = BT_MESH_NET_SRC(out->data);
 	if (!BT_MESH_ADDR_IS_UNICAST(rx->ctx.addr)) {
 		LOG_DBG("Ignoring non-unicast src addr 0x%04x", rx->ctx.addr);
 		return false;
@@ -720,7 +720,7 @@ static void bt_mesh_net_relay(struct net_buf_simple *sbuf,
 
 	cred = &rx->sub->keys[SUBNET_KEY_TX_IDX(rx->sub)].msg;
 
-	LOG_DBG("Relaying packet. TTL is now %u", TTL(adv->b.data));
+	LOG_DBG("Relaying packet. TTL is now %u", BT_MESH_NET_TTL(adv->b.data));
 
 	/* Update NID if RX or RX was with friend credentials */
 	if (rx->friend_cred) {
@@ -759,12 +759,12 @@ done:
 void bt_mesh_net_header_parse(struct net_buf_simple *buf,
 			      struct bt_mesh_net_rx *rx)
 {
-	rx->old_iv = (IVI(buf->data) != (bt_mesh.iv_index & 0x01));
-	rx->ctl = CTL(buf->data);
-	rx->ctx.recv_ttl = TTL(buf->data);
-	rx->seq = SEQ(buf->data);
-	rx->ctx.addr = SRC(buf->data);
-	rx->ctx.recv_dst = DST(buf->data);
+	rx->old_iv = (BT_MESH_NET_IVI(buf->data) != (bt_mesh.iv_index & 0x01));
+	rx->ctl = BT_MESH_NET_CTL(buf->data);
+	rx->ctx.recv_ttl = BT_MESH_NET_TTL(buf->data);
+	rx->seq = BT_MESH_NET_SEQ(buf->data);
+	rx->ctx.addr = BT_MESH_NET_SRC(buf->data);
+	rx->ctx.recv_dst = BT_MESH_NET_DST(buf->data);
 }
 
 int bt_mesh_net_decode(struct net_buf_simple *in, enum bt_mesh_net_if net_if,
@@ -797,7 +797,7 @@ int bt_mesh_net_decode(struct net_buf_simple *in, enum bt_mesh_net_if net_if,
 	/* Initialize AppIdx to a sane value */
 	rx->ctx.app_idx = BT_MESH_KEY_UNUSED;
 
-	rx->ctx.recv_ttl = TTL(out->data);
+	rx->ctx.recv_ttl = BT_MESH_NET_TTL(out->data);
 
 	/* Default to responding with TTL 0 for non-routed messages */
 	if (rx->ctx.recv_ttl == 0U) {
@@ -806,9 +806,9 @@ int bt_mesh_net_decode(struct net_buf_simple *in, enum bt_mesh_net_if net_if,
 		rx->ctx.send_ttl = BT_MESH_TTL_DEFAULT;
 	}
 
-	rx->ctl = CTL(out->data);
-	rx->seq = SEQ(out->data);
-	rx->ctx.recv_dst = DST(out->data);
+	rx->ctl = BT_MESH_NET_CTL(out->data);
+	rx->seq = BT_MESH_NET_SEQ(out->data);
+	rx->ctx.recv_dst = BT_MESH_NET_DST(out->data);
 
 	LOG_DBG("Decryption successful. Payload len %u", out->len);
 

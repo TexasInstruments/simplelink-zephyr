@@ -52,5 +52,5 @@ static struct entropy_driver_api entropy_ti_cc35xx_driver_api = {
 
 static struct entropy_ti_cc35xx_data entropy_data;
 
-DEVICE_DT_INST_DEFINE(0, entropy_ti_cc35xx_init, PM_DEVICE_DT_INST_GET(0), &entropy_data, NULL,
+DEVICE_DT_INST_DEFINE(0, entropy_ti_cc35xx_init, NULL, &entropy_data, NULL,
 		      PRE_KERNEL_2, CONFIG_ENTROPY_INIT_PRIORITY, &entropy_ti_cc35xx_driver_api);

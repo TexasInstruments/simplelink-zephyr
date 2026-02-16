@@ -139,15 +139,23 @@ static int dma_cc35xx_config(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
+	if (config->head_block->dest_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
+		dma_config |= DMA_CONFIG_DST_PTR_FIFO;
+	}
+
+	if (config->head_block->source_addr_adj == DMA_ADDR_ADJ_NO_CHANGE) {
+		dma_config |= DMA_CONFIG_SRC_PTR_FIFO;
+	}
+
 	switch (config->channel_direction) {
 	case MEMORY_TO_MEMORY:
 		dma_config |= DMA_CONFIG_FORCE_REQ;
 		break;
 	case MEMORY_TO_PERIPHERAL:
-		dma_config |= DMA_CONFIG_DST_PTR_FIFO | DMA_CONFIG_TX;
+		dma_config |= DMA_CONFIG_TX;
 		break;
 	case PERIPHERAL_TO_MEMORY:
-		dma_config |= DMA_CONFIG_SRC_PTR_FIFO | DMA_CONFIG_RX;
+		dma_config |= DMA_CONFIG_RX;
 		break;
 	default:
 		LOG_ERR("Unsupported channel direction");

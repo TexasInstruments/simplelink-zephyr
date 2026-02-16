@@ -1,10 +1,10 @@
-# Texas Instruments CC35XX Wi-Fi driver options
+# Texas Instruments CC3XXX Wi-Fi driver options
 
-# Copyright (c) 2025 Conclusive Engineering sp. z o. o.
+# Copyright (c) 2025-2026 Conclusive Engineering sp. z o. o.
 # SPDX-License-Identifier: Apache-2.0
 
-menuconfig WIFI_TI_CC35XX
-	bool "Texas Instruments CC35XX Wi-Fi driver support"
+menuconfig WIFI_TI_CC3XXX
+	bool "Texas Instruments CC3XXX Wi-Fi driver support"
 	select WIFI_USE_NATIVE_NETWORKING
 	select WIFI_OFFLOAD
 	select NET_L2_WIFI_MGMT
@@ -12,13 +12,15 @@ menuconfig WIFI_TI_CC35XX
 	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
 	select POSIX_API
+	select SHARED_MULTI_HEAP
 	select FLASH
 	select FLASH_MAP
 	select NVS
+	select INIT_STACKS
 
-if WIFI_TI_CC35XX
+if WIFI_TI_CC3XXX
 
-config WIFI_TI_CC35XX_MTU
+config WIFI_TI_CC3XXX_MTU
 	int "Maximum size of a packet, in bytes"
 	# MTU (ipv4) per: http://www.ti.com/lit/ug/swru455d/swru455d.pdf:
 	default 1472
@@ -27,7 +29,7 @@ config WIFI_TI_CC35XX_MTU
 	  This sets the size of each buffer, in each buffer pool.
 	  Do not modify it unless you know what you are doing.
 
-config WIFI_TI_CC35XX_TX_CTRL_BLK_NUM
+config WIFI_TI_CC3XXX_TX_CTRL_BLK_NUM
 	int "Number of TX control block entries"
 	default 120
 	range 32 120
@@ -36,11 +38,23 @@ config WIFI_TI_CC35XX_TX_CTRL_BLK_NUM
 	  simultaneously. Each entry uses ~344 bytes of heap.
 	  Increase for high-throughput workloads.
 
-config WIFI_TI_CC35XX_NVS_INIT_PRIORITY
+config WIFI_TI_CC3XXX_NVS_INIT_PRIORITY
 	int "NVS init priority"
 	default 60
 	help
 	  SYS_INIT priority for the WiFi NVS init.
 	  Must be lower than the WiFi driver init priority (80).
 
-endif # WIFI_TI_CC35XX
+config WIFI_TI_CC35XX_NVS_INIT_PRIORITY
+	int
+	default WIFI_TI_CC3XXX_NVS_INIT_PRIORITY
+
+config WIFI_TI_CC33XX
+	bool
+	default y if DT_HAS_TI_CC33XX_SPI_ENABLED
+
+config WIFI_TI_CC35XX
+	bool
+	default y if DT_HAS_TI_CC35XX_WLAN_ENABLED
+
+endif # WIFI_TI_CC3XXX

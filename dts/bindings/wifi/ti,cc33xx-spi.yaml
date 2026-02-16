@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Conclusive Engineering Sp. z o.o.
+# SPDX-License-Identifier: Apache-2.0
+
+include: [base.yaml, spi-device.yaml, "ti,cc3xxx-wlan.yaml"]
+
+description: Texas Instruments CC33XX Wi-Fi controller
+
+compatible: "ti,cc33xx-spi"
+
+properties:
+  wifi-reg-on-gpios:
+    description: |
+      Power-up/down gpio to control the internal regulators used
+      by the WiFi section of CC33XX Wi-Fi device.
+    type: phandle-array
+
+  wifi-host-wake-gpios:
+    description: |
+      Host wake-up gpio. Signal from the CC33XX Wi-Fi device
+      to the host indicating that the device requires attention.
+    type: phandle-array

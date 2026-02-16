@@ -1,5 +1,7 @@
-# Copyright (c) 2025 Conclusive Engineering sp. z o. o.
+# Copyright (c) 2025-2026 Conclusive Engineering Sp. z o. o.
 # SPDX-License-Identifier: Apache-2.0
+
+include: [base.yaml, "ti,cc3xxx-wlan.yaml"]
 
 description: Texas Instruments CC35XX Wi-Fi controller
 

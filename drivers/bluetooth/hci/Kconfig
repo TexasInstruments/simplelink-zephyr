@@ -297,13 +297,46 @@ config BT_HCI_TI
   help
     TI HCI bluetooth interface
 
-config BT_HCI_TI_CC35XX
-	bool "Texas Instruments CC35xx family Bluetooth Controller"
-	depends on !BT_HCI_ACL_FLOW_CONTROL
+
+config BT_HCI_TI_CC3XXX
+	bool "Texas Instruments CC3xxx family Bluetooth Controller"
 	select BT_HCI_SETUP
 	select BT_HCI_SET_PUBLIC_ADDR
 	select BT_EXT_ADV
-	default y
+	select WIFI
+	select WIFI_TI_CC3XXX
+	depends on !BT_HCI_ACL_FLOW_CONTROL
+	depends on !BT_PHY_UPDATE
+	depends on !BT_AUTO_PHY_UPDATE
+	help
+	  Enables support for the Texas Instruments CC3xxx Bluetooth Controller.
+	  This driver utilizes the HCI transport of TI CC3xxx.
+
+config BT_HCI_TI_CC33XX
+	bool "Texas Instruments CC33xx family Bluetooth Controller"
+	default y if DT_HAS_TI_CC33XX_UART_ENABLED
+	depends on BT_HCI_TI_CC3XXX
+	select SPI
+	select GPIO
+	select UART_INTERRUPT_DRIVEN
+	select RING_BUFFER
+	help
+	  Enables support for the Texas Instruments CC33xx Bluetooth Controller.
+	  This driver utilizes the UART HCI transport of TI CC33xx.
+
+config BT_HCI_TI_CC35XX
+	bool "Texas Instruments CC35xx family Bluetooth Controller"
+	default y if DT_HAS_TI_CC35XX_BT_HCI_ENABLED
+	depends on BT_HCI_TI_CC3XXX
 	help
 	  Enables support for the Texas Instruments CC35xx Bluetooth Controller.
 	  This driver utilizes the memory-mapped HCI transport of TI CC35xx.
+
+config BT_HCI_TI_CC3XXX_PRIVACY_WORKAROUND
+	bool "TI CC3xxx BLE privacy workaround"
+	depends on BT_HCI_TI_CC3XXX && BT_PRIVACY
+	help
+	  Program the CC3xxx controller resolving-list state before BLE
+	  advertising is enabled. This works around a CC3xxx controller issue
+	  where incoming connections are dropped unless the local IRK is present
+	  in the controller.

@@ -10,7 +10,9 @@
 #include <errno.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/pinctrl.h>
-#include <soc.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/policy.h>
+#include <zephyr/drivers/pm/cc35xx_pm.h>
 
 #include <inc/hw_memmap.h>
 #include <driverlib/i2c.h>
@@ -20,9 +22,12 @@
 #include <zephyr/irq.h>
 LOG_MODULE_REGISTER(i2c_cc35xx);
 
+#include "i2c-priv.h"
+
 struct i2c_cc35xx_config {
 	uint32_t base;
 	uint32_t sys_clk_freq;
+	uint32_t bitrate;
 	void (*irq_config_func)(void);
 	const struct pinctrl_dev_config *pcfg;
 };
@@ -35,12 +40,22 @@ struct i2c_cc35xx_data {
 	int bufpos;
 	int bus_error;
 	int flags;
+	uint32_t dev_config;
 };
 
-static int i2c_cc35xx_configure(const struct device *dev, uint32_t dev_config_raw)
+static enum cc35xx_pm_resource i2c_cc35xx_power_id(uint32_t base)
+{
+	switch (base) {
+	case I2C0_BASE:
+		return CC35XX_PM_RESOURCE_I2C0;
+	default:
+		return CC35XX_PM_RESOURCE_I2C1;
+	}
+}
+
+static int i2c_cc35xx_apply_config(const struct device *dev, uint32_t dev_config_raw)
 {
 	const struct i2c_cc35xx_config *config = dev->config;
-	struct i2c_cc35xx_data *data = dev->data;
 	uint32_t mode;
 
 	switch (I2C_SPEED_GET(dev_config_raw)) {
@@ -57,10 +72,47 @@ static int i2c_cc35xx_configure(const struct device *dev, uint32_t dev_config_ra
 		return -EIO;
 	}
 
-	k_mutex_lock(&data->mutex, K_FOREVER);
 	I2CControllerDisable(config->base);
 	I2CControllerInit(config->base, I2C_CONTROLLER_CONFIG_CLOCK_STRETCHING_DETECTION, mode);
+
+	return 0;
+}
+
+static int i2c_cc35xx_configure(const struct device *dev, uint32_t dev_config_raw)
+{
+	struct i2c_cc35xx_data *data = dev->data;
+	int ret;
+
+	k_mutex_lock(&data->mutex, K_FOREVER);
+	ret = i2c_cc35xx_apply_config(dev, dev_config_raw);
+	if (ret == 0) {
+		data->dev_config = dev_config_raw;
+	}
 	k_mutex_unlock(&data->mutex);
+
+	return ret;
+}
+
+static int i2c_cc35xx_hw_init(const struct device *dev)
+{
+	const struct i2c_cc35xx_config *config = dev->config;
+	struct i2c_cc35xx_data *data = dev->data;
+	int ret;
+
+	I2CControllerDisable(config->base);
+	I2CDisableInt(config->base, I2C_INT_ALL);
+	I2CClearInt(config->base, I2C_INT_ALL);
+	config->irq_config_func();
+	I2CFlushFifos(config->base);
+	I2CSetTxFifoTrigger(config->base, I2C_TX_FIFO_SIZE / 2);
+	I2CSetRxFifoTrigger(config->base, I2C_RX_FIFO_SIZE / 2);
+
+	ret = i2c_cc35xx_apply_config(dev, data->dev_config);
+	if (ret < 0) {
+		return ret;
+	}
+
+	I2CClearInt(config->base, I2C_INT_ALL);
 
 	return 0;
 }
@@ -162,9 +214,13 @@ static int i2c_cc35xx_prime_transfer(const struct device *dev, uint8_t *buf, uin
 	I2CEnableInt(config->base, enable_interrupt);
 	I2CControllerSetTargetAddr(config->base, addr_mode, addr, direction);
 	I2CControllerSetCommand(config->base, cmd, data->buflen);
+	/* Busy wait required for controller state to settle (TRM §19.4). */
+	/* k_busy_wait(500); */
 	if (k_sem_take(&data->i2c_msg_done, K_MSEC(100))) {
 		return -ETIMEDOUT;
 	}
+	/* Let the controller settle before the next transfer after standby. */
+	k_busy_wait(1000);
 
 	return data->bus_error ? -EIO : 0;
 }
@@ -177,11 +233,22 @@ static int i2c_cc35xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 	struct i2c_msg *msg;
 	int ret = 0, retries, flags;
 
+	sys_write32(I2C_CLKCFG_ENABLE_EN, config->base + I2C_O_CLKCFG);
+	/*
+	 * The controller needs a short settle after its clock is ungated.
+	 * Without this, the first transfer after standby can hang in CCTR.
+	 */
+	/* k_busy_wait(10000); */
+
 	if (I2CControllerIsBusy(config->base)) {
 		return -EBUSY;
 	}
 
 	k_mutex_lock(&data->mutex, K_FOREVER);
+
+	pm_policy_state_lock_get(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+
 	k_sem_reset(&data->i2c_msg_done);
 
 	I2CFlushFifos(config->base);
@@ -192,7 +259,8 @@ static int i2c_cc35xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 		if (msg->len > I2C_CONTROLLER_TRANSACTION_LENGTH_MAX) {
 			LOG_ERR("Single transaction cannot be larger than %d\n",
 				I2C_CONTROLLER_TRANSACTION_LENGTH_MAX);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto error;
 		}
 
 		flags = msg->flags;
@@ -216,6 +284,9 @@ static int i2c_cc35xx_transfer(const struct device *dev, struct i2c_msg *msgs,
 	}
 
 error:
+	pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
+
 	k_mutex_unlock(&data->mutex);
 
 	return ret;
@@ -293,6 +364,7 @@ static int i2c_cc35xx_init(const struct device *dev)
 	const struct i2c_cc35xx_config *config = dev->config;
 	struct i2c_cc35xx_data *data = dev->data;
 	int error;
+	uint32_t cfg;
 
 	error = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
 	if (error < 0) {
@@ -302,19 +374,43 @@ static int i2c_cc35xx_init(const struct device *dev)
 	k_mutex_init(&data->mutex);
 	k_sem_init(&data->i2c_msg_done, 0, 1);
 
-	sys_write32(I2C_CLKCFG_ENABLE_EN, config->base + I2C_O_CLKCFG);
-	I2CControllerDisable(config->base);
-	I2CDisableInt(config->base, I2C_INT_ALL);
-	config->irq_config_func();
-	I2CFlushFifos(config->base);
-	I2CSetTxFifoTrigger(config->base, I2C_TX_FIFO_SIZE / 2);
-	I2CSetRxFifoTrigger(config->base, I2C_RX_FIFO_SIZE / 2);
-	I2CControllerInit(config->base, I2C_CONTROLLER_CONFIG_CLOCK_STRETCHING_DETECTION,
-			  I2C_MODE_STANDARD);
-	I2CClearInt(config->base, I2C_INT_ALL);
+	cfg = i2c_map_dt_bitrate(config->bitrate);
+	data->dev_config = cfg | I2C_MODE_CONTROLLER;
+	error = cc35xx_pm_resource_get(i2c_cc35xx_power_id(config->base));
+	if (error < 0) {
+		return error;
+	}
 
-	return 0;
+	return i2c_cc35xx_hw_init(dev);
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int i2c_cc35xx_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	const struct i2c_cc35xx_config *config = dev->config;
+	int ret;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		I2CControllerDisable(config->base);
+		I2CDisableInt(config->base, I2C_INT_ALL);
+		I2CClearInt(config->base, I2C_INT_ALL);
+		return cc35xx_pm_resource_put(i2c_cc35xx_power_id(config->base));
+	case PM_DEVICE_ACTION_RESUME:
+		ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			return ret;
+		}
+		ret = cc35xx_pm_resource_get(i2c_cc35xx_power_id(config->base));
+		if (ret < 0) {
+			return ret;
+		}
+		return i2c_cc35xx_hw_init(dev);
+	default:
+		return -ENOTSUP;
+	}
+}
+#endif /* CONFIG_PM_DEVICE */
 
 static const struct i2c_driver_api i2c_cc35xx_driver_api = {
 	.configure = i2c_cc35xx_configure,
@@ -323,6 +419,7 @@ static const struct i2c_driver_api i2c_cc35xx_driver_api = {
 
 #define I2C_CC35XX_DEVICE(n)                                                                       \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
+	PM_DEVICE_DT_INST_DEFINE(n, i2c_cc35xx_pm_action);                                       \
 	static void i2c_cc35xx_irq_config_##n(void)                                                \
 	{                                                                                          \
 		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), i2c_cc35xx_isr,             \
@@ -335,8 +432,10 @@ static const struct i2c_driver_api i2c_cc35xx_driver_api = {
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                         \
 		.irq_config_func = i2c_cc35xx_irq_config_##n,                                      \
 		.sys_clk_freq = DT_INST_PROP_BY_PHANDLE(n, clocks, clock_frequency),               \
+		.bitrate = DT_INST_PROP_OR(n, clock_frequency, 100000),                          \
 	};                                                                                         \
-	I2C_DEVICE_DT_INST_DEFINE(n, i2c_cc35xx_init, NULL, &i2c_cc35xx_data_##n,                  \
+	I2C_DEVICE_DT_INST_DEFINE(n, i2c_cc35xx_init, PM_DEVICE_DT_INST_GET(n),                    \
+				  &i2c_cc35xx_data_##n,                                   \
 				  &i2c_cc35xx_config_##n, POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,   \
 				  &i2c_cc35xx_driver_api)
 

@@ -1,0 +1,16 @@
+sample:
+  name: CC35xx power management
+  description: Demonstrates CC35xx standby with UART, SPI, and I2C resume.
+tests:
+  sample.boards.ti.cc35xx.pm:
+    platform_allow:
+      - lp_em_cc35x1
+    tags:
+      - pm
+      - spi
+      - i2c
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "pm sample: sleep exit"

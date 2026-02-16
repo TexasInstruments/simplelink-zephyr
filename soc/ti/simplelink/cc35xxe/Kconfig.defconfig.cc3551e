@@ -6,7 +6,8 @@ if SOC_CC3551E
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	int
-	default 160000000
+	default 1000000 if CC35XX_RTC_TIMER
+	default 160000000 if !CC35XX_RTC_TIMER
 
 config SYS_CLOCK_TICKS_PER_SEC
 	int
@@ -14,7 +15,11 @@ config SYS_CLOCK_TICKS_PER_SEC
 
 config NUM_IRQS
 	int
-	default 48
+	default 53
+
+config CORTEX_M_SYSTICK
+	default y if !CC35XX_RTC_TIMER
+	default n if CC35XX_RTC_TIMER
 
 config XIP
 	bool

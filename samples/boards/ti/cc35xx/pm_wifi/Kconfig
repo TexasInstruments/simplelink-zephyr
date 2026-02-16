@@ -1,0 +1,60 @@
+choice PM_WIFI_STRATEGY
+	prompt "cc35xx pm_wifi power-save strategy"
+	default PM_WIFI_STRATEGY_DTIM
+
+config PM_WIFI_STRATEGY_NONE
+	bool "no power save"
+
+config PM_WIFI_STRATEGY_BEACON
+	bool "wake every beacon"
+
+config PM_WIFI_STRATEGY_DTIM
+	bool "wake every DTIM"
+
+config PM_WIFI_STRATEGY_LONG_DOZE
+	bool "wake every N DTIMs"
+
+endchoice
+
+choice PM_WIFI_LOW_POWER_MODE
+	prompt "cc35xx pm_wifi low-power mode"
+	default PM_WIFI_LOW_POWER_SUSPEND
+
+config PM_WIFI_LOW_POWER_PS
+	bool "WiFi firmware power save only"
+	help
+	  Keep the host SoC awake and only switch the CC35XX firmware to WiFi
+	  power save through NET_REQUEST_WIFI_PS.
+
+config PM_WIFI_LOW_POWER_SUSPEND
+	bool "WiFi power save plus host standby"
+	help
+	  Enable WiFi power save, then release PM locks and enter host standby
+	  during the sleep window. This is the lowest-power mode.
+
+endchoice
+
+config PM_WIFI_SSID
+	string "WiFi SSID"
+	default "ssid_name"
+	help
+	  SSID used by the CC35xx WiFi PM sample.
+
+config PM_WIFI_PSK
+	string "WiFi password"
+	default "password"
+	help
+	  WPA/WPA2/WPA3 passphrase used by the CC35xx WiFi PM sample.
+
+config PM_WIFI_LONG_DOZE_DTIMS
+	int "DTIM count for LONG_DOZE strategy"
+	depends on PM_WIFI_STRATEGY_LONG_DOZE
+	range 2 20
+	default 5
+
+config PM_WIFI_NET_POWER_MANAGEMENT
+	bool
+	default y if PM_WIFI_LOW_POWER_SUSPEND
+	select NET_POWER_MANAGEMENT if PM_DEVICE
+
+source "Kconfig.zephyr"

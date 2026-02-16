@@ -11,3 +11,4 @@ config SOC_SERIES_CC35XXE
 	select HAS_CC35XX_SDK
 	select ARMV8_M_DSP
 	select DYNAMIC_INTERRUPTS
+	select HAS_PM

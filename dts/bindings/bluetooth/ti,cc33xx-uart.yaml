@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Conclusive Engineering Sp. z o.o.
+# SPDX-License-Identifier: Apache-2.0
+
+include: "ti,cc3xxx-bt-hci.yaml"
+
+description: Bluetooth HCI for Texas Instruments CC33xx NP
+
+compatible: "ti,cc33xx-uart"
+
+properties:
+  bt-hci-name:
+    default: "TI CC33XX BT HCI"
+  bt-hci-bus:
+    default: "BT_HCI_BUS_UART"

@@ -218,13 +218,13 @@
 		};
 
 		wlan0: hif@408a0000 {
-			compatible = "ti,cc35xx-wlan";
+			compatible = "ti,cc35xx-wlan","ti,cc3xxx-wlan";
 			reg = <0x408a0000 DT_SIZE_K(64)>;
 			interrupts = <EXP_NAB_HOST 3>;
 			status = "disabled";
 
 			hci0: hci0 {
-				compatible = "ti,cc35xx-bt-hci";
+				compatible = "ti,cc35xx-bt-hci", "ti,cc3xxx-bt-hci";
 				status = "disabled";
 			};
 		};

@@ -1,0 +1,7 @@
+&wlan0 {
+	status = "okay";
+};
+
+&flash1 {
+	status = "okay";
+};
