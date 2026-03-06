@@ -38,6 +38,7 @@ tests:
       - rpi_pico
       - lp_em_cc2340r5
       - lp_em_cc2340r5moda
+      - lp_em_cc2340r53_wcsp
       - lp_em_cc35x1
     integration_platforms:
       - nucleo_f746zg
