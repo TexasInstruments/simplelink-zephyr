@@ -17,4 +17,5 @@ supported:
   - pm
   - pwm
   - watchdog
+  - counter
 vendor: ti

@@ -16,4 +16,5 @@ supported:
   - adc
   - pm
   - watchdog
+  - counter
 vendor: ti
