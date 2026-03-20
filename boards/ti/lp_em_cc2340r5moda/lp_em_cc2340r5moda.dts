@@ -157,7 +157,7 @@
 };
 
 &i2c0 {
-	status = "disable";
+	status = "disabled";
 	pinctrl-0 = <&i2c0_scl_default
 			 &i2c0_sda_default>;
 	clock-frequency = <100000>;
