@@ -32,6 +32,10 @@
 #include DeviceFamily_constructPath(driverlib/systick.h)
 #include DeviceFamily_constructPath(driverlib/ckmd.h)
 
+/* The range of pins available on this device */
+const uint_least8_t GPIO_pinLowerBound = 0;
+const uint_least8_t GPIO_pinUpperBound = 28;
+
 #ifdef CONFIG_PM
 
 static void pm_cc27xx_enter_standby(void);
