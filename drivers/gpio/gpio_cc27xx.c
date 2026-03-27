@@ -16,13 +16,12 @@
 
 #include <driverlib/clkctl.h>
 #include <driverlib/gpio.h>
+#include <driverlib/ioc.h>
 #include <inc/hw_ioc.h>
 #include <inc/hw_types.h>
 
 #define IOC_ADDR(index)       (IOC_BASE + IOC_O_IOC0 + (sizeof(uint32_t) * (index)))
 #define IOC_PORTCFG_MASK	  IOC_IOC0_PORTCFG_M
-#define GPIO_PIN_TO_MASK(pin) (1 << (pin))
-
 struct gpio_cc27xx_config {
 	/* gpio_driver_config needs to be first */
 	struct gpio_driver_config common;
@@ -33,11 +32,6 @@ struct gpio_cc27xx_data {
 	struct gpio_driver_data common;
 	sys_slist_t callbacks;
 };
-
-static void set_pin_mask_non_atomic(uint8_t index, uint32_t registerBaseAddress)
-{
-	GPIOSetConfigDio(GPIO_BASE + registerBaseAddress, GPIO_PIN_TO_MASK(index));
-}
 
 static int gpio_cc27xx_config(const struct device *port, gpio_pin_t pin, gpio_flags_t flags)
 {
@@ -78,7 +72,7 @@ static int gpio_cc27xx_config(const struct device *port, gpio_pin_t pin, gpio_fl
 		config |= IOC_IOC0_INPEN_EN | IOC_IOC0_HYSTEN_EN;
 	}
 
-	GPIOSetConfigDio(iocfgRegAddr, config);
+	IOCSetConfigAndMux(pin, config, IOC_MUX_GPIO);
 
 	if (flags & GPIO_OUTPUT) {
 
@@ -100,9 +94,7 @@ static int gpio_cc27xx_get_config(const struct device *port, gpio_pin_t pin, gpi
 {
 	uint32_t outFlag = 0;
 
-	uint32_t iocfgRegAddr = IOC_ADDR(pin);
-
-	uint32_t config = GPIOGetConfigDio(iocfgRegAddr);
+	uint32_t config = IOCGetConfig(pin);
 
 	/* GPIO input/output configuration flags */
 	if (config & IOC_IOC0_INPEN_EN) {
@@ -208,15 +200,15 @@ static int gpio_cc27xxxx_pin_interrupt_configure(const struct device *port, gpio
 		return -ENOTSUP;
 	}
 
-	uint32_t config = GPIOGetConfigDio(IOC_ADDR(pin)) & ~IOC_IOC0_EDGEDET_M;
+	uint32_t config = IOCGetConfig(pin) & ~IOC_IOC0_EDGEDET_M;
 
 	if (mode == GPIO_INT_MODE_DISABLED) {
 		config |= IOC_IOC0_EDGEDET_EDGE_DIS;
 
-		GPIOSetConfigDio(IOC_ADDR(pin), config);
+		IOCSetConfigAndMux(pin, config, IOC_MUX_GPIO);
 
 		/* Disable interrupt mask */
-		set_pin_mask_non_atomic(pin, GPIO_O_IMCLR);
+		GPIODisableEventDio(pin);
 
 	} else if (mode == GPIO_INT_MODE_EDGE) {
 		switch (trig) {
@@ -236,11 +228,11 @@ static int gpio_cc27xxxx_pin_interrupt_configure(const struct device *port, gpio
 		/* Allow interrupts to trigger in standby */
 		config |= IOC_IOC0_WUENSB;
 
-		GPIOSetConfigDio(IOC_ADDR(pin), config);
+		IOCSetConfigAndMux(pin, config, IOC_MUX_GPIO);
 
 		/* Enable interrupt mask */
-		set_pin_mask_non_atomic(pin, GPIO_O_ICLR);
-		set_pin_mask_non_atomic(pin, GPIO_O_IMSET);
+		GPIOClearEventDio(pin);
+		GPIOEnableEventDio(pin);
 	}
 
 	return 0;
@@ -256,14 +248,14 @@ static int gpio_cc27xx_manage_callback(const struct device *port, struct gpio_ca
 
 static uint32_t gpio_cc27xx_get_pending_int(const struct device *dev)
 {
-	return GPIOGetEventMultiDio(GPIO_DIO_ALL_MASK);
+	return GPIOGetEventMultiDio(GPIO_DIO_ALL_MASK, true);
 }
 
 static void gpio_cc27xx_isr(const struct device *dev)
 {
 	struct gpio_cc27xx_data *data = dev->data;
 
-	uint32_t status = GPIOGetEventMultiDio(GPIO_DIO_ALL_MASK);
+	uint32_t status = GPIOGetEventMultiDio(GPIO_DIO_ALL_MASK, true);
 
 	GPIOClearEventMultiDio(status);
 
