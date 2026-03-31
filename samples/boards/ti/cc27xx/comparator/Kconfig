@@ -1,0 +1,13 @@
+config LPF3_ENABLE_COMPARATOR_INTERRUPT
+	bool "Enable comparator events to generate interrupts"
+	default n
+
+config LPCOMP_INPUT_COMBINATION_TEST_ENABLE
+	bool "Enable comparator input combination test"
+	default n
+
+config LPCOMP_EVENT_TEST_ENABLE
+	bool "Enable comparator trigger event test"
+	default n
+
+source "Kconfig.zephyr"
