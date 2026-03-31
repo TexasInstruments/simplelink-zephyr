@@ -8,3 +8,4 @@ tests:
       or dt_alias_exists("pwm-3") or dt_compat_enabled("st,stm32-pwm")
       or dt_compat_enabled("intel,blinky-pwm") or dt_compat_enabled("nordic,nrf-pwm")
     depends_on: pwm
+    harness: ztest

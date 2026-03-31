@@ -206,72 +206,74 @@ pipeline
                 {
                     /* Run zephyr compliance tests as is done in .github/workflows/compliance.yml
                        ZEPHYR-163: fix checkpatch compliance failure */
-                    int statusCompliance = docker_compose.bashGetStatus("""\
-                        cd zephyr; \
-                        source zephyr-env.sh; \
-                        ./scripts/ci/check_compliance.py -e KconfigBasic -c origin/${env.CHANGE_TARGET}.. \
-                    """, label: 'Run compliance checks')
+                    if (env.CHANGE_TARGET != "null" && env.CHANGE_TARGET != null) {
+                        int statusCompliance = docker_compose.bashGetStatus("""\
+                          cd zephyr; \
+                          source zephyr-env.sh; \
+                          ./scripts/ci/check_compliance.py -e KconfigBasic -c origin/${env.CHANGE_TARGET}.. \
+                        """, label: 'Run compliance checks')
 
-                    /* Convert report to .html */
-                    docker_compose.bash('junit2html zephyr/compliance.xml compliance_report.html')
+                        /* Convert report to .html */
+                        docker_compose.bash('junit2html zephyr/compliance.xml compliance_report.html')
 
-                    /* Save converted report */
-                    sh(
-                        script: 'mkdir -p .compliance_reports; mv compliance_report.html .compliance_reports/',
-                        label: 'Copy compliance reports'
-                    )
+                        /* Save converted report */
+                        sh(
+                            script: 'mkdir -p .compliance_reports; mv compliance_report.html .compliance_reports/',
+                            label: 'Copy compliance reports'
+                        )
 
-                    /* Archive reports folder in Jenkins job */
-                    publishHTML([
-                        allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false,
-                        reportDir: './.compliance_reports', reportName: 'Compliance Reports',
-                        reportFiles: 'compliance_report.html',
-                        reportTitles: 'Compliance Report'
-                    ])
+                        /* Archive reports folder in Jenkins job */
+                        publishHTML([
+                            allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false,
+                            reportDir: './.compliance_reports', reportName: 'Compliance Reports',
+                            reportFiles: 'compliance_report.html',
+                            reportTitles: 'Compliance Report'
+                        ])
 
-                    /* Run coding guideline checks as is done in .github/workflows/coding_guidelines.yml */
-                    int statusGuidelines = docker_compose.bashGetStatus("""\
-                        touch ${env.GUIDELINE_CHECK_FILE}; \
-                        cd zephyr; \
-                        source zephyr-env.sh; \
-                        ./scripts/ci/guideline_check.py \
-                        --output ../${env.GUIDELINE_CHECK_FILE} \
-                        -c origin/${env.CHANGE_TARGET}.. \
-                    """, label: 'Run coding guideline checks')
+                        /* Run coding guideline checks as is done in .github/workflows/coding_guidelines.yml */
+                        int statusGuidelines = docker_compose.bashGetStatus("""\
+                            touch ${env.GUIDELINE_CHECK_FILE}; \
+                            cd zephyr; \
+                            source zephyr-env.sh; \
+                            ./scripts/ci/guideline_check.py \
+                            --output ../${env.GUIDELINE_CHECK_FILE} \
+                            -c origin/${env.CHANGE_TARGET}.. \
+                        """, label: 'Run coding guideline checks')
 
-                    /* ZEPHYR-165: run license check. It relies on an external github action
-                       which is not trivial to replicate */
+                        /* ZEPHYR-165: run license check. It relies on an external github action
+                        which is not trivial to replicate */
 
-                    if (statusCompliance != 0) {
-                        common.printHeading(':warning: Compliance Checks Failed')
-                        common.printBody("Compliance results: ([Full report](${env.JOB_URL}/Compliance_20Reports/))")
-                        unstable("Compliance check failures. Status code ${statusCompliance}")
+                        if (statusCompliance != 0) {
+                            common.printHeading(':warning: Compliance Checks Failed')
+                            common.printBody("Compliance results: ([Full report](${env.JOB_URL}/Compliance_20Reports/))")
+                            unstable("Compliance check failures. Status code ${statusCompliance}")
 
-                        dir('zephyr')
-                        {
-                            /* Check for jenkins merge commit */
-                            String previousCommitMsg = sh(
-                            script: 'git log -1 --pretty=format:"%s"',
-                            returnStdout: true
-                            ).trim()
+                            dir('zephyr')
+                            {
+                                /* Check for jenkins merge commit */
+                                String previousCommitMsg = sh(
+                                script: 'git log -1 --pretty=format:"%s"',
+                                returnStdout: true
+                                ).trim()
 
-                            // More specific pattern to extract the commit hash
-                            Boolean matcher = previousCommitMsg ==~ /^Merge commit '([a-f0-9]{40})' into HEAD$/
+                                // More specific pattern to extract the commit hash
+                                Boolean matcher = previousCommitMsg ==~ /^Merge commit '([a-f0-9]{40})' into HEAD$/
 
-                            if (matcher) {
-                                common.printBody("Jenkins has created a merge commit, causing some compliance check failures. Rebase your work on the target branch to fix this!")
+                                if (matcher) {
+                                    common.printBody("Jenkins has created a merge commit, causing some compliance check failures. Rebase your work on the target branch to fix this!")
+                                }
                             }
+                        } else {
+                            common.printHeading(':white_check_mark: Compliance Checks Passed')
                         }
-                    } else {
-                        common.printHeading(':white_check_mark: Compliance Checks Passed')
-                    }
-                    String guidelineCheckContents = readFile(env.GUIDELINE_CHECK_FILE)
-                    if (statusGuidelines != 0 && guidelineCheckContents.size() != 0) {
-                        common.printHeading(':warning: Coding Guideline Checks Failed')
-                        common.printBody(guidelineCheckContents)
-                        unstable("Coding guideline check failures. Status code ${statusGuidelines}")
-                    } else {
-                        common.printHeading(':white_check_mark: Coding Guideline Checks Passed')
+                        String guidelineCheckContents = readFile(env.GUIDELINE_CHECK_FILE)
+                        if (statusGuidelines != 0 && guidelineCheckContents.size() != 0) {
+                            common.printHeading(':warning: Coding Guideline Checks Failed')
+                            common.printBody(guidelineCheckContents)
+                            unstable("Coding guideline check failures. Status code ${statusGuidelines}")
+                        } else {
+                            common.printHeading(':white_check_mark: Coding Guideline Checks Passed')
+                        }
                     }
                 }
             }
