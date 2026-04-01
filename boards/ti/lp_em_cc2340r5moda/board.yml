@@ -2,4 +2,4 @@ board:
   name: lp_em_cc2340r5moda
   vendor: ti
   socs:
-    - name: cc2340r5
+    - name: cc2340r53

@@ -276,6 +276,14 @@ static int convert_vs_le_meta_event(uint8 *pHciPkt, uint16 *pktLen)
 	uint8_t status;
 	uint8_t *params = NULL;
 
+	if (IS_ENABLED(CONFIG_BT_TI_SWAT_TEST_MODE)) {
+		/* If TI SWAT test mode is enabled, skip conversion and return success.
+		 * This allows vendor-specific LE meta events to be sent directly to
+		 * the host for TI internal test lab validation purposes.
+		 */
+		return 0;
+	}
+
 	/* Check minimum length for Vendor-Specific LE Meta Event */
 	if ((pHciPkt == NULL) || (pktLen == NULL) || (*pktLen < HCI_VS_MIN_LENGTH)) {
 		ret_val = -EINVAL;

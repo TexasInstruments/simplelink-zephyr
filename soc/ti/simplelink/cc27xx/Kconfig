@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Texas Instruments Incorporated
+# Copyright (c) 2025-2026 Texas Instruments Incorporated
 # Copyright (c) 2024 BayLibre, SAS
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -11,15 +11,12 @@ config SOC_SERIES_CC27XX
 	select ARMV8_M_DSP
 	select CPU_HAS_ARM_SAU
 	select CPU_CORTEX_M_HAS_VTOR
-	select HAS_CC27XX_SDK
 	select TICKLESS_KERNEL
 	select DYNAMIC_INTERRUPTS
 	select HAS_TI_SCFG if !BOOTLOADER_MCUBOOT
 	select HAS_TI_CCFG if !BOOTLOADER_MCUBOOT
 	select DYNAMIC_DPL_OBJECTS
 	select EVENTS
-	select DYNAMIC_THREAD
-	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
 	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
 	select HAS_PM
@@ -225,6 +222,28 @@ config CC27XX_WR_ER_PROT_SECT256_511
 	  Bit i protects sectors [256 + 8i, 263 + 8i].
 	  0 = protected.
 
+config CC27XX_WR_ER_PROT_SECT512_767
+	hex "Write/Erase protection mask (sectors 512-767)"
+	depends on HAS_CC27XXX20_SDK
+	range 0 0xffffffff
+	default 0xffffffff
+	help
+	  Bitmask for write/erase protection of groups of 8 sectors.
+	  Bit i protects sectors [512 + 8i, 519 + 8i].
+	  0 = protected.
+	  Only applicable to devices with 2 MB flash (CC27XX20 family).
+
+config CC27XX_WR_ER_PROT_SECT768_1023
+	hex "Write/Erase protection mask (sectors 768-1023)"
+	depends on HAS_CC27XXX20_SDK
+	range 0 0xffffffff
+	default 0xffffffff
+	help
+	  Bitmask for write/erase protection of groups of 8 sectors.
+	  Bit i protects sectors [768 + 8i, 775 + 8i].
+	  0 = protected.
+	  Only applicable to devices with 2 MB flash (CC27XX20 family).
+
 config CC27XX_WR_ER_PROT_CCFG_SECT
 	hex "Write/Erase protection mask (CCFG sectors)"
 	range 0 1
@@ -303,6 +322,28 @@ config CC27XX_CHIP_ER_RETAIN_SECT256_511
 	  Bitmask for chip erase protection of groups of 8 sectors.
 	  Bit i protects sectors [256 + 8i, 263 + 8i].
 	  0 = protected.
+
+config CC27XX_CHIP_ER_RETAIN_SECT512_767
+	hex "Chip erase protection mask (sectors 512-767)"
+	depends on HAS_CC27XXX20_SDK
+	range 0 0xffffffff
+	default 0
+	help
+	  Bitmask for chip erase protection of groups of 8 sectors.
+	  Bit i protects sectors [512 + 8i, 519 + 8i].
+	  0 = protected.
+	  Only applicable to devices with 2 MB flash (CC27XX20 family).
+
+config CC27XX_CHIP_ER_RETAIN_SECT768_1023
+	hex "Chip erase protection mask (sectors 768-1023)"
+	depends on HAS_CC27XXX20_SDK
+	range 0 0xffffffff
+	default 0
+	help
+	  Bitmask for chip erase protection of groups of 8 sectors.
+	  Bit i protects sectors [768 + 8i, 775 + 8i].
+	  0 = protected.
+	  Only applicable to devices with 2 MB flash (CC27XX20 family).
 
 config CC27XX_CHIP_READ_PROT_MAIN_SECTOR
 	hex "Main sector read protection"

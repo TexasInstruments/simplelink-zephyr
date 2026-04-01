@@ -137,6 +137,10 @@ int main(void)
 	printk("Success.\n");
 
 	printk("Subscribing to periodic advertising sync transfers\n");
+
+	/* This line is TI add-on to the source code*/
+	// Initiate past_param so options value will be valid
+	memset(&past_param, 0, sizeof(past_param));
 	past_param.skip = 1;
 	past_param.timeout = 1000; /* 10 seconds */
 	err = bt_le_per_adv_sync_transfer_subscribe(NULL /* any peer */,

@@ -871,6 +871,8 @@ flagged.
         "CLOCK_STM32_SYSCLK_SRC_",
         "CMU",
         "COMPILER_RT_RTLIB",
+        "CRYPTO_ESP32_AES", # Config only present in upstream
+        "CRYPTO_MCHP_AES_G1", # Config only present in upstream
         "BT_6LOWPAN",  # Defined in Linux, mentioned in docs
         "CMD_CACHE",  # Defined in U-Boot, mentioned in docs
         "CRC",  # Used in TI CC13x2 / CC26x2 SDK comment

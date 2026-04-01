@@ -39,7 +39,7 @@
 		bias-disable;
 	};
 	spi0_cs_default: spi0_cs_default {
-		pinmux = <6 DIO6_GPIO6>;
+		pinmux = <11 DIO11_SPI0_CSN>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;
@@ -64,7 +64,7 @@
 		bias-disable;
 	};
 	spi0_cs_sleep: spi0_cs_sleep {
-		pinmux = <6 DIO6_GPIO6>;
+		pinmux = <11 DIO11_GPIO11>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;
@@ -147,6 +147,13 @@
 	pwm5_default: lgpt1_chan2_default {
 		pinmux = <14 DIO14_T1_C2N>;
 		bias-disable;
+	};
+
+	/* LGPT1 ch2 capture input (DIO6, T1_C2 PFUNC3) - BoosterPack pin 38 */
+	pwm5_capture: lgpt1_chan2_capture {
+		pinmux = <6 DIO6_T1_C2>;
+		bias-disable;
+		input-enable;
 	};
 
 	/* LGPT2 - PWM */

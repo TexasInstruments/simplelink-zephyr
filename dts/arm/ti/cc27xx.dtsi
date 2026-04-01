@@ -104,21 +104,23 @@
 		};
 
 		uart0: uart@40034000{
-			compatible = "ti,cc27xx-uart";
+			compatible = "ti,lpf3-uart";
 			reg = <0x40034000 0x4c>;
 			interrupts = <11 0>;
 			clocks = <&uartclk>;
+			ti,clkctl-id = <0x4>; /* CLKCTL_UART0 */
 			dmas = <&dma 2 6>, <&dma 3 7>;
 			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 
 		uart1: uart@40035000{
-			compatible = "ti,cc27xx-uart";
+			compatible = "ti,lpf3-uart";
 			reg = <0x40035000 0x4c>;
 			interrupts = <22 0>;
 			clocks = <&uartclk>;
-			dmas = <&dma 0 12>, <&dma 1 13>;
+			ti,clkctl-id = <0x8>; /* CLKCTL_UART1 */
+			dmas = <&dma 1 12>, <&dma 0 13>;
 			dma-names = "tx", "rx";
 			status = "disabled";
 		};
@@ -137,9 +139,37 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40030000 0x164>;
+			clock-id = <0x400>;	/* CLKCTL_SPI0 */
 			interrupts = <10 0>;
 			dmas = <&dma 0 0>, <&dma 1 1>;
 			dma-names = "tx", "rx";
+			status = "disabled";
+		};
+
+		spi1: spi@40031000 {
+			compatible = "ti,cc23x0-cc27xx-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40031000 0x164>;
+			clock-id = <0x800>;	/* CLKCTL_SPI1 */
+			interrupts = <23 0>;
+			dmas = <&dma 6 10>, <&dma 7 11>;
+			dma-names = "tx", "rx";
+			status = "disabled";
+		};
+
+		i2s0: i2s@400c1000 {
+			compatible = "ti,cc27xx-i2s";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x400c1000 0x100>;
+			interrupts = <20 0>;
+			afclk-source = <0x02>; /* CLKAF (AFOSC) */
+			afosc-freq = <98304000>; /* 98.304 MHz for 48 kHz family */
+			cclk-divider = <40>; /* CCLK = AFCLK / 40 = 2.4576 MHz */
+			startup-delay = <2>; /* 2 WS cycles delay */
+			pin-dir-sd0 = <0x02>;  /* OUTPUT (TX to codec) */
+			pin-dir-sd1 = <0x01>;  /* INPUT (RX from codec) */
 			status = "disabled";
 		};
 
@@ -154,7 +184,7 @@
 
 		rng: entropy {
 			compatible = "ti,cc27xx-rng", "simple-bus";
-			status = "okay";
+			status = "disabled";
 		};
 
 		dma: dma@400c4000 {
@@ -178,6 +208,12 @@
 		wdt0: watchdog@40001000 {
 			compatible = "ti,lpf3-wdt";
 			reg = <0x40001000 0x1000>;
+			status = "disabled";
+		};
+		rtc: rtc@40002000 {
+			compatible = "ti,lpf3-rtc-timer";
+			reg = <0x40002000 0x68>;
+			interrupts = <30 0>;
 			status = "disabled";
 		};
 

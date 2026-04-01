@@ -1,10 +1,19 @@
 tests:
+  # Test scenario for devices with internal loopback or separate TX/RX devices
   drivers.i2s.speed:
     depends_on: i2s
+    platform_exclude:
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10
+      - lp_em_cc2755p10
+      - lp_em_cc2755p20
     tags:
       - drivers
       - i2s
     filter: not CONFIG_I2S_TEST_USE_GPIO_LOOPBACK
+
+  # Test scenario for devices requiring external GPIO loopback
+  # Requires external wiring: TX data pin → RX data pin
   drivers.i2s.speed.gpio_loopback:
     depends_on:
       - i2s

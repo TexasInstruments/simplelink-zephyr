@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&uart0 {
+	hw-flow-control;
+	pinctrl-0 = <&uart0_rx_default &uart0_tx_default &uart0_rts_default &uart0_cts_default>;
+};

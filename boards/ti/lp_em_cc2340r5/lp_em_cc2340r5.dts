@@ -17,7 +17,7 @@
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
 
 / {
-	model = "LP_EM_CC2340R5";
+	model = "TI CC2340R5 LaunchPad";
 	compatible = "ti,lp_em_cc2340r5";
 
 	chosen {
@@ -41,6 +41,7 @@
 		watchdog0 = &wdt0;
 		mcuboot-led0 = &led1;
 		mcuboot-button0 = &btn1;
+		rtc = &rtc0;
 	};
 
 	leds {
@@ -212,5 +213,13 @@
 };
 
 &wdt0 {
+	status = "okay";
+};
+
+&rtc0 {
+	status = "okay";
+};
+
+&rng {
 	status = "okay";
 };

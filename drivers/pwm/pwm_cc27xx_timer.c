@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Texas Instruments Incorporated
+ * Copyright (c) 2026 Texas Instruments Incorporated
  * Copyright (c) 2024 BayLibre, SAS
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -27,6 +27,10 @@
 #include <inc/hw_evtsvt.h>
 #include <inc/hw_memmap.h>
 
+#ifdef CONFIG_PWM_CAPTURE
+#include <zephyr/irq.h>
+#endif
+
 #include <zephyr/logging/log.h>
 #define LOG_MODULE_NAME pwm_cc27xx_timer_lgpt
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_PWM_LOG_LEVEL);
@@ -38,6 +42,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_PWM_LOG_LEVEL);
 #define LGPT_CxCFG_OUT0         0x100
 #define LGPT_CxCFG_OUT1         0x200
 #define LGPT_CxCFG_OUT2         0x400
+
 
 /*
  * Per-channel state tracking for proper handling of start/stop/modify sequences.
@@ -54,6 +59,16 @@ struct pwm_cc27xx_timer_data {
 	uint32_t base_clk;
 	struct k_spinlock lock;
 	struct pwm_channel_state channels[LGPT_MAX_CHANNELS];
+#ifdef CONFIG_PWM_CAPTURE
+	struct {
+		pwm_capture_callback_handler_t callback;
+		void *user_data;
+		pwm_flags_t flags;
+		bool is_capturing;
+		bool is_continuous;
+		bool first_capture;
+	} capture;
+#endif
 };
 
 struct pwm_cc27xx_timer_config {
@@ -61,7 +76,17 @@ struct pwm_cc27xx_timer_config {
 	const struct pinctrl_dev_config *pcfg;
 	uint8_t lgpt_id;
 	uint8_t output_idx;  /* Which output (0, 1, or 2) this PWM controls */
+#ifdef CONFIG_PWM_CAPTURE
+	uint32_t irq_num;
+	uint32_t irq_priority;
+	uint32_t max_top_value;
+#endif
 };
+
+#ifdef CONFIG_PWM_CAPTURE
+/* One slot per LGPT instance (0-3); tracks which device is currently capturing */
+static const struct device *lgpt_capture_dev[4];
+#endif
 
 static inline void pwm_cc27xx_timer_pm_policy_state_lock_get(void)
 {
@@ -315,9 +340,181 @@ static int pwm_cc27xx_timer_get_cycles_per_sec(const struct device *dev, uint32_
 	return 0;
 }
 
+#ifdef CONFIG_PWM_CAPTURE
+
+/*
+ * ISR registered dynamically via irq_connect_dynamic() when capture is enabled.
+ * The driver always uses the channel-0 hardware registers (C0CCNC / PC0CCNC)
+ * regardless of output_idx; output_idx only selects which OUTx_EN bit is set.
+ */
+static void pwm_cc27xx_timer_isr(const void *arg)
+{
+	const struct device *dev = arg;
+	const struct pwm_cc27xx_timer_config *cfg = dev->config;
+	struct pwm_cc27xx_timer_data *data = dev->data;
+	uint32_t base = cfg->base;
+
+	uint32_t mis = HWREG(base + LGPT_O_MIS);
+
+	HWREG(base + LGPT_O_ICLR) = mis;
+	barrier_dsync_fence_full();
+
+	/*
+	 * Only react to capture (C0CC). TGT wraps are intentionally not
+	 * unmasked — when no input edge arrives, the OS-level timeout in
+	 * pwm_capture_cycles() returns -EAGAIN. Firing -ERANGE here would
+	 * race that timeout and break test_capture_timeout.
+	 */
+	if (mis & LGPT_RIS_C0CC) {
+		uint32_t period   = HWREG(base + LGPT_O_C0CCNC);
+		uint32_t low_time = HWREG(base + LGPT_O_PC0CCNC);
+		uint32_t pulse;
+
+		/*
+		 * The first capture event after enable can be a partial cycle
+		 * (timer started mid-period). Discard it and wait for the next
+		 * complete cycle. Apply to both single and continuous modes so
+		 * callers never see a transient value.
+		 */
+		if (data->capture.first_capture) {
+			data->capture.first_capture = false;
+			return;
+		}
+
+		/*
+		 * Empirically, the LGPT in PER_PULSE_WIDTH_MEAS mode reports:
+		 *   C0CCNC  = full period
+		 *   PC0CCNC = duration of the LOW phase of the physical input
+		 * Zephyr's pulse_cycles is the duration of the *active* state:
+		 *   PWM_POLARITY_NORMAL   → active = HIGH → pulse = period - low
+		 *   PWM_POLARITY_INVERTED → active = LOW  → pulse = low
+		 */
+		if (data->capture.flags & PWM_POLARITY_INVERTED) {
+			pulse = low_time;
+		} else {
+			pulse = (period > low_time) ? (period - low_time) : 0;
+		}
+
+		if (!data->capture.is_continuous) {
+			HWREG(base + LGPT_O_IMCLR) = LGPT_RIS_C0CC;
+			HWREG(base + LGPT_O_CTL) = LGPT_CTL_MODE_DIS;
+			barrier_dsync_fence_full();
+			data->capture.is_capturing = false;
+			lgpt_capture_dev[cfg->lgpt_id] = NULL;
+			irq_disable(cfg->irq_num);
+		}
+		data->capture.callback(dev, 0, period, pulse, 0, data->capture.user_data);
+	}
+}
+
+static int pwm_cc27xx_timer_configure_capture(const struct device *dev, uint32_t channel,
+					      pwm_flags_t flags,
+					      pwm_capture_callback_handler_t cb,
+					      void *user_data)
+{
+	const struct pwm_cc27xx_timer_config *cfg = dev->config;
+	struct pwm_cc27xx_timer_data *data = dev->data;
+	uint32_t ccfg;
+
+	ARG_UNUSED(channel);
+
+	if (!(flags & (PWM_CAPTURE_TYPE_PERIOD | PWM_CAPTURE_TYPE_PULSE))) {
+		return -EINVAL;
+	}
+	if (data->capture.is_capturing) {
+		return -EBUSY;
+	}
+
+	/* C0CFG must be written while CTL.MODE = DIS per TRM */
+	pwm_cc27xx_timer_stop(cfg);
+
+	ccfg = LGPT_C0CFG_CCACT_PER_PULSE_WIDTH_MEAS
+	     | LGPT_C0CFG_INPUT_IO
+	     | pwm_cc27xx_timer_get_output_enable(cfg->output_idx);
+	ccfg |= (flags & PWM_POLARITY_INVERTED) ? LGPT_C0CFG_EDGE_FALL : LGPT_C0CFG_EDGE_RISE;
+
+	HWREG(cfg->base + LGPT_O_C0CFG) = ccfg;
+	HWREG(cfg->base + LGPT_O_TGT) = cfg->max_top_value;
+	barrier_dsync_fence_full();
+
+	data->capture.callback    = cb;
+	data->capture.user_data   = user_data;
+	data->capture.flags       = flags;
+	data->capture.is_continuous = !!(flags & PWM_CAPTURE_MODE_CONTINUOUS);
+
+	LOG_DBG("configure_capture output_idx=%d ccfg=0x%x top=0x%x",
+		cfg->output_idx, ccfg, cfg->max_top_value);
+
+	return 0;
+}
+
+static int pwm_cc27xx_timer_enable_capture(const struct device *dev, uint32_t channel)
+{
+	const struct pwm_cc27xx_timer_config *cfg = dev->config;
+	struct pwm_cc27xx_timer_data *data = dev->data;
+
+	ARG_UNUSED(channel);
+
+	if (data->capture.callback == NULL) {
+		return -EINVAL;
+	}
+	if (data->capture.is_capturing) {
+		return -EBUSY;
+	}
+	if (lgpt_capture_dev[cfg->lgpt_id] != NULL &&
+	    lgpt_capture_dev[cfg->lgpt_id] != dev) {
+		return -EBUSY;
+	}
+
+	lgpt_capture_dev[cfg->lgpt_id] = dev;
+	irq_connect_dynamic(cfg->irq_num, cfg->irq_priority,
+			    pwm_cc27xx_timer_isr, dev, 0);
+
+	HWREG(cfg->base + LGPT_O_ICLR)  = LGPT_RIS_C0CC | LGPT_RIS_TGT;
+	HWREG(cfg->base + LGPT_O_IMSET) = LGPT_RIS_C0CC;
+	barrier_dsync_fence_full();
+
+	data->capture.is_capturing = true;
+	data->capture.first_capture = true;
+	pwm_cc27xx_timer_start(cfg);
+	irq_enable(cfg->irq_num);
+
+	LOG_DBG("enable_capture lgpt_id=%d irq=%d", cfg->lgpt_id, cfg->irq_num);
+
+	return 0;
+}
+
+static int pwm_cc27xx_timer_disable_capture(const struct device *dev, uint32_t channel)
+{
+	const struct pwm_cc27xx_timer_config *cfg = dev->config;
+	struct pwm_cc27xx_timer_data *data = dev->data;
+
+	ARG_UNUSED(channel);
+
+	irq_disable(cfg->irq_num);
+	HWREG(cfg->base + LGPT_O_IMCLR) = LGPT_RIS_C0CC;
+	pwm_cc27xx_timer_stop(cfg);
+	HWREG(cfg->base + LGPT_O_ICLR)  = LGPT_RIS_C0CC | LGPT_RIS_TGT;
+	barrier_dsync_fence_full();
+
+	data->capture.is_capturing = false;
+	lgpt_capture_dev[cfg->lgpt_id] = NULL;
+
+	LOG_DBG("disable_capture lgpt_id=%d", cfg->lgpt_id);
+
+	return 0;
+}
+
+#endif /* CONFIG_PWM_CAPTURE */
+
 static const struct pwm_driver_api pwm_cc27xx_timer_driver_api = {
 	.set_cycles = pwm_cc27xx_timer_set_cycles,
 	.get_cycles_per_sec = pwm_cc27xx_timer_get_cycles_per_sec,
+#ifdef CONFIG_PWM_CAPTURE
+	.configure_capture = pwm_cc27xx_timer_configure_capture,
+	.enable_capture    = pwm_cc27xx_timer_enable_capture,
+	.disable_capture   = pwm_cc27xx_timer_disable_capture,
+#endif
 };
 
 static int pwm_cc27xx_timer_clock_action(const struct device *dev, bool activate)
@@ -413,6 +610,11 @@ static int pwm_cc27xx_timer_pm_action(const struct device *dev, enum pm_device_a
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx),				\
 		.lgpt_id = (DT_TIMER_BASE_ADDR(idx) - LGPT0_BASE) >> 12,		\
 		.output_idx = PWM_OUTPUT_IDX(idx),					\
+		IF_ENABLED(CONFIG_PWM_CAPTURE, (					\
+		.irq_num      = DT_IRQN(DT_INST_PARENT(idx)),				\
+		.irq_priority = DT_IRQ(DT_INST_PARENT(idx), priority),			\
+		.max_top_value = DT_PROP(DT_INST_PARENT(idx), max_top_value),		\
+		))									\
 	};										\
 											\
 	static struct pwm_cc27xx_timer_data pwm_cc27xx_timer_##idx##_data = {			\

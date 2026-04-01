@@ -141,11 +141,7 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 		return;
 	}
 
-#ifdef CONFIG_SOC_SERIES_CC23X0
-	ADCEnableDMATrigger();
-#elif CONFIG_SOC_SERIES_CC27XX
 	ADCEnableDmaTrigger();
-#endif
 
 	dma_start(cfg->dma_dev, cfg->dma_channel);
 #else
@@ -290,7 +286,7 @@ static int adc_lpf3_read_common(const struct device *dev, const struct adc_seque
 		ADCSetAdjustmentOffset(data->ref_volt[ch_start]);
 
 #ifdef CONFIG_ADC_LPF3_DMA_DRIVEN
-		ADCEnableDMAInterrupt(ADC_LPF3_INT_MEMRES(0));
+		HWREG(ADC_BASE + ADC_O_IMASK2) |= ADC_LPF3_INT_MEMRES(0);
 #endif
 	} else if (data->ch_count <= ADC_LPF3_MEM_COUNT) {
 		for (i = 0; i < ADC_LPF3_CH_COUNT; i++) {
@@ -327,7 +323,7 @@ static int adc_lpf3_read_common(const struct device *dev, const struct adc_seque
 		 * DMA transfer will be triggered when the last storage register
 		 * of the sequence is loaded with a new conversion result
 		 */
-		ADCEnableDMAInterrupt(ADC_LPF3_INT_MEMRES(mem_index - 1));
+		HWREG(ADC_BASE + ADC_O_IMASK2) |= ADC_LPF3_INT_MEMRES(mem_index - 1);
 #endif
 	} else {
 		LOG_ERR("Too many channels in the sequence, max %u", ADC_LPF3_MEM_COUNT);

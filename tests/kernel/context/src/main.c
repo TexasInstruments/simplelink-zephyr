@@ -32,6 +32,10 @@
 #include <soc.h>
 #endif
 
+#if defined(CONFIG_SOC_SERIES_CC27XX) || defined(CONFIG_SOC_SERIES_CC23X0)
+#include <ti/drivers/Power.h>
+#endif
+
 #define THREAD_STACKSIZE    (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define THREAD_STACKSIZE2   (384 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define THREAD_PRIORITY     4
@@ -220,6 +224,17 @@ static void idle_timer_expiry_function(struct k_timer *timer_id)
 	idle_timer_done = true;
 }
 
+#if defined(CONFIG_SOC_SERIES_CC27XX) || defined(CONFIG_SOC_SERIES_CC23X0)
+static int_fast16_t lfclk_notify_cb(uint_fast16_t eventType, uintptr_t eventArg,
+				    uintptr_t clientArg)
+{
+	ARG_UNUSED(eventType);
+	ARG_UNUSED(eventArg);
+	k_sem_give((struct k_sem *)clientArg);
+	return Power_NOTIFYDONE;
+}
+#endif /* CONFIG_SOC_SERIES_CC27XX || CONFIG_SOC_SERIES_CC23X0 */
+
 static void _test_kernel_cpu_idle(int atomic)
 {
 	uint64_t t0, dt;
@@ -227,6 +242,26 @@ static void _test_kernel_cpu_idle(int atomic)
 	uint32_t dur = k_ms_to_ticks_ceil32(10);
 	uint32_t slop = 1 + k_ms_to_ticks_ceil32(1);
 	int idle_loops;
+
+#if defined(CONFIG_SOC_SERIES_CC27XX) || defined(CONFIG_SOC_SERIES_CC23X0)
+	/* Wait for LFXT qualification before testing idle.
+	 * PowerLPF3_selectLFXT() starts an async sequence (oscillatorISR
+	 * firing at each step). Those ISR firings wake WFI spuriously if they
+	 * overlap with the test window. If LFXT already qualified before we
+	 * registered, the 200ms timeout covers that race.
+	 */
+	if (DT_HAS_COMPAT_STATUS_OKAY(ti_cc27xx_lf_xosc) ||
+		DT_HAS_COMPAT_STATUS_OKAY(ti_cc23x0_lf_xosc)) {
+		struct k_sem lfclk_sem;
+		Power_NotifyObj lfclk_notify;
+
+		k_sem_init(&lfclk_sem, 0, 1);
+		Power_registerNotify(&lfclk_notify, PowerLPF3_LFCLK_SWITCHED,
+				     lfclk_notify_cb, (uintptr_t)&lfclk_sem);
+		k_sem_take(&lfclk_sem, K_MSEC(200));
+		Power_unregisterNotify(&lfclk_notify);
+	}
+#endif /* CONFIG_SOC_SERIES_CC27XX || CONFIG_SOC_SERIES_CC23X0 */
 
 	/* Set up a time to trigger events to exit idle mode */
 	k_timer_init(&idle_timer, idle_timer_expiry_function, NULL);
@@ -260,6 +295,26 @@ static void _test_kernel_cpu_idle(int atomic)
 {
 	int tms, tms2;
 	int i;
+
+#if defined(CONFIG_SOC_SERIES_CC27XX) || defined(CONFIG_SOC_SERIES_CC23X0)
+	/* Wait for LFXT qualification before testing idle.
+	 * PowerLPF3_selectLFXT() starts an async sequence (oscillatorISR
+	 * firing at each step). Those ISR firings wake WFI spuriously if they
+	 * overlap with the test window. If LFXT already qualified before we
+	 * registered, the 200ms timeout covers that race.
+	 */
+	if (DT_HAS_COMPAT_STATUS_OKAY(ti_cc27xx_lf_xosc) ||
+		DT_HAS_COMPAT_STATUS_OKAY(ti_cc23x0_lf_xosc)) {
+		struct k_sem lfclk_sem;
+		Power_NotifyObj lfclk_notify;
+
+		k_sem_init(&lfclk_sem, 0, 1);
+		Power_registerNotify(&lfclk_notify, PowerLPF3_LFCLK_SWITCHED,
+				     lfclk_notify_cb, (uintptr_t)&lfclk_sem);
+		k_sem_take(&lfclk_sem, K_MSEC(200));
+		Power_unregisterNotify(&lfclk_notify);
+	}
+#endif /* ONFIG_SOC_SERIES_CC27XX || CONFIG_SOC_SERIES_CC23X0 */
 
 	/* Align to a "ms boundary". */
 	tms = k_uptime_get_32();

@@ -45,7 +45,7 @@ LOG_MODULE_REGISTER(i2c_cc23xx_cc27xx);
 struct i2c_cc23xx_cc27xx_data {
 	bool is_configured;    /* Indicates if the I2C controller has been configured */
 	struct k_sem sync_sem; /* Semaphore used for blocking I2C operations */
-	struct k_mutex mutex;  /* Mutex for protecting against multiple I2C operations */
+	struct k_sem lock;     /* Binary semaphore protecting against concurrent I2C operations */
 	volatile int status;   /* Holds the current status of the I2C transaction */
 	struct i2c_msg *msgs;  /* Pointer to chain of messages provided by user */
 	uint8_t num_msgs;      /* Number of messages in the msgs chain */
@@ -343,7 +343,7 @@ static int i2c_cc23xx_cc27xx_transfer_cb_controller(const struct device *dev, st
 {
 	struct i2c_cc23xx_cc27xx_data *data = dev->data;
 
-	if (k_mutex_lock(&data->mutex, K_NO_WAIT) != 0) {
+	if (k_sem_take(&data->lock, K_NO_WAIT) != 0) {
 		LOG_ERR("I2C controller already busy with a transfer");
 		return -EWOULDBLOCK;
 	}
@@ -391,10 +391,7 @@ static int i2c_cc23xx_cc27xx_controller_transfer(const struct device *dev, struc
 {
 	struct i2c_cc23xx_cc27xx_data *data = dev->data;
 
-	if (k_mutex_lock(&data->mutex, K_NO_WAIT) != 0) {
-		LOG_ERR("I2C controller already busy with a transfer");
-		return -EWOULDBLOCK;
-	}
+	k_sem_take(&data->lock, K_FOREVER);
 
 #ifdef CONFIG_I2C_CALLBACK
 	data->cb = NULL;
@@ -427,6 +424,15 @@ static int i2c_cc23xx_cc27xx_controller_transfer(const struct device *dev, struc
 		/* The status of the transfer is stored in the data context */
 		ret = data->status;
 	}
+
+	/* Release the lock here in the calling thread context. For blocking
+	 * transfers the ISR only signals sync_sem; it does not release the
+	 * lock, because k_lock_unlock (and even k_sem_give used as a lock)
+	 * must be paired with the thread that acquired it when ownership
+	 * semantics matter. For the async path the ISR releases the lock
+	 * directly via k_sem_give, which is ISR-safe.
+	 */
+	k_sem_give(&data->lock);
 
 	return ret;
 }
@@ -500,8 +506,6 @@ static int i2c_cc23xx_cc27xx_runtime_controller_configure(const struct device *d
 
 	data->cfg = dev_config;
 	data->is_configured = true;
-
-	k_mutex_init(&data->mutex);
 
 	return 0;
 }
@@ -696,11 +700,6 @@ static void i2c_cc23xx_cc27xx_controller_transfer_complete(const struct device *
 	}
 
 	if (completed) {
-		/* Post the semaphore to indicate completion (sync mode) */
-		if (data->is_blocking) {
-			k_sem_give(&(data->sync_sem));
-		}
-
 		/* Disable and clear any interrupts */
 		I2CControllerDisableInt(config->base);
 		I2CControllerClearInt(config->base);
@@ -708,18 +707,27 @@ static void i2c_cc23xx_cc27xx_controller_transfer_complete(const struct device *
 		/* Release the power dependency */
 		i2c_cc23xx_cc27xx_pm_policy_state_lock_put(data);
 
-		/* Release the mutex to allow other transfers */
-		k_mutex_unlock(&data->mutex);
-
+		if (data->is_blocking) {
+			/* Signal the blocked thread. The calling thread releases
+			 * the lock after k_sem_take(sync_sem) returns, so it is
+			 * not released here.
+			 */
+			k_sem_give(&data->sync_sem);
+		} else {
 #ifdef CONFIG_I2C_CALLBACK
-		/* Call the user callback function */
-		if (data->cb != NULL) {
-			data->cb(dev, data->status, data->cb_data);
-			data->cb = NULL;
-			data->cb_data = NULL;
-			data->current_msg_index = 0;
-		}
+			/* Call the user callback function */
+			if (data->cb != NULL) {
+				data->cb(dev, data->status, data->cb_data);
+				data->cb = NULL;
+				data->cb_data = NULL;
+				data->current_msg_index = 0;
+			}
 #endif /* CONFIG_I2C_CALLBACK */
+			/* No waiting thread for async transfers. Release the lock
+			 * here. k_sem_give is ISR-safe, unlike k_lock_unlock.
+			 */
+			k_sem_give(&data->lock);
+		}
 	}
 }
 
@@ -910,6 +918,7 @@ static const struct i2c_driver_api i2c_cc23xx_cc27xx_driver_api = {
                                                                                                    \
 	static struct i2c_cc23xx_cc27xx_data i2c_cc23xx_cc27xx_##id##_data = {                     \
 		.sync_sem = Z_SEM_INITIALIZER(i2c_cc23xx_cc27xx_##id##_data.sync_sem, 0, 1),       \
+		.lock = Z_SEM_INITIALIZER(i2c_cc23xx_cc27xx_##id##_data.lock, 1, 1),               \
 		.status = 0,                                                                       \
 		.cfg = 0,                                                                          \
 	};                                                                                         \

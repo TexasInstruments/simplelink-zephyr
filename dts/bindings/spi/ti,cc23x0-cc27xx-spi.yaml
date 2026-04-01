@@ -20,6 +20,14 @@ properties:
   pinctrl-names:
     required: true
 
+  clock-id:
+    type: int
+    required: true
+    description: |
+      CLKCTL peripheral clock gate ID for this SPI instance.
+      Use CLKCTL_SPI0 (0x400) for SPI instance 0 or CLKCTL_SPI1 (0x800)
+      for SPI instance 1.
+
   dmas:
     description: |
       Optional TX & RX DMA specifiers. Each specifier will have a phandle

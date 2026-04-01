@@ -96,3 +96,10 @@ if MBEDTLS
 	config TEST_EXTRA_STACK_SIZE
 	default 1024
 endif # MBEDTLS
+
+# Object tracking for semaphores is currently not supported
+config OBJ_CORE_SEM
+		default n
+
+config TRACING_SEMAPHORE
+		default n

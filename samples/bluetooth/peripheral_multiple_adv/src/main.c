@@ -34,8 +34,8 @@ static const struct gpio_dt_spec rled = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 static int configure_leds(void);
 static ssize_t read_led(struct bt_conn *conn,
 						const struct bt_gatt_attr *attr,
-						const void *buf, uint16_t len,
-						uint16_t offset, uint8_t flags);
+						void *buf, uint16_t len,
+						uint16_t offset);
 static ssize_t write_led(struct bt_conn *conn,
 						 const struct bt_gatt_attr *attr,
 						 const void *buf, uint16_t len,
@@ -121,8 +121,8 @@ static int configure_leds(void)
 
 static ssize_t read_led(struct bt_conn *conn,
 						const struct bt_gatt_attr *attr,
-						const void *buf, uint16_t len,
-						uint16_t offset, uint8_t flags)
+						void *buf, uint16_t len,
+						uint16_t offset)
 {
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, &led_state,
 							 sizeof(led_state));
@@ -149,7 +149,6 @@ static void adv_work_handler(struct k_work *work)
 	if (err) {
 		printk("Failed to start connectable advertising set (err %d)\n",
 		       err);
-		return err;
 	}
 }
 

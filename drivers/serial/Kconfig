@@ -188,9 +188,7 @@ rsource "Kconfig.cc13xx_cc26xx"
 
 rsource "Kconfig.cc32xx"
 
-rsource "Kconfig.cc23x0"
-
-rsource "Kconfig.cc27xx"
+rsource "Kconfig.lpf3"
 
 rsource "Kconfig.cc35xx"
 

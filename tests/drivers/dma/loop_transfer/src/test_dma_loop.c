@@ -139,6 +139,12 @@ static int test_loop(const struct device *dma)
 	dma_block_cfg.dest_address = (uint32_t)rx_data[transfer_count];
 #endif
 
+#if defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX)
+	/* This is a SW triggered transfer that needs auto mode */
+	dma_cfg.source_handshake = 1U;
+	dma_cfg.source_chaining_en = 1U;
+#endif /* defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX) */
+
 	if (dma_config(dma, chan_id, &dma_cfg)) {
 		TC_PRINT("ERROR: transfer config (%d)\n", chan_id);
 		return TC_FAIL;
@@ -212,6 +218,12 @@ static int test_loop_suspend_resume(const struct device *dma)
 #ifdef CONFIG_DMA_MCUX_TEST_SLOT_START
 	dma_cfg.dma_slot = CONFIG_DMA_MCUX_TEST_SLOT_START;
 #endif
+
+#if defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX)
+	/* This is a SW triggered transfer that needs auto mode */
+	dma_cfg.source_handshake = 1U;
+	dma_cfg.source_chaining_en = 1U;
+#endif /* defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX) */
 
 	chan_id = dma_request_channel(dma, NULL);
 	if (chan_id < 0) {
@@ -387,6 +399,12 @@ static int test_loop_repeated_start_stop(const struct device *dma)
 #ifdef CONFIG_DMA_MCUX_TEST_SLOT_START
 	dma_cfg.dma_slot = CONFIG_DMA_MCUX_TEST_SLOT_START;
 #endif
+
+#if defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX)
+	/* This is a SW triggered transfer that needs auto mode */
+	dma_cfg.source_handshake = 1U;
+	dma_cfg.source_chaining_en = 1U;
+#endif /* defined(CONFIG_SOC_SERIES_CC23X0) || defined(CONFIG_SOC_SERIES_CC27XX) */
 
 	if (!check_dev_power_state(dma, PM_DEVICE_STATE_OFF)) {
 		return TC_FAIL;

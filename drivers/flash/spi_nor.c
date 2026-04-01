@@ -565,6 +565,8 @@ static void acquire_device(const struct device *dev)
 		k_sem_take(&driver_data->sem, K_FOREVER);
 	}
 
+	pm_device_busy_set(dev);
+
 	if (IS_ENABLED(CONFIG_SPI_NOR_IDLE_IN_DPD)) {
 		exit_dpd(dev);
 	}
@@ -580,6 +582,8 @@ static void release_device(const struct device *dev)
 	if (IS_ENABLED(CONFIG_SPI_NOR_IDLE_IN_DPD)) {
 		enter_dpd(dev);
 	}
+
+	pm_device_busy_clear(dev);
 
 	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
 		struct spi_nor_data *const driver_data = dev->data;

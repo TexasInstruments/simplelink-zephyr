@@ -247,7 +247,7 @@ manifest:
         - hal
     - name: simplelink-hal_ti
       remote: downstream
-      revision: a039c7b6dc8eef738c9ca3a36ca82cf1ee1c79ba
+      revision: ab1817da0c3580ea78437806b60163b00d500ae5
       path: modules/hal/ti
       groups:
         - hal
@@ -348,7 +348,7 @@ manifest:
       path: modules/lib/zcbor
     - name: hal_ti
       url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
-      revision: 9.20-baseline
+      revision: 218d961-ti-v1.00.00_eng
       groups:
         - internal
 

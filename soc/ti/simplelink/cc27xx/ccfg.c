@@ -54,6 +54,10 @@ const ccfg_t ccfg __attribute__((section(".ti_ccfg"))) __attribute__((used)) = {
 	.flashProt.writeEraseProt.mainSectors0_31      = CONFIG_CC27XX_WR_ER_PROT_SECT0_31,
 	.flashProt.writeEraseProt.mainSectors32_255    = CONFIG_CC27XX_WR_ER_PROT_SECT32_255,
 	.flashProt.writeEraseProt.mainSectors256_511   = CONFIG_CC27XX_WR_ER_PROT_SECT256_511,
+#ifdef CONFIG_HAS_CC27XXX20_SDK
+	.flashProt.writeEraseProt.mainSectors512_767   = CONFIG_CC27XX_WR_ER_PROT_SECT512_767,
+	.flashProt.writeEraseProt.mainSectors768_1023  = CONFIG_CC27XX_WR_ER_PROT_SECT768_1023,
+#endif
 
 	.flashProt.writeEraseProt.ccfgSector = CONFIG_CC27XX_WR_ER_PROT_CCFG_SECT,
 	.flashProt.writeEraseProt.fcfgSector = CONFIG_CC27XX_WR_ER_PROT_FCFG_SECT,
@@ -67,6 +71,10 @@ const ccfg_t ccfg __attribute__((section(".ti_ccfg"))) __attribute__((used)) = {
 	.flashProt.chipEraseRetain.mainSectors0_31     = CONFIG_CC27XX_CHIP_ER_RETAIN_SECT0_31,
 	.flashProt.chipEraseRetain.mainSectors32_255   = CONFIG_CC27XX_CHIP_ER_RETAIN_SECT32_255,
 	.flashProt.chipEraseRetain.mainSectors256_511  = CONFIG_CC27XX_CHIP_ER_RETAIN_SECT256_511,
+#ifdef CONFIG_HAS_CC27XXX20_SDK
+	.flashProt.chipEraseRetain.mainSectors512_767  = CONFIG_CC27XX_CHIP_ER_RETAIN_SECT512_767,
+	.flashProt.chipEraseRetain.mainSectors768_1023 = CONFIG_CC27XX_CHIP_ER_RETAIN_SECT768_1023,
+#endif
 
 	.debugCfg.authorization = CCFG_DBGAUTH_DBGOPEN,
 };

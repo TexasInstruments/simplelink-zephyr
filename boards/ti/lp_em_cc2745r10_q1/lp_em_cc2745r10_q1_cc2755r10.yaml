@@ -13,8 +13,19 @@ supported:
   - dma
   - crypto
   - spi
+  - i2s
   - adc
   - pm
+  - pwm
   - watchdog
   - counter
+  - rtc
+  - nvs
+  - entropy
+  - flash
+  - pinctrl
+  - serial
+  - timer
+  - i2c
+  - uart
 vendor: ti

@@ -17,7 +17,7 @@
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
 
 / {
-	model = "LP_EM_CC2745R10_Q1 with CC2745R10_Q1 SoC";
+	model = "TI CC2745R10_Q1 LaunchPad with CC2745R10_Q1 SoC";
 
 	chosen {
 		zephyr,sram = &sram0;
@@ -37,6 +37,7 @@
 		sw1 = &btn1;
 		pwm-led0 = &pwm_led0;
 		pwm-led1 = &pwm_led1;
+		rtc = &rtc;
 	};
 
 	pwmleds {
@@ -167,6 +168,19 @@ ti_bt_hci: ti_bt_hci {
 	};
 };
 
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_sck_default
+		     &spi1_mosi_default
+		     &spi1_miso_default
+		     &spi1_cs_default>;
+	pinctrl-1 = <&spi1_sck_sleep
+		     &spi1_mosi_sleep
+		     &spi1_miso_sleep
+		     &spi1_cs_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
 &dma {
 	status = "okay";
 };
@@ -227,4 +241,12 @@ ti_bt_hci: ti_bt_hci {
 	status = "okay";
 	pinctrl-0 = <&pwm7_default>;
 	pinctrl-names = "default";
+};
+
+&rtc {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
 };

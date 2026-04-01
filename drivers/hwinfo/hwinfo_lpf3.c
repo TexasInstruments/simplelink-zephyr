@@ -34,6 +34,7 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 	case PMCTL_RESET_PIN:
 		*cause = RESET_PIN;
 		break;
+	/* Intentional fall-through */
 	case PMCTL_RESET_VDDS:
 	case PMCTL_RESET_VDDR:
 		*cause = RESET_BROWNOUT;
@@ -56,6 +57,18 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 	case PMCTL_RESET_SWD:
 		*cause = RESET_DEBUG;
 		break;
+	/* Intentional fall-through */
+	case PMCTL_RESET_SHUTDOWN_IO:
+	case PMCTL_RESET_SHUTDOWN_SWD:
+		*cause = RESET_LOW_POWER_WAKE;
+		break;
+	/* Intentional fall-through */
+	case PMCTL_RESET_ANALOG_FSM_TIMEOUT:
+	case PMCTL_RESET_ANALOG_ERROR:
+	case PMCTL_RESET_DIGITAL_ERROR:
+	case PMCTL_RESET_CPU:
+		*cause = RESET_HARDWARE;
+		break;
 #if CONFIG_SOC_SERIES_CC27XX
 	case PMCTL_RESET_EM_SENSOR:
 		*cause = RESET_SECURITY;
@@ -67,6 +80,8 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 		*cause = RESET_PARITY;
 		break;
 #endif
+	default:
+		*cause = 0;
 	}
 
 	return 0;
@@ -83,7 +98,9 @@ int z_impl_hwinfo_get_supported_reset_cause(uint32_t *supported)
 		      | RESET_TEMPERATURE
 			  | RESET_WATCHDOG
 			  | RESET_CPU_LOCKUP
-			  | RESET_DEBUG);
+			  | RESET_DEBUG
+			  | RESET_LOW_POWER_WAKE
+			  | RESET_HARDWARE);
 	#elif CONFIG_SOC_SERIES_CC27XX
 	*supported = (RESET_POR
 			  | RESET_PIN
@@ -95,7 +112,9 @@ int z_impl_hwinfo_get_supported_reset_cause(uint32_t *supported)
 			  | RESET_CPU_LOCKUP
 			  | RESET_DEBUG
 			  | RESET_SECURITY
-			  | RESET_PARITY);
+			  | RESET_PARITY
+			  | RESET_LOW_POWER_WAKE
+			  | RESET_HARDWARE);
 	#endif
 
 	return 0;

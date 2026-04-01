@@ -16,4 +16,14 @@ supported:
   - crypto
   - spi
   - watchdog
+  - rtc
+  - nvs
+  - pm
+  - entropy
+  - flash
+  - pinctrl
+  - serial
+  - timer
+  - i2c
+  - uart
 vendor: ti

@@ -14,7 +14,7 @@ K_MEM_SLAB_DEFINE(tx_mem_slab, BLOCK_SIZE, NUM_TX_BLOCKS, 32);
 
 /* The data_l represent a sine wave */
 ZTEST_DMEM int16_t data_l[SAMPLE_NO] = {
-	  6392,  12539,  18204,  23169,  27244,  30272,  32137,  32767,  32137,
+	 6392,  12539,  18204,  23169,  27244,  30272,  32137,  32767,  32137,
 	 30272,  27244,  23169,  18204,  12539,   6392,      0,  -6393, -12540,
 	-18205, -23170, -27245, -30273, -32138, -32767, -32138, -30273, -27245,
 	-23170, -18205, -12540,  -6393,     -1,
@@ -135,8 +135,13 @@ static int rx_block_read_slab(const struct device *dev_i2s, int att,
 	int ret;
 
 	ret = i2s_buf_read(dev_i2s, rx_block, &rx_size);
-	if (ret < 0 || rx_size != BLOCK_SIZE) {
-		TC_PRINT("Error: Read failed\n");
+	if (ret < 0) {
+		TC_PRINT("Error: Read failed with error code %d\n", ret);
+		return -TC_FAIL;
+	}
+	if (rx_size != BLOCK_SIZE) {
+		TC_PRINT("Error: Read size mismatch, expected %d, got %zu\n",
+			 BLOCK_SIZE, rx_size);
 		return -TC_FAIL;
 	}
 	ret = verify_buf((uint16_t *)rx_block, att);
@@ -157,10 +162,17 @@ int configure_stream(const struct device *dev_i2s, enum i2s_dir dir)
 {
 	int ret;
 	struct i2s_config i2s_cfg;
+#ifdef CONFIG_I2S_TEST_DATA_FORMAT_LJF
+	uint32_t data_format = I2S_FMT_DATA_FORMAT_LEFT_JUSTIFIED;
+#elif CONFIG_I2S_TEST_DATA_FORMAT_RJF
+	uint32_t data_format = I2S_FMT_DATA_FORMAT_RIGHT_JUSTIFIED;
+#else
+	uint32_t data_format = I2S_FMT_DATA_FORMAT_I2S;
+#endif
 
 	i2s_cfg.word_size = 16U;
 	i2s_cfg.channels = 2U;
-	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S;
+	i2s_cfg.format = data_format;
 	i2s_cfg.frame_clk_freq = FRAME_CLK_FREQ;
 	i2s_cfg.block_size = BLOCK_SIZE;
 	i2s_cfg.timeout = TIMEOUT;
@@ -170,9 +182,15 @@ int configure_stream(const struct device *dev_i2s, enum i2s_dir dir)
 		i2s_cfg.options = I2S_OPT_FRAME_CLK_MASTER
 				| I2S_OPT_BIT_CLK_MASTER;
 	} else if (dir == I2S_DIR_RX) {
+#if defined(CONFIG_I2S_TI_CC35XX) || defined(CONFIG_I2S_TI_CC27XX)
+		/* CC35XX and CC27XX do not support Slave config */
+		i2s_cfg.options = I2S_OPT_FRAME_CLK_MASTER
+				| I2S_OPT_BIT_CLK_MASTER;
+#else
 		/* Configure the Receive port as Slave */
 		i2s_cfg.options = I2S_OPT_FRAME_CLK_SLAVE
 				| I2S_OPT_BIT_CLK_SLAVE;
+#endif
 	} else { /* dir == I2S_DIR_BOTH */
 		i2s_cfg.options = I2S_OPT_FRAME_CLK_MASTER
 				| I2S_OPT_BIT_CLK_MASTER;

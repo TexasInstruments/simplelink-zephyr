@@ -23,7 +23,7 @@ static const struct device *const uart_dev = DEVICE_DT_GET(UART_DEVICE_NODE);
 /* receive buffer used in UART ISR callback */
 static char rx_buf[MSG_SIZE];
 
-#ifdef CONFIG_UART_CC23X0_DMA_DRIVEN
+#ifdef CONFIG_UART_LPF3_DMA_DRIVEN
 
 #define MSG_SIZE_DMA (MSG_SIZE - 1)
 
@@ -102,7 +102,7 @@ void serial_cb(const struct device *dev, void *user_data)
 	}
 }
 
-#endif /* CONFIG_UART_CC23X0_DMA_DRIVEN */
+#endif /* CONFIG_UART_LPF3_DMA_DRIVEN */
 
 /*
  * Print a null-terminated string character by character to the UART interface
@@ -111,7 +111,7 @@ void print_uart(char *buf)
 {
 	int msg_len = strlen(buf);
 
-#ifdef CONFIG_UART_CC23X0_DMA_DRIVEN
+#ifdef CONFIG_UART_LPF3_DMA_DRIVEN
 	int ret;
 
 	do {
@@ -121,7 +121,7 @@ void print_uart(char *buf)
 	for (int i = 0; i < msg_len; i++) {
 		uart_poll_out(uart_dev, buf[i]);
 	}
-#endif /* CONFIG_UART_CC23X0_DMA_DRIVEN */
+#endif /* CONFIG_UART_LPF3_DMA_DRIVEN */
 }
 
 int main(void)
@@ -134,7 +134,7 @@ int main(void)
 		return 0;
 	}
 
-#ifdef CONFIG_UART_CC23X0_DMA_DRIVEN
+#ifdef CONFIG_UART_LPF3_DMA_DRIVEN
 	/* configure interrupt and callback to handle events */
 	ret = uart_callback_set(uart_dev, serial_cb_async, NULL);
 	if (ret < 0) {
@@ -171,7 +171,7 @@ int main(void)
 
 	print_uart("Hello! I'm your echo bot.\r\n");
 	print_uart("Tell me something and press enter:\r\n");
-#endif /* CONFIG_UART_CC23X0_DMA_DRIVEN */
+#endif /* CONFIG_UART_LPF3_DMA_DRIVEN */
 
 	/* indefinitely wait for input from the user */
 	while (k_msgq_get(&uart_msgq, &tx_buf, K_FOREVER) == 0) {

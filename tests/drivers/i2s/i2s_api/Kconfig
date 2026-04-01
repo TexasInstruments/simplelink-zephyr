@@ -37,3 +37,18 @@ config I2S_TEST_ALLOWED_DATA_OFFSET
 	help
 	  Maximum allowed offset between sent and received samples. Non-zero
 	  value of this option may be needed when GPIO loopback is used.
+
+config I2S_TEST_DATA_FORMAT_LJF
+	bool "Use Left Justified data format for testing"
+	help
+	  Use Left Justified (LJF) data format instead of standard I2S format.
+
+config I2S_TEST_DATA_FORMAT_RJF
+	bool "Use Right Justified data format for testing"
+	help
+	  Use Right Justified (RJF) data format instead of standard I2S format.
+
+config I2S_TI_CC35XX
+	bool
+	help
+	  Hidden symbol to indicate TI CC35XX I2S driver is enabled.

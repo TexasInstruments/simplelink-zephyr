@@ -12,7 +12,7 @@
 		io-channels = <&adc0 0x3>, <&adc0 0x4>, <&adc0 0x5>, <&adc0 0x6>;
 	};
 
-	alias {
+	aliases {
 		adc0 = &adc0;
 	};
 };

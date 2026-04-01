@@ -7,9 +7,35 @@ tests:
       - qemu_cortex_m3
       - qemu_x86
       - lp_em_cc2340r5
+      - lp_em_cc2340r5moda
       - lp_em_cc2340r53
+      - lp_em_cc2340r53_wcsp
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10
+      - lp_em_cc2755p10
+      - lp_em_cc2755p20
     tags: bluetooth
     integration_platforms:
       - qemu_cortex_m3
+  sample.bluetooth.central.ti_lpf3.coex_3wire_cc23xx:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2340r5
+      - lp_em_cc2340r5moda
+      - lp_em_cc2340r53
+      - lp_em_cc2340r53_wcsp
+    extra_args: EXTRA_DTC_OVERLAY_FILE=boards/cc23xx_coex_3wire.overlay
+    extra_configs:
+      - CONFIG_RCL_COEX=y
+    tags: bluetooth
+  sample.bluetooth.central.ti_lpf3.coex_3wire_cc27xx:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10
+      - lp_em_cc2755p10
+      - lp_em_cc2755p20
+    extra_args: EXTRA_DTC_OVERLAY_FILE=boards/cc27xx_coex_3wire.overlay
+    extra_configs:
+      - CONFIG_RCL_COEX=y
+    tags: bluetooth

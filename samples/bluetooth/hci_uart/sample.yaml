@@ -6,9 +6,37 @@ tests:
     harness: bluetooth
     platform_allow:
       - lp_em_cc2340r5
+      - lp_em_cc2340r5moda
       - lp_em_cc2340r53
+      - lp_em_cc2340r53_wcsp
       - lp_em_cc2745r10_q1/cc2745r10_q1
       - lp_em_cc2745r10_q1/cc2755r10
+      - lp_em_cc2755p10
+      - lp_em_cc2755p20
+    tags:
+      - uart
+      - bluetooth
+  sample.bluetooth.hci_uart.ti_lpf3.flowcontrol:
+    harness: bluetooth
+    platform_allow:
+      - lp_em_cc2340r53
+    extra_args: DTC_OVERLAY_FILE=./boards/ti_lpf3_flowcontrol.overlay
+    tags:
+      - uart
+      - bluetooth
+  sample.bluetooth.hci_uart.ti_lpf3.test_mode:
+    harness: bluetooth
+    extra_configs:
+      - CONFIG_BT_TI_SWAT_TEST_MODE=y
+    platform_allow:
+      - lp_em_cc2340r5
+      - lp_em_cc2340r5moda
+      - lp_em_cc2340r53
+      - lp_em_cc2340r53_wcsp
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+      - lp_em_cc2745r10_q1/cc2755r10
+      - lp_em_cc2755p10
+      - lp_em_cc2755p20
     tags:
       - uart
       - bluetooth

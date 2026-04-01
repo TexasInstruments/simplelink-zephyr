@@ -6,7 +6,7 @@
 
 /dts-v1/;
 
-#include <ti/cc2340r5.dtsi>
+#include <ti/cc2340r53.dtsi>
 #include "boosterpack_connector.dtsi"
 #include "lp_em_cc2340r5moda-pinctrl.dtsi"
 #include <zephyr/dt-bindings/gpio/gpio.h>
@@ -38,6 +38,7 @@
 		pwm-led0 = &pwm_green;
 		pwm-led1 = &pwm_red;
 		watchdog0 = &wdt0;
+		rtc = &rtc0;
 		mcuboot-led0 = &led1;
 		mcuboot-button0 = &btn1;
 	};
@@ -144,6 +145,7 @@
 	mx25r80: mx25r8035f@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
+		status = "disabled";
 		spi-max-frequency = <12000000>;
 		size = <0x800000>;
 		jedec-id = [c2 28 14];
@@ -195,5 +197,13 @@
 };
 
 &wdt0 {
+	status = "okay";
+};
+
+&rtc0 {
+	status = "okay";
+};
+
+&rng {
 	status = "okay";
 };

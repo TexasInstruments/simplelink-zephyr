@@ -4,7 +4,7 @@ import java.util.regex.Matcher
 /* groovylint-disable DuplicateStringLiteral, NestedBlockDepth, UnnecessaryGetter */
 /* groovylint-disable DuplicateNumberLiteral, CompileStatic */
 
-env.FWTOOLS_TAG = '2026.04.23_0'
+env.FWTOOLS_TAG = '2026.06.10_0'
 library("fwtools@${env.FWTOOLS_TAG}")
 
 /* Command syntax help text
@@ -63,7 +63,7 @@ pipeline
 
         /* These args come from .github/workflows/twister.yml and are used in the twister step */
 
-        SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1/cc2745r10_q1 lp_em_cc2745r10_q1/cc2755r10'
+        SUPPORTED_BOARDS = 'lp_em_cc2340r5 lp_em_cc2340r53 lp_em_cc2745r10_q1/cc2745r10_q1 lp_em_cc2745r10_q1/cc2755r10 lp_em_cc2755p10'
         TEST_ALL_SUPPORTED_BOARDS = 'all_supported_ti'
 
         TEST_SUBDIRECTORY = '.'
@@ -72,6 +72,8 @@ pipeline
         '--force-color --inline-logs -v -N \
         --retry-failed 3 --timeout-multiplier 2 --clobber-output -W \
         -j $(nproc)'
+
+        TWISTER_ADDITIONAL_ARGS = '--fixture gpio_loopback --fixture gpio_spi_loopback --fixture pwm_loopback'
 
         /* Avoid building large binary files */
         TWISTER_KCONFIG_OVERRIDES = '-x CONFIG_BUILD_OUTPUT_BIN=n'
@@ -148,9 +150,11 @@ pipeline
                         env.BOARDS_FINAL = params.BOARDS
                     }
 
+                    env.BOARDS_UNDERSCORES = env.BOARDS_FINAL.replaceAll('/', '_')
+
                     /* Don't pass -p if no boards specified */
                     if (env.BOARDS_FINAL != '') {
-                        env.LAB_DEVICE_LABELS = env.BOARDS_FINAL.split(' ').collect { (it.split('/').last() + '_ZEPHYR').toUpperCase() }.join(' ')
+                        env.LAB_DEVICE_LABELS = env.BOARDS_FINAL.split(' ').collect { (it.replaceAll('/', '_') + '_ZEPHYR').toUpperCase() }.join(' ')
                         env.BOARDS_FINAL = '-p ' + env.BOARDS_FINAL.split(' ').join(' -p ')
                     }
 
@@ -340,7 +344,7 @@ pipeline
             }
         }
 
-        stage('Twister')
+        stage('Twister Build')
 
         {
             steps
@@ -359,46 +363,62 @@ pipeline
                         int statusTwister = docker_compose.bashGetStatus("""\
                             cd zephyr; \
                             source zephyr-env.sh; \
-                            west twister --prep-artifacts-for-testing ${env.TWISTER_COMMON} ${env.TWISTER_KCONFIG_OVERRIDES} ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}; \
+                            west twister --prep-artifacts-for-testing ${env.TWISTER_COMMON} ${env.TWISTER_KCONFIG_OVERRIDES} ${env.TWISTER_ADDITIONAL_ARGS} ${env.BOARDS_FINAL} ${env.TESTFOLDERS_FINAL}; \
                         """, label: 'Build twister tests')
 
                         if (statusTwister != 0) {
                             unstable("Build marked unstable due to twister failures. Status code ${statusTwister}")
                         }
-
-                        stash(
-                            name: 'firmware_images',
-                            includes: ".west/**/*,zephyr/twister-out/**/*",
-                            allowEmpty: true
-                        )
+                        for (board in env.BOARDS_UNDERSCORES.tokenize(' ')) {
+                            stash(
+                                name: "firmware_images_${board}",
+                                includes: ".west/**/*,zephyr/twister-out/${board}/**/*,zephyr/twister-out/*.*",
+                                excludes: "zephyr/twister-out/**/build.log",
+                                allowEmpty: true
+                            )
+                        }
 
                         /* Check out fwtools to have access to ./fwtools/scripts/jenkins/parse-xml-results.py */
                         git.checkoutHttps('lprfmw', 'fwtools', env.FWTOOLS_TAG)
 
                         String testResultTable = '''
-| Test Results | Pass   | Fail   | Error | Skip    | Total |
+| Build Results | Pass   | Fail   | Error | Skip    | Total |
 |--------------|--------|--------|-------|---------|-------|
 '''
                         /* Publish test summary to PR comment */
                         sh('cp zephyr/twister-out/twister.xml zephyr/twister-out/twister_build.xml')
+                        sh('sed -i \'s/classname="/classname="build./g\' zephyr/twister-out/twister_build.xml')
 
                         testResultTable += common.parseMultiXmlResults('zephyr/twister-out/twister_build.xml')
                         common.printBody(testResultTable)
 
                         junit testResults: 'zephyr/twister-out/twister_build.xml',
-                        allowEmptyResults: true, skipPublishingChecks: true
+                            allowEmptyResults: true, skipPublishingChecks: true
+                    }
+                }
+            }
+        }
+        stage('Twister Test')
+
+        {
+            steps
+            {
+                script
+                {
+                    if(!keywords.containsKey('no_twister')) {
 
                         env.LOCATION = 'oslo'
 
                         /* Only mount devices when required */
                         common.printHeading('Tests Results')
-                        test.allDevices(env.LAB_DEVICE_LABELS, '', additionalNodeSpec: env.LOCATION + "&& zephyr", twister: true)
+                        test.allDevices(env.LAB_DEVICE_LABELS, '', additionalTestArgs: env.TWISTER_ADDITIONAL_ARGS, additionalNodeSpec: env.LOCATION + "&& zephyr", twister: true)
 
                     }
                 }
+
             }
         }
-    }
+}
 
     post
     {
@@ -406,6 +426,9 @@ pipeline
         {
             script
             {
+                /* Clean up test artifacts, leaving top level files */
+                sh("rm -r zephyr/twister-out/*/")
+
                 common.deployFeedback()
             }
         }

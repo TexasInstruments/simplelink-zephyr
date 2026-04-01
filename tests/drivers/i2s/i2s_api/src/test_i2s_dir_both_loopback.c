@@ -86,7 +86,10 @@ ZTEST_USER(i2s_dir_both_loopback, test_i2s_dir_both_transfer_long)
 
 	int ret;
 
-	/* Prefill TX queue */
+	/* Prefill TX queue with 2 buffers */
+	ret = tx_block_write(dev_i2s, 0, 0);
+	zassert_equal(ret, TC_PASS);
+
 	ret = tx_block_write(dev_i2s, 0, 0);
 	zassert_equal(ret, TC_PASS);
 
@@ -188,6 +191,11 @@ ZTEST_USER(i2s_dir_both_loopback, test_i2s_dir_both_transfer_restart)
  */
 ZTEST_USER(i2s_dir_both_loopback, test_i2s_dir_both_transfer_rx_overrun)
 {
+	/*
+	 * Skip test on CC27xx due to hardware limitation
+	 */
+	Z_TEST_SKIP_IFDEF(CONFIG_I2S_TI_CC27XX);
+
 	if (!dir_both_supported) {
 		TC_PRINT("I2S_DIR_BOTH value is not supported.\n");
 		ztest_test_skip();
