@@ -53,9 +53,9 @@
 		compatible = "mmio-sram";
 	};
 
-	sysclk: system-clock {
+	uartclk: uart-clock {
 		compatible = "fixed-clock";
-		clock-frequency = <96000000>;
+		clock-frequency = <48000000>;
 		#clock-cells = <0>;
 	};
 
@@ -107,7 +107,7 @@
 			compatible = "ti,cc27xx-uart";
 			reg = <0x40034000 0x4c>;
 			interrupts = <11 0>;
-			clocks = <&sysclk>;
+			clocks = <&uartclk>;
 			dmas = <&dma 2 6>, <&dma 3 7>;
 			dma-names = "tx", "rx";
 			status = "disabled";
@@ -117,7 +117,7 @@
 			compatible = "ti,cc27xx-uart";
 			reg = <0x40035000 0x4c>;
 			interrupts = <22 0>;
-			clocks = <&sysclk>;
+			clocks = <&uartclk>;
 			dmas = <&dma 0 12>, <&dma 1 13>;
 			dma-names = "tx", "rx";
 			status = "disabled";
