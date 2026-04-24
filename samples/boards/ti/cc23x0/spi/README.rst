@@ -20,6 +20,7 @@ Setup LP-EM-CC2340R5 | STEVAL-MKI175V1 (pin connections):
 - [14] DIO12 = SPI_MISO | [22] SDO
 
 - [18] DIO11 = SPI_CS -> Unused by LIS2DE12.
+
 Signal can be probed with scope to ensure that level changes during SPI transfer.
 
 
@@ -38,12 +39,13 @@ SPI controllers with dedicated CS pins do not need to define the cs-gpios proper
 So, for the standard use case, there's nothing to do for the cc23x0 SPI controller.
 
 For CS emulation through a GPIO line, the cs-gpios property must be defined:
-```
-&spi0 {
-	[...]
-	cs-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
-};
-```
+
+.. code-block:: devicetree
+
+   &spi0 {
+      [...]
+      cs-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+   };
 
 Signal can be probed with scope to ensure that level changes during SPI transfer.
 
@@ -63,5 +65,5 @@ Output
 [00:00:00.069,000] <dbg> spi_cc23x0: spi_cc23x0_transceive: SPI transfer completed
 [00:00:00.078,000] <dbg> spi_cc23x0: spi_context_update_tx: tx buf/len 0/0
 [00:00:00.086,000] <dbg> spi_cc23x0: spi_context_update_rx: rx buf/len 0/0
-reg = 0x0f , data = 0x33 0x33 
+reg = 0x0f , data = 0x33 0x33
 SPI slave detected: ID = 0x33

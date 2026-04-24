@@ -12,17 +12,16 @@
 #include <string.h>
 
 #include <driverlib/flash.h>
-#include <driverlib/vims.h>
 
-#define DT_DRV_COMPAT        ti_cc23x0_flash_controller
-#define SOC_NV_FLASH_NODE    DT_INST(0, soc_nv_flash)
+#define DT_DRV_COMPAT     ti_cc23x0_flash_controller
+#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 
-#define FLASH_ADDR           DT_REG_ADDR(SOC_NV_FLASH_NODE)
-#define FLASH_SIZE           DT_REG_SIZE(SOC_NV_FLASH_NODE)
-#define FLASH_ERASE_SIZE     DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
-#define FLASH_WRITE_SIZE     DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
+#define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
+#define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
+#define FLASH_ERASE_SIZE DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
+#define FLASH_WRITE_SIZE DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 
-struct flash_priv {
+struct flash_cc23x0_data {
 	struct k_sem mutex;
 };
 
@@ -33,54 +32,19 @@ static const struct flash_parameters flash_cc23x0_parameters = {
 
 static int flash_cc23x0_init(const struct device *dev)
 {
-	struct flash_priv *priv = dev->data;
+	struct flash_cc23x0_data *data = dev->data;
 
-	k_sem_init(&priv->mutex, 1, 1);
+	k_sem_init(&data->mutex, 1, 1);
 
 	return 0;
 }
 
-static void flash_cc23x0_cache_restore(uint32_t vims_mode)
+static int flash_cc23x0_erase(const struct device *dev, off_t offs, size_t size)
 {
-	while (VIMSModeGet(VIMS_BASE) == VIMS_MODE_CHANGING) {
-		;
-	}
-
-	/* Restore VIMS mode and line buffers */
-	if (vims_mode != VIMS_MODE_DISABLED) {
-		VIMSModeSafeSet(VIMS_BASE, vims_mode, true);
-	}
-
-	VIMSLineBufEnable(VIMS_BASE);
-}
-
-static uint32_t flash_cc23x0_cache_disable(void)
-{
-	uint32_t vims_mode;
-
-	/* VIMS and both line buffers should be off during flash update */
-	VIMSLineBufDisable(VIMS_BASE);
-
-	while (VIMSModeGet(VIMS_BASE) == VIMS_MODE_CHANGING) {
-		;
-	}
-
-	/* Save current VIMS mode for restoring it later */
-	vims_mode = VIMSModeGet(VIMS_BASE);
-	if (vims_mode != VIMS_MODE_DISABLED) {
-		VIMSModeSafeSet(VIMS_BASE, VIMS_MODE_DISABLED, true);
-	}
-
-	return vims_mode;
-}
-
-static int flash_cc23x0_erase(const struct device *dev, off_t offs,
-			      size_t size)
-{
-	struct flash_priv *priv = dev->data;
-	uint32_t vims_mode;
+	struct flash_cc23x0_data *data = dev->data;
 	unsigned int key;
-	int i, rc = 0;
+	int i;
+	int rc = 0;
 	size_t cnt;
 
 	if (!size) {
@@ -88,16 +52,14 @@ static int flash_cc23x0_erase(const struct device *dev, off_t offs,
 	}
 
 	/* Offset and length should be multiple of erase size */
-	if (((offs % FLASH_ERASE_SIZE) != 0) ||
-	    ((size % FLASH_ERASE_SIZE) != 0)) {
+	if (((offs % FLASH_ERASE_SIZE) != 0) || ((size % FLASH_ERASE_SIZE) != 0)) {
 		return -EINVAL;
 	}
 
-	if (k_sem_take(&priv->mutex, K_FOREVER)) {
+	if (k_sem_take(&data->mutex, K_FOREVER)) {
 		return -EACCES;
 	}
 
-	vims_mode = flash_cc23x0_cache_disable();
 	/*
 	 * Disable all interrupts to prevent flash read, from TI's TRF:
 	 *
@@ -109,9 +71,6 @@ static int flash_cc23x0_erase(const struct device *dev, off_t offs,
 	/* Erase sector/page one by one, break out in case of an error */
 	cnt = size / FLASH_ERASE_SIZE;
 	for (i = 0; i < cnt; i++, offs += FLASH_ERASE_SIZE) {
-		while (FlashCheckFsmForReady() != FAPI_STATUS_FSM_READY) {
-			;
-		}
 
 		rc = FlashEraseSector(offs);
 		if (rc != FAPI_STATUS_SUCCESS) {
@@ -122,17 +81,13 @@ static int flash_cc23x0_erase(const struct device *dev, off_t offs,
 
 	irq_unlock(key);
 
-	flash_cc23x0_cache_restore(vims_mode);
-
-	k_sem_give(&priv->mutex);
+	k_sem_give(&data->mutex);
 	return rc;
 }
 
-static int flash_cc23x0_write(const struct device *dev, off_t offs,
-			      const void *data, size_t size)
+static int flash_cc23x0_write(const struct device *dev, off_t offs, const void *data, size_t size)
 {
-	struct flash_priv *priv = dev->data;
-	uint32_t vims_mode;
+	struct flash_cc23x0_data *flash_data = dev->data;
 	unsigned int key;
 	int rc = 0;
 
@@ -153,22 +108,15 @@ static int flash_cc23x0_write(const struct device *dev, off_t offs,
 	 *
 	 * The pui8DataBuffer pointer can not point to flash.
 	 */
-	if ((data >= (void *)FLASH_ADDR) &&
-	    (data <= (void *)(FLASH_ADDR + FLASH_SIZE))) {
+	if ((data >= (void *)FLASH_ADDR) && (data <= (void *)(FLASH_ADDR + FLASH_SIZE))) {
 		return -EINVAL;
 	}
 
-	if (k_sem_take(&priv->mutex, K_FOREVER)) {
+	if (k_sem_take(&flash_data->mutex, K_FOREVER)) {
 		return -EACCES;
 	}
 
-	vims_mode = flash_cc23x0_cache_disable();
-
 	key = irq_lock();
-
-	while (FlashCheckFsmForReady() != FAPI_STATUS_FSM_READY) {
-		;
-	}
 
 	rc = FlashProgram((uint8_t *)data, offs, size);
 	if (rc != FAPI_STATUS_SUCCESS) {
@@ -177,15 +125,12 @@ static int flash_cc23x0_write(const struct device *dev, off_t offs,
 
 	irq_unlock(key);
 
-	flash_cc23x0_cache_restore(vims_mode);
-
-	k_sem_give(&priv->mutex);
+	k_sem_give(&flash_data->mutex);
 
 	return rc;
 }
 
-static int flash_cc23x0_read(const struct device *dev, off_t offs,
-			     void *data, size_t size)
+static int flash_cc23x0_read(const struct device *dev, off_t offs, void *data, size_t size)
 {
 	ARG_UNUSED(dev);
 
@@ -219,8 +164,7 @@ static const struct flash_pages_layout dev_layout = {
 	.pages_size = FLASH_ERASE_SIZE,
 };
 
-static void flash_cc23x0_layout(const struct device *dev,
-				const struct flash_pages_layout **layout,
+static void flash_cc23x0_layout(const struct device *dev, const struct flash_pages_layout **layout,
 				size_t *layout_size)
 {
 	*layout = &dev_layout;
@@ -238,8 +182,7 @@ static const struct flash_driver_api flash_cc23x0_api = {
 #endif
 };
 
-static struct flash_priv flash_data;
+static struct flash_cc23x0_data cc23x0_flash_data;
 
-DEVICE_DT_INST_DEFINE(0, flash_cc23x0_init, NULL, &flash_data, NULL,
-		      POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY,
-		      &flash_cc23x0_api);
+DEVICE_DT_INST_DEFINE(0, flash_cc23x0_init, NULL, &cc23x0_flash_data, NULL, POST_KERNEL,
+		      CONFIG_FLASH_INIT_PRIORITY, &flash_cc23x0_api);

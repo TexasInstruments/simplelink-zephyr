@@ -78,4 +78,6 @@ source "drivers/dma/Kconfig.nxp_edma"
 
 source "drivers/dma/Kconfig.ti_cc23x0"
 
+source "drivers/dma/Kconfig.ti_cc35xx"
+
 endif # DMA

@@ -15,3 +15,5 @@ tests:
     extra_configs:
       - CONFIG_NVME=y
     platform_allow: qemu_x86_64
+  drivers.disk.disk_performance.cc35xx_sdhc:
+    filter: dt_compat_enabled("ti,cc35xx-sdhc")

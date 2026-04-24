@@ -1,0 +1,67 @@
+# Copyright (c) 2025 Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "../lpf3_common/Kconfig.defconfig"
+
+if BOARD_LP_EM_CC2745R10_Q1
+
+if BT
+
+config ZEPHYR
+	bool
+	default y
+
+# The BLE Controller for cc27xx currently uses mbedTLS (SW-based) crypto APIs.
+# Therefore, we need to enable mbedTLS at the application. Otherwise, no crypto
+# device will be defined.
+config CRYPTO
+	default y
+config CRYPTO_CC27XX
+	default n
+config MBEDTLS
+	default y
+choice MBEDTLS_IMPLEMENTATION
+	default MBEDTLS_BUILTIN
+endchoice
+config CRYPTO_MBEDTLS_SHIM
+	default y
+config MBEDTLS_CIPHER_CCM_ENABLED
+	default y
+
+config BT_LL_HEAP_SIZE
+	hex
+	default 0x4E00
+
+config BT_BUF_EVT_RX_SIZE
+	default 255
+
+config BT_BUF_ACL_RX_SIZE
+	default 255
+
+config BT_BUF_ACL_TX_SIZE
+	default 251
+
+config BT_BUF_CMD_TX_SIZE
+	default 255
+
+config BT_COMPANY_ID
+	default 0x000D
+
+choice BT_RECV_CONTEXT
+	bool
+	default BT_RECV_WORKQ_BT if BT_MESH
+	default BT_RECV_WORKQ_SYS
+endchoice
+
+endif # BT
+
+if ENTROPY_GENERATOR
+# Need to increase the main stack size if entropy driver is enabled.
+# Entropy driver depends on large amount of radio noise for
+# generating entropy.
+config MAIN_STACK_SIZE
+	default 3072
+endif # ENTROPY_GENERATOR
+
+endif # BOARD_LP_EM_CC2745R10_Q1

@@ -37,3 +37,9 @@ config I2S_TEST_ALLOWED_DATA_OFFSET
 	help
 	  Maximum allowed offset between sent and received samples. Non-zero
 	  value of this option may be needed when GPIO loopback is used.
+
+config I2S_TEST_DATA_FORMAT_LJF
+	bool "Left justified data format"
+
+config I2S_TEST_DATA_FORMAT_RJF
+	bool "Right justified data format"

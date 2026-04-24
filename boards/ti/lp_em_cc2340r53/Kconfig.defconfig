@@ -1,0 +1,65 @@
+# Copyright (c) 2024 Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+
+rsource "../lpf3_common/Kconfig.defconfig"
+
+if BOARD_LP_EM_CC2340R53
+
+if BT
+
+config ZEPHYR
+	bool
+	default y
+
+config BT_LL_HEAP_SIZE
+	hex
+	default 0x1880 if BT_MESH
+	default 0x4000
+
+config BT_BUF_EVT_RX_SIZE
+	default 255
+
+config BT_BUF_ACL_RX_SIZE
+	default 255
+
+config BT_BUF_ACL_TX_SIZE
+	default 251
+
+config BT_BUF_CMD_TX_SIZE
+	default 255
+
+config BT_COMPANY_ID
+	default 0x000D
+
+choice BT_RECV_CONTEXT
+	bool
+	default BT_RECV_WORKQ_BT if BT_MESH
+	default BT_RECV_WORKQ_SYS
+endchoice
+
+# WARNING: THIS CONFIG MUST BE REMOVED WHEN BLE CONTROLLER HAS MOVED
+# AWAY FROM USING THE SIMPLELINK DMA (BLE_LOKI-3443). FURTHER ZEPHYR DRIVER
+# DEVELOPMENT MUST AVOID USING SIMPLELINK DMA AND INSTEAD MUST USE ZEPHYR
+# DMA DRIVER.
+config DMA_TI_CONTROL_TABLE_PREALLOCATED
+	default y
+
+endif # BT
+
+if PM
+# Power Management requires increased idle task stack size because of
+# stack usage introduced by "pm_state_set"
+config IDLE_STACK_SIZE
+	default 320
+endif # PM
+
+if ENTROPY_GENERATOR
+# Need to increase the main stack size if entropy driver is enabled.
+# Entropy driver depends on large amount of radio noise for
+# generating entropy.
+config MAIN_STACK_SIZE
+	default 3072
+endif # ENTROPY_GENERATOR
+
+endif # BOARD_LP_EM_CC2340R53

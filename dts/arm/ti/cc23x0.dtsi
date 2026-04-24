@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Texas Instruments Incorporated
+ * Copyright (c) 2025 Texas Instruments Incorporated
  * Copyright (c) 2024 BayLibre, SAS
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -10,6 +10,8 @@
 / {
 	chosen {
 		zephyr,flash-controller = &flash_controller;
+		zephyr,bt-hci = &ti_bt_hci;
+		zephyr,entropy = &rng;
 	};
 
 	cpus {
@@ -56,6 +58,11 @@
 		compatible = "fixed-clock";
 		clock-frequency = <48000000>;
 		#clock-cells = <0>;
+	};
+
+	ti_bt_hci: ti_bt_hci {
+		compatible = "ti,bt-hci";
+		status = "enabled";
 	};
 
 	soc {
@@ -118,7 +125,7 @@
 		};
 
 		i2c0: i2c@40038000 {
-			compatible = "ti,cc23x0-i2c";
+			compatible = "ti,cc23xx-cc27xx-i2c";
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40038000 0x820>;
@@ -133,6 +140,11 @@
 			dmas = <&dma 4 3>, <&dma 5 4>;
 			dma-names = "cha", "chb";
 			status = "disabled";
+		};
+
+		rng: entropy {
+			compatible = "ti,cc23x0-rng", "simple-bus";
+			status = "okay";
 		};
 
 		adc0: adc@40050000 {

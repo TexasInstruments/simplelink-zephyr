@@ -1,0 +1,23 @@
+/*
+ * Copyright (c) 2026 Conclusive Engineering
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+&pinctrl {
+	uart0_default: uart0_default {
+		group1 {
+			pinmux = <P17_UART0_TX>, <P18_UART0_RX>,
+				 <P16_UART0_RTS>, <P19_UART0_CTS>;
+		};
+	};
+
+	uart2_default: uart2_default {
+		group1 {
+			pinmux = <P26_UART2_TX>, <P29_UART2_RX>;
+		};
+	};
+};
+
+dut: &uart0 {
+	status = "okay";
+};

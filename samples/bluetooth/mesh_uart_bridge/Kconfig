@@ -1,0 +1,22 @@
+#
+# Copyright (c) 2025, Texas Instruments Incorporated
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+source "Kconfig.zephyr"
+
+menu "Texas Instruments Bluetooth Mesh UART Bridge Sample"
+
+config BT_MESH_UART_BRIDGE_PAYLOAD_LEN
+    int "Maximum payload length for UART Bridge model to be sent through mesh"
+    default 100
+    range 1 377
+    help
+      Maximum payload length for UART Bridge model to be sent through mesh. The
+      maximum access layer payload length is 384. However, that includes the
+      opcode (3 bytes) and the transMIC (4 bytes). These bytes are subtracted
+      from the maximum access layer payload length to get the maximum UART Bridge
+      payload length of 377 bytes.
+
+endmenu

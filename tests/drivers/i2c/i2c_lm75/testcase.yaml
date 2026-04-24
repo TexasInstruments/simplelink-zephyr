@@ -1,0 +1,6 @@
+common:
+  tags: drivers i2c
+tests:
+  drivers.i2c.tmp1075:
+    filter: dt_compat_enabled("lm75")
+    platform_allow: lp_em_cc35x1

@@ -37,6 +37,7 @@ tests:
       - stm32h573i_dk
       - rpi_pico
       - lp_em_cc2340r5
+      - lp_em_cc35x1
     integration_platforms:
       - nucleo_f746zg
   sample.drivers.counter.alarm.stm32_rtc:

@@ -21,10 +21,12 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: downstream
+      url-base: https://github.com/TexasInstruments
     - name: babblesim
       url-base: https://github.com/BabbleSim
 
-  group-filter: [-babblesim, -optional]
+  group-filter: [-babblesim, -optional, -internal]
 
   #
   # Please add items below based on alphabetical order
@@ -243,11 +245,13 @@ manifest:
       path: modules/hal/telink
       groups:
         - hal
-    - name: hal_ti
-      revision: 3adc3f608b94dc3f4331927a032b026cf3a11569
+    - name: simplelink-hal_ti
+      remote: downstream
+      revision: 7901d63c9c8cde42b15cc90e3c2c738a6631b8be
       path: modules/hal/ti
       groups:
         - hal
+        - external
     - name: hal_wurthelektronik
       revision: e5bcb2eac1bb9639ce13b4dafc78eb254e014342
       path: modules/hal/wurthelektronik
@@ -342,6 +346,11 @@ manifest:
     - name: zcbor
       revision: 75d088037eb237b18e7ec1f47c9ce494b9b95aab
       path: modules/lib/zcbor
+    - name: hal_ti
+      url: https://bitbucket.itg.ti.com/scm/lpc_sw_rnd/hal_ti.git
+      revision: 218d961-ti-9.22-internal
+      groups:
+        - internal
 
   self:
     path: zephyr

@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Texas Instruments Incorporated
+# Copyright (c) 2025 Texas Instruments Incorporated
 # Copyright (c) 2024 BayLibre, SAS
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -15,5 +15,17 @@ CONFIG_SERIAL=y
 CONFIG_CONSOLE=y
 CONFIG_UART_CONSOLE=y
 
-CONFIG_DYNAMIC_THREAD_POOL_SIZE=4
-CONFIG_DYNAMIC_THREAD_STACK_SIZE=1024
+CONFIG_DYNAMIC_THREAD_POOL_SIZE=2
+CONFIG_DYNAMIC_THREAD_STACK_SIZE=1500
+
+CONFIG_BT_RECV_WORKQ_SYS=y
+
+CONFIG_BT_HCI_ACL_FLOW_CONTROL=n
+
+CONFIG_PM=y
+
+# Entropy source for random number generation is disabled by default.
+# Applications can enable it in their prj.conf file.
+CONFIG_ENTROPY_GENERATOR=n
+CONFIG_MBEDTLS=y
+CONFIG_CTR_DRBG_CSPRNG_GENERATOR=y

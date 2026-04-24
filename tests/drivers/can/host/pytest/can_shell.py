@@ -167,7 +167,7 @@ class CanShellBus(BusABC): # pylint: disable=abstract-method
 
     def _recv_internal(self, timeout: Optional[float]) -> Tuple[Optional[Message], bool]:
         frame_regex = r'.*' + re.escape(self._device) + \
-            r'\s+(?P<brs>\S)(?P<esi>\S)\s+(?P<can_id>\d+)\s+\[(?P<dlc>\d+)\]\s*(?P<data>[a-z0-9 ]*)'
+            r'\s+(?:(?P<brs>\S)(?P<esi>\S)\s+)?(?P<can_id>[0-9a-fA-F]+)\s+\[(?P<dlc>\d+)\]\s*(?P<data>[a-z0-9 ]*)'
         lines = self._dut.readlines_until(regex=frame_regex, timeout=timeout)
         msg = None
 
@@ -179,9 +179,9 @@ class CanShellBus(BusABC): # pylint: disable=abstract-method
                 ext = len(m.group('can_id')) == 8
                 dlc = int(m.group('dlc'))
                 fd = len(m.group('dlc')) == 2
-                brs = m.group('brs') == 'B'
-                esi = m.group('esi') == 'P'
-                data = bytearray.fromhex(m.group('data'))
+                brs = m.group('brs') == 'B' if m.group('brs') else False
+                esi = m.group('esi') == 'P' if m.group('esi') else False
+                data = bytearray.fromhex(m.group('data')) if m.group('data') else bytearray()
                 msg = Message(arbitration_id=can_id,is_extended_id=ext,
                               data=data, dlc=dlc,
                               is_fd=fd, bitrate_switch=brs, error_state_indicator=esi,

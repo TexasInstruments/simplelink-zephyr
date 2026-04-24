@@ -86,6 +86,8 @@ source "drivers/watchdog/Kconfig.npcx"
 
 source "drivers/watchdog/Kconfig.cc32xx"
 
+source "drivers/watchdog/Kconfig.cc35xx"
+
 source "drivers/watchdog/Kconfig.cc13xx_cc26xx"
 
 source "drivers/watchdog/Kconfig.cc23x0"

@@ -8,6 +8,7 @@
 #include <zephyr/kernel.h>
 
 #include <inc/hw_ccfg.h>
+#include <inc/hw_device.h>
 
 #define CC23_TO_PERM_VAL(en) (IS_ENABLED(en) ? CCFG_PERMISSION_ALLOW : CCFG_PERMISSION_FORBID)
 
@@ -37,7 +38,7 @@ const ccfg_t ccfg __attribute__((section(".ti_ccfg"))) __attribute__((used)) = {
 		IS_ENABLED(CONFIG_CC23X0_PIN_TRIGGER_LEVEL_HI),
 	.bootCfg.pAppVtor = (void *)CONFIG_CC23X0_P_APP_VTOR,
 
-	.hwOpts = {CONFIG_CC23X0_HW_OPTS_1, CONFIG_CC23X0_HW_OPTS_2},
+	.INTERNAL_FIELD_0,
 
 	.permissions.allowDebugPort = CC23_TO_PERM_VAL(CONFIG_CC23X0_ALLOW_DEBUG_PORT),
 	.permissions.allowEnergyTrace = CC23_TO_PERM_VAL(CONFIG_CC23X0_ALLOW_ENERGY_TRACE),

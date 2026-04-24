@@ -1,0 +1,55 @@
+# Python dependencies needed for compliance checks (.github/workflows/check_compliance.yml).
+# Use a specific pylint version because the latest one gives many warnings about removed options
+python-magic
+lxml
+junitparser
+gitlint
+pylint==3.2.7
+pykwalify
+yamllint
+
+# Python dependencies needed for guideline checks (.github/workflows/coding_guidelines.yml).
+unidiff
+sh
+
+# Python dependencies needed for docs build (.github/workflows/doc_build.yml).
+# Also has dependencies from a file in zephyr, that need to be installed when the image is built
+coverxygen
+
+# Python dependencies needed for twister result parsing (.github/workflows/twister.yml).
+junitparser
+junit2html
+
+# Other requirements
+ti-simplelink-crc-tool
+
+# From doc/requirements
+# DOC: used to generate docs
+breathe>=4.34
+sphinx
+sphinx_rtd_theme~=2.0
+sphinx-tabs
+sphinxcontrib-svg2pdfconverter
+pygments>=2.9
+sphinx-notfound-page
+sphinx-copybutton
+sphinx-togglebutton
+sphinx-sitemap
+
+# YAML validation. Used by zephyr_module.
+PyYAML>=6.0
+pykwalify
+
+# Used by pytest-twister-harness plugin (imported by autodoc)
+pytest
+pyserial
+
+# Doxygen doxmlparser
+doxmlparser
+
+
+west == 1.3.0               # WEST, Zephyr's 'meta tool'
+conan == 1.66.0
+construct
+# TODO: Remove once crc tool support is merged in upstream zephyr (ZEPHYR-170)
+ti-simplelink-crc-tool

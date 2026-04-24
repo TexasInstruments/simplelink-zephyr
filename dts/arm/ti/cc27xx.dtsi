@@ -1,0 +1,126 @@
+/*
+ * Copyright (c) 2025 Texas Instruments Incorporated
+ * Copyright (c) 2024 BayLibre, SAS
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <arm/armv8-m.dtsi>
+
+/ {
+	chosen {
+		zephyr,flash-controller = &flash_controller;
+		zephyr,entropy = &rng;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-m33";
+			reg = <0>;
+		};
+	};
+
+	sram0: memory@20000000 {
+		compatible = "mmio-sram";
+	};
+
+	sysclk: system-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <96000000>;
+		#clock-cells = <0>;
+	};
+
+	soc {
+		flash_controller: flash-controller@40021000 {
+			compatible = "ti,cc27xx-flash-controller";
+			reg = <0x40021000 0x418>;
+
+			#address-cells	= <1>;
+			#size-cells		= <1>;
+
+			/* Main flash sector */
+			flash0: flash@0 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+
+			/* CCFG flash sector */
+			flash1: flash@4E020000 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+
+			/* SCFG flash sector */
+			flash2: flash@4E040000 {
+				compatible = "soc-nv-flash";
+				erase-block-size = <DT_SIZE_K(2)>;
+				write-block-size = <0x10>;
+			};
+		};
+		gpio0: gpio@40023000 {
+				compatible = "ti,cc27xx-gpio";
+				reg = <0x40023000 0x814>;
+				interrupts = <5 0>;
+				status = "disabled";
+				gpio-controller;
+				#gpio-cells = <2>;
+				ngpios = <33>;
+		};
+
+		pinctrl: pinctrl@40003000 {
+			compatible = "ti,cc27xx-pinctrl";
+			reg = <0x40003000 0xc1c>;
+		};
+
+		uart0: uart@40034000{
+			compatible = "ti,cc27xx-uart";
+			reg = <0x40034000 0x4C>;
+			interrupts = <11 0>;
+			clocks = <&sysclk>;
+			status = "disabled";
+		};
+
+		uart1: uart@40035000{
+			compatible = "ti,cc27xx-uart";
+			reg = <0x40035000 0x4C>;
+			interrupts = <22 0>;
+			clocks = <&sysclk>;
+			status = "disabled";
+		};
+
+		i2c0: i2c@40038000 {
+			compatible = "ti,cc23xx-cc27xx-i2c";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40038000 0x820>;
+			interrupts = <12 0>;
+			status = "disabled";
+		};
+
+		aes: aes@400c0000 {
+			compatible = "ti,cc27xx-aes";
+			reg = <0x400c0000 0x120>;
+			interrupts = <9 0>;
+			status = "disabled";
+		};
+
+		rng: entropy {
+			compatible = "ti,cc27xx-rng", "simple-bus";
+			status = "okay";
+		};
+	};
+};
+
+&nvic {
+	arm,num-irq-priority-bits = <4>; /* Interrupt levels are 0-192 in steps of 64 */
+};
+
+&systick {
+	status = "disabled";
+};
