@@ -4,7 +4,3 @@
 
 config BOARD_LP_EM_CC2340R5MODA
 	select SOC_CC2340R5
-
-config BOARD_USE_LF_XOSC
-	bool "Use external low-frequency crystal"
-	default y

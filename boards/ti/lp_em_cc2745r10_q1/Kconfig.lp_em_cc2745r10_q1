@@ -6,7 +6,3 @@
 config BOARD_LP_EM_CC2745R10_Q1
 	select SOC_CC2745R10_Q1 if BOARD_LP_EM_CC2745R10_Q1_CC2745R10_Q1
 	select SOC_CC2755R10 if BOARD_LP_EM_CC2745R10_Q1_CC2755R10
-
-config BOARD_USE_LF_XOSC
-	bool "Use external low-frequency crystal"
-	default y

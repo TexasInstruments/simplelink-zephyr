@@ -180,6 +180,12 @@
 			reg = <0x40001000 0x1000>;
 			status = "disabled";
 		};
+		rtc: rtc@40002000 {
+			compatible = "ti,lpf3-rtc-timer";
+			reg = <0x40002000 0x68>;
+			interrupts = <30 0>;
+			status = "disabled";
+		};
 
 		lgpt0: lgpt@40060000 {
 			compatible = "ti,cc27xx-lgpt";

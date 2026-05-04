@@ -13,7 +13,7 @@ RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
 
 RUN sudo apt-get install -y --no-install-recommends cmake ninja-build gperf \
   ccache dfu-util device-tree-compiler wget usbutils \
-  python3-dev python3-pip python3-setuptools python3-tk python3-wheel xz-utils file \
+  python3-dev python3-pip python3-tk python3-wheel xz-utils file \
   make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1 udev python3.10-venv
 
 #Apt packages for compliance, guideline checks and docs
@@ -35,13 +35,15 @@ COPY zephyr/etc/docker/requirements.txt ci_requirements.txt
 COPY zephyr/scripts/ scripts
 RUN pip3 --proxy wwwgate.ti.com install --no-cache-dir -r ./scripts/requirements.txt -r ci_requirements.txt
 
+# Install ti-openocd from hardcoded URL to currently used version, to be manually bumped when needed
+ENV TI_OPENOCD_INSTALL_URL=https://github.com/TexasInstruments/ti-openocd/releases/download/ti-v1.1.1/openocd_linux_1.1.1.46.zip
 ENV TI_OPENOCD_INSTALL_DIR=/home/developer/ti_openocd
-ENV OPENOCD_BASE=${TI_OPENOCD_INSTALL_DIR}/openocd/bin
-ENV OPENOCD=${OPENOCD_BASE}/bin/openocd
-ENV OPENOCD_DEFAULT_PATH=${OPENOCD_BASE}/share/openocd/scripts
-RUN curl -s https://api.github.com/repos/TexasInstruments/ti-openocd/releases/latest | grep "browser_download_url.*openocd_linux" | cut -d : -f 2,3 | tr -d \" | wget -qi -
+# ENV OPENOCD_BASE=${TI_OPENOCD_INSTALL_DIR}/openocd/bin
+# ENV OPENOCD=${OPENOCD_BASE}/bin/openocd
+# ENV OPENOCD_DEFAULT_PATH=${OPENOCD_BASE}/share/openocd/scripts
+RUN wget ${TI_OPENOCD_INSTALL_URL}
 RUN mkdir -p ${TI_OPENOCD_INSTALL_DIR}
-RUN unzip $(ls | grep openocd_linux) -d ${TI_OPENOCD_INSTALL_DIR}
+RUN unzip $(basename ${TI_OPENOCD_INSTALL_URL}) -d ${TI_OPENOCD_INSTALL_DIR}
 RUN chmod +x ${TI_OPENOCD_INSTALL_DIR}/openocd/bin/bin/openocd
 
 # These rules need to be applied at the host, but no harm in applying them here too
