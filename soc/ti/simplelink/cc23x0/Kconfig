@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Texas Instruments Incorporated
+# Copyright (c) 2024-2026 Texas Instruments Incorporated
 # Copyright (c) 2024 BayLibre, SAS
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -12,8 +12,6 @@ config SOC_SERIES_CC23X0
 	select HAS_TI_CCFG if !BOOTLOADER_MCUBOOT
 	select DYNAMIC_DPL_OBJECTS
 	select EVENTS
-	select DYNAMIC_THREAD
-	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
 	select HAS_PM
 	select PM_DEVICE if PM

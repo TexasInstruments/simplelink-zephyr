@@ -1,0 +1,4 @@
+&rtc
+{
+	status = "okay";
+};

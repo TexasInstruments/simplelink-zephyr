@@ -19,6 +19,4 @@
 .*Duplicate C declaration.*\n.*'\.\. c:.*:: .*net_if_ipv6_maddr_lookup.*'.*
 
 # Common field names
-.*Duplicate C declaration.*\n.*'\.\. c:.*:: .*struct in_addr.*'.*
-.*Duplicate C declaration.*\n.*'\.\. c:.*:: .*struct in6_addr.*'.*
 .*Duplicate C declaration.*\n.*'\.\. c:.*:: .*struct net_if.*'.*

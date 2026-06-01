@@ -55,5 +55,6 @@ source "drivers/rtc/Kconfig.smartbond"
 source "drivers/rtc/Kconfig.stm32"
 source "drivers/rtc/Kconfig.numaker"
 source "drivers/rtc/Kconfig.cc35xx"
+source "drivers/rtc/Kconfig.lpf3"
 
 endif # RTC

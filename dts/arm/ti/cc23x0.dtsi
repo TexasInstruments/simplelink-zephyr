@@ -54,7 +54,7 @@
 		compatible = "mmio-sram";
 	};
 
-	sysclk: system-clock {
+	uartclk: uart-clock {
 		compatible = "fixed-clock";
 		clock-frequency = <48000000>;
 		#clock-cells = <0>;
@@ -104,10 +104,11 @@
 		};
 
 		uart0: uart@40034000 {
-			compatible = "ti,cc23x0-uart";
+			compatible = "ti,lpf3-uart";
 			reg = <0x40034000 0x52>;
 			interrupts = <11 0>;
-			clocks = <&sysclk>;
+			clocks = <&uartclk>;
+			ti,clkctl-id = <0x4>; /* CLKCTL_UART0 */
 			dmas = <&dma 2 6>, <&dma 3 7>;
 			dma-names = "tx", "rx";
 			status = "disabled";
@@ -158,9 +159,12 @@
 		};
 
 		rtc0: rtc@40002000 {
-			compatible = "ti,cc23x0-rtc";
+			compatible = "ti,cc23x0-rtc", "ti,lpf3-rtc-timer";
 			reg = <0x40002000 0x64>;
-			interrupts = <3 0>;
+			/* RTC interrupt signal is mapped to IRQ1. This interrupt line is not a
+			 * dedicated interrupt line for the RTC peripheral.
+			 */
+			interrupts = <1 0>;
 			status = "disabled";
 		};
 

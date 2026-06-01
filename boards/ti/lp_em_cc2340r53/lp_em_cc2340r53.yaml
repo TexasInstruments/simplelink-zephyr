@@ -11,9 +11,11 @@ toolchain:
 supported:
   - gpio
   - adc
+  - counter
   - pwm
   - dma
   - crypto
   - spi
   - watchdog
+  - rtc
 vendor: ti

@@ -12,6 +12,13 @@ config BT_LL_HEAP_SIZE
 	default 0x4E00
 endif # BT
 
+if PM
+# Power Management requires increased idle task stack size because of
+# stack usage introduced by "pm_state_set"
+config IDLE_STACK_SIZE
+	default 320
+endif # PM
+
 # The SPI driver only supports DMA mode
 if SPI
 config SPI_CC23X0_CC27XX_DMA_DRIVEN

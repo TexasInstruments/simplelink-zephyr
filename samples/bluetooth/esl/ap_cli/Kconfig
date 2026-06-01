@@ -1,0 +1,87 @@
+# EtherMind ESL AP Options
+#
+# Use this Kconfig for AP builds only.
+# Set options in prj.conf, e.g.:
+#   CONFIG_BT_ESL_AP=y
+#
+
+source "Kconfig"
+
+menu "EtherMind ESL AP Options"
+
+config BT_ESL_AP
+	bool "Enable ESL Access Point Role"
+	default n
+
+config BT_ESL_SEPARATE_KEY_PER_GROUP
+	bool "Enable Separate Key Per Group (AP only)"
+	depends on BT_ESL_AP
+	default n
+
+config BT_ESL_VENDOR_SPECIFIC_COMMANDS
+	bool "Enable ESL Vendor Specific Commands"
+	default n
+
+config BT_ESL_DYNAMIC_GLOBAL_CONFIGURATION
+	bool "Enable ESL Dynaic Configuration of Global Limits"
+	default y
+
+config ESL_PL_DEBUG_TO_CONSOLE
+	bool "Enable diverting ESL-PL Debug Logs to Console as Printk"
+	default n
+
+# ESL Common Limits
+config BT_ESL_MAX_SENSOR_SUPPORTED
+	int "Maximum # of Sensor to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_LED_SUPPORTED
+	int "Maximum # of LED to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_IMAGE_SUPPORTED
+	int "Maximum # of Image to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_DISPLAY_SUPPORTED
+	int "Maximum # of Display to be supported"
+	range 1 102
+	default 102
+
+config BT_ESL_MAX_NO_OF_RESPONSE
+	int "Maximum # of Responses to be supported"
+	range 1 24
+	default 24
+
+config BT_ESL_MAX_GROUPS_SUPPORTED
+	int "Maximum # of Groups to be supported"
+	range 1 128
+	default 128
+
+config BT_ESL_MAX_ESL_TAGS_SUPPORTED
+	int "Maximum # of Tags to be supported"
+	range 1 255
+	default 255
+
+# ESL AP Limits
+config BT_ESL_SYNC_RETRY_COUNT
+	int "Maximum # of Sync Retry"
+	range 1 10
+	default 5
+	depends on BT_ESL_AP
+
+config BT_ESL_AP_SYNC_RETRY_INTERVAL_MS
+	int "Sync Retry Interval (in ms)"
+	range 100 10000
+	default 2000
+	depends on BT_ESL_AP
+
+config BT_ESL_AP_CONFIG_TIMEOUT
+	int "Configuration Timeout (in seconds)"
+	range 10 100
+	default 60
+	depends on BT_ESL_AP
+endmenu

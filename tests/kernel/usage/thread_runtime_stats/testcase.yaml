@@ -18,10 +18,3 @@ tests:
       - mps2/an385
     platform_exclude:
       - mr_canhubk3
-      # Currently LPF3 devices are configured to tick rates higher than the
-      # tests support
-      - lp_em_cc2340r5
-      - lp_em_cc2340r53
-      - lp_em_cc2745r10_q1/cc2745r10_q1
-      - lp_em_cc2745r10_q1/cc2755r10_q1
-      - lp_em_cc2755p10

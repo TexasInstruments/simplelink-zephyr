@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Texas Instruments Incorporated
+# Copyright (c) 2025-2026 Texas Instruments Incorporated
 # Copyright (c) 2024 BayLibre, SAS
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -18,8 +18,6 @@ config SOC_SERIES_CC27XX
 	select HAS_TI_CCFG if !BOOTLOADER_MCUBOOT
 	select DYNAMIC_DPL_OBJECTS
 	select EVENTS
-	select DYNAMIC_THREAD
-	select DYNAMIC_THREAD_ALLOC
 	select THREAD_STACK_INFO
 	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
 	select HAS_PM

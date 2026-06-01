@@ -53,9 +53,9 @@
 		compatible = "mmio-sram";
 	};
 
-	sysclk: system-clock {
+	uartclk: uart-clock {
 		compatible = "fixed-clock";
-		clock-frequency = <96000000>;
+		clock-frequency = <48000000>;
 		#clock-cells = <0>;
 	};
 
@@ -104,21 +104,23 @@
 		};
 
 		uart0: uart@40034000{
-			compatible = "ti,cc27xx-uart";
+			compatible = "ti,lpf3-uart";
 			reg = <0x40034000 0x4c>;
 			interrupts = <11 0>;
-			clocks = <&sysclk>;
+			clocks = <&uartclk>;
+			ti,clkctl-id = <0x4>; /* CLKCTL_UART0 */
 			dmas = <&dma 2 6>, <&dma 3 7>;
 			dma-names = "tx", "rx";
 			status = "disabled";
 		};
 
 		uart1: uart@40035000{
-			compatible = "ti,cc27xx-uart";
+			compatible = "ti,lpf3-uart";
 			reg = <0x40035000 0x4c>;
 			interrupts = <22 0>;
-			clocks = <&sysclk>;
-			dmas = <&dma 0 12>, <&dma 1 13>;
+			clocks = <&uartclk>;
+			ti,clkctl-id = <0x8>; /* CLKCTL_UART1 */
+			dmas = <&dma 1 12>, <&dma 0 13>;
 			dma-names = "tx", "rx";
 			status = "disabled";
 		};
@@ -179,6 +181,124 @@
 			compatible = "ti,lpf3-wdt";
 			reg = <0x40001000 0x1000>;
 			status = "disabled";
+		};
+		rtc: rtc@40002000 {
+			compatible = "ti,lpf3-rtc-timer";
+			reg = <0x40002000 0x68>;
+			interrupts = <30 0>;
+			status = "disabled";
+		};
+
+		lgpt0: lgpt@40060000 {
+			compatible = "ti,cc27xx-lgpt";
+			reg = <0x40060000 0x1d2>;
+			max-top-value = <0xffff>;
+			interrupts = <13 0>;
+			clk-prescale = <0>;
+			status = "disabled";
+
+			pwm0: pwm0 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <0>;
+				status = "disabled";
+			};
+			pwm1: pwm1 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <1>;
+				status = "disabled";
+			};
+			pwm2: pwm2 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <2>;
+				status = "disabled";
+			};
+		};
+
+		lgpt1: lgpt@40061000 {
+			compatible = "ti,cc27xx-lgpt";
+			reg = <0x40061000 0x1d2>;
+			max-top-value = <0xffff>;
+			interrupts = <14 0>;
+			clk-prescale = <0>;
+			status = "disabled";
+
+			pwm3: pwm0 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <0>;
+				status = "disabled";
+			};
+			pwm4: pwm1 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <1>;
+				status = "disabled";
+			};
+			pwm5: pwm2 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <2>;
+				status = "disabled";
+			};
+		};
+
+		lgpt2: lgpt@40062000 {
+			compatible = "ti,cc27xx-lgpt";
+			reg = <0x40062000 0x1d2>;
+			max-top-value = <0xffff>;
+			interrupts = <18 0>;
+			clk-prescale = <0>;
+			status = "disabled";
+
+			pwm6: pwm0 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <0>;
+				status = "disabled";
+			};
+			pwm7: pwm1 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <1>;
+				status = "disabled";
+			};
+			pwm8: pwm2 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <2>;
+				status = "disabled";
+			};
+		};
+
+		lgpt3: lgpt@40063000 {
+			compatible = "ti,cc27xx-lgpt";
+			reg = <0x40063000 0x1d2>;
+			max-top-value = <0xffffff>;
+			interrupts = <19 0>;
+			clk-prescale = <0>;
+			status = "disabled";
+
+			pwm9: pwm0 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <0>;
+				status = "disabled";
+			};
+			pwm10: pwm1 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <1>;
+				status = "disabled";
+			};
+			pwm11: pwm2 {
+				compatible = "ti,cc27xx-lgpt-pwm";
+				#pwm-cells = <3>;
+				ti,output-index = <2>;
+				status = "disabled";
+			};
 		};
 	};
 };

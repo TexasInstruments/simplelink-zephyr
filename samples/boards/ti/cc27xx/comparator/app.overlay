@@ -1,0 +1,9 @@
+/ {
+	zephyr,user {
+		lpcomp-input-0-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		lpcomp-input-1-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+		lpcomp-input-2-gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		lpcomp-output-0-gpios = <&gpio0 27 GPIO_PULL_UP>;
+		lpcomp-output-1-gpios = <&gpio0 28 GPIO_PULL_UP>;
+	};
+};

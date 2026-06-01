@@ -7,6 +7,7 @@ gitlint
 pylint==3.2.7
 pykwalify
 yamllint
+setuptools==78.1.0
 
 # Python dependencies needed for guideline checks (.github/workflows/coding_guidelines.yml).
 unidiff
@@ -14,7 +15,7 @@ sh
 
 # Python dependencies needed for docs build (.github/workflows/doc_build.yml).
 # Also has dependencies from a file in zephyr, that need to be installed when the image is built
-coverxygen
+coverxygen==1.8.1
 
 # Python dependencies needed for twister result parsing (.github/workflows/twister.yml).
 junitparser

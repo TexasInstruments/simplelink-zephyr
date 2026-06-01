@@ -1,6 +1,6 @@
 # Texas Instruments SimpleLink CC27XX
 
-# Copyright (c) 2025 Texas Instruments Incorporated
+# Copyright (c) 2026 Texas Instruments Incorporated
 # Copyright (c) 2024 BayLibre, SAS
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -15,7 +15,7 @@ if SOC_SERIES_CC27XX
 		default 1000000
 
 	config SYS_CLOCK_TICKS_PER_SEC
-		default 1000000
+		default 10000
 
 	config NUM_IRQS
 		default 33

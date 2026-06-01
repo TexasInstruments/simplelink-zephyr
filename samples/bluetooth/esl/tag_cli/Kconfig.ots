@@ -1,0 +1,35 @@
+# Ethermind ESL OTS Configuration
+#
+# Use this configuration for tag builds only.
+# Set options in prj.conf, e.g.:
+#   CONFIG_BT_ESL_OTS=y
+#
+
+config BT_ESL_OTS
+    bool "Enable ESL OTS features"
+    select BT_OTS
+    select BT_OTS_OBJ_NAME_WRITE_SUPPORT
+    select BT_OTS_OACP_WRITE_SUPPORT
+    select BT_OTS_OACP_PATCH_SUPPORT
+    select BT_OTS_OACP_CREATE_SUPPORT
+    select BT_OTS_OACP_DELETE_SUPPORT
+    select BT_OTS_OACP_CHECKSUM_SUPPORT
+    select BT_L2CAP_DYNAMIC_CHANNEL
+    default n
+    help
+      Enable all required OTS features for ESL.
+
+if BT_ESL_OTS
+
+config BT_OTS_SECONDARY_SVC
+    default n
+
+# RX ACL Buffer Size: must be large enough for MPS + L2CAP header
+config BT_BUF_ACL_RX_SIZE
+    default 69
+
+# Default L2CAP MTU
+config BT_L2CAP_TX_MTU
+    default 69
+
+endif # BT_ESL_OTS

@@ -55,10 +55,15 @@ def filter_testsuites(data: dict, platforms: List[str]) -> dict:
     Keep only the testsuites whose platform field matches one of *platforms*.
     """
     original_count = len(data.get("testsuites", []))
-    filtered = [
-        ts for ts in data.get("testsuites", [])
-        if ts.get("platform") in platforms
-    ]
+    filtered = []
+    for ts in data.get("testsuites", []):
+        platform = ts.get("platform")
+        if platform.replace("/", "_")  in platforms:
+            filtered.append(ts)
+            with open("twister_platform.txt", "w") as f:
+                f.write(platform)
+            print(f"Wrote {platform} to twister_platform.txt")
+
     kept = len(filtered)
     removed = original_count - kept
 
@@ -78,7 +83,7 @@ def filter_environment(data: dict,platforms: List[str]) -> dict:
         env_opts = data["environment"]["options"]
         if "platform" in env_opts and isinstance(env_opts["platform"], list):
             original = env_opts["platform"]
-            env_opts["platform"] = [p for p in original if p in platforms]
+            env_opts["platform"] = [p for p in original if p.replace("/", "_") in platforms]
             print(
                 f"Environment platforms reduced from {len(original)} to "
                 f"{len(env_opts['platform'])} entries."

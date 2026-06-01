@@ -15,5 +15,8 @@ supported:
   - spi
   - adc
   - pm
+  - pwm
   - watchdog
+  - counter
+  - rtc
 vendor: ti

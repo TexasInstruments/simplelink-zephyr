@@ -16,4 +16,6 @@ supported:
   - adc
   - pm
   - watchdog
+  - counter
+  - rtc
 vendor: ti

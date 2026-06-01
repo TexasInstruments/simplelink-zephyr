@@ -1,0 +1,87 @@
+# EtherMind ESL Tag Options
+#
+# Use this Kconfig for TAG builds only.
+# Set options in prj.conf, e.g.:
+#   CONFIG_BT_ESL_TAG=y
+#
+
+source "Kconfig"
+
+menu "EtherMind ESL Tag Options"
+
+config BT_ESL_TAG
+	bool "Enable ESL Tag Role"
+	default y
+
+config BT_ESL_LED
+	bool "Enable ESL LED Support"
+	depends on BT_ESL_TAG
+	default y
+
+config BT_ESL_SENSOR
+	bool "Enable ESL Sensor Support"
+	depends on BT_ESL_TAG
+	default y
+
+config BT_ESL_DISPLAY
+	bool "Enable ESL Display Support"
+	depends on BT_ESL_TAG
+	default y
+
+config BT_ESL_WAIT_TIMEOUT
+	bool "Enable ESL Wait Timeout Feature for ESL State Monitoring"
+	depends on BT_ESL_TAG
+	default y
+
+config BT_ESL_VENDOR_SPECIFIC_COMMANDS
+	bool "Enable ESL Vendor Specific Commands"
+	default n
+
+config BT_ESL_DYNAMIC_GLOBAL_CONFIGURATION
+	bool "Enable ESL Dynaic Configuration of Global Limits"
+	default n
+
+config ESL_PL_DEBUG_TO_CONSOLE
+	bool "Enable diverting ESL-PL Debug Logs to Console as Printk"
+	default n
+
+# ESL Common Limits
+config BT_ESL_MAX_SENSOR_SUPPORTED
+	int "Maximum # of Sensor to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_LED_SUPPORTED
+	int "Maximum # of LED to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_IMAGE_SUPPORTED
+	int "Maximum # of Image to be supported"
+	range 1 256
+	default 256
+
+config BT_ESL_MAX_DISPLAY_SUPPORTED
+	int "Maximum # of Display to be supported"
+	range 1 102
+	default 102
+
+config BT_ESL_MAX_NO_OF_RESPONSE
+	int "Maximum # of Responses to be supported"
+	range 1 24
+	default 24
+
+config BT_ESL_MAX_GROUPS_SUPPORTED
+	int "Maximum # of Groups to be supported"
+	range 1 128
+	default 128
+
+config BT_ESL_MAX_ESL_TAGS_SUPPORTED
+	int "Maximum # of Tags to be supported"
+	range 1 255
+	default 255
+
+# include OTS kconfig
+rsource "Kconfig.ots"
+
+endmenu
