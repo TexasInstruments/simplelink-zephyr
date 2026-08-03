@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Texas Instruments Incorporated
+ * Copyright (c) 2024 - 2026 Texas Instruments Incorporated
  * Copyright (c) 2024 BayLibre, SAS
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -49,7 +49,7 @@
 		bias-disable;
 	};
 	spi0_cs_default: spi0_cs_default {
-		pinmux = <11 DIO11_SPI0_CSN>;
+		pinmux = <6 DIO6_GPIO6>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;
@@ -74,7 +74,7 @@
 		bias-disable;
 	};
 	spi0_cs_sleep: spi0_cs_sleep {
-		pinmux = <11 DIO11_GPIO11>;
+		pinmux = <6 DIO6_GPIO6>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;

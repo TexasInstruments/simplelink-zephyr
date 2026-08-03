@@ -40,6 +40,22 @@
 	};
 };
 
+&pinctrl {
+	spi1_cs_default: spi1_cs_default {
+		pinmux = <16 DIO16_SPI1_CSN>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+
+	spi1_cs_sleep: spi1_cs_sleep {
+		pinmux = <16 DIO16_GPIO16>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+};
+
 &spi0 {
 	status = "okay";
 	pinctrl-0 = <&spi0_sck_default

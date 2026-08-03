@@ -1,0 +1,31 @@
+# Copyright (c) 2026 Texas Instruments Incorporated
+# SPDX-License-Identifier: Apache-2.0
+
+description: TI CC140xP Transceiver
+
+compatible: "ti,cc140xp-trx"
+
+include: [spi-device.yaml]
+
+properties:
+  reset-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO connected to the TRX_RESET pin.
+      This pin is used to reset the transceiver.
+
+  trx-host-spi-int-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO connected to the TRX_HOST_SPI_INT pin.
+      This pin is used for interrupt signaling from the transceiver.
+
+  poci-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO connected to the SPI POCI (MISO) pin.
+      Polled after CS assertion to detect when the TRX is ready to receive
+      (TRX drives POCI low as a ready handshake).

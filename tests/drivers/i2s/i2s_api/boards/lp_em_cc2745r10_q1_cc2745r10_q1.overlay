@@ -63,6 +63,14 @@
 	status = "disabled";
 };
 
+/* Disabling the spi0 bus above does not disable its child devices;
+ * the flash node must be disabled explicitly or its driver will try
+ * to instantiate a device on a bus controller that was never compiled in.
+ */
+&mx25r80 {
+	status = "disabled";
+};
+
 &adc0 {
 	status = "disabled";
 };

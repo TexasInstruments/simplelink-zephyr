@@ -1,0 +1,64 @@
+/*
+ * Copyright (c) 2026 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Board-specific fixups for using the ti_bp_cc140xp shield on the
+ * LP-CC2745R10-Q1 LaunchPad. See boards/shields/ti_bp_cc140xp/doc/index.rst
+ * for the physical hardware setup this depends on (SPI_INT hotwire, DIO16
+ * jumper removal).
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+&spi0 {
+	/* Override pinctrl to 3-wire (SCK, MOSI, MISO only) - removes DIO7 (SPI0_CSN)
+	 * from hardware SS control. In 4-wire Motorola mode the hardware SS toggles
+	 * between DMA bursts, and pinctrl_apply_active_state() drives DIO7 HIGH (SS
+	 * idle) before the first CLK edge. Both break the CC1407P POCI handshake.
+	 * CS is managed as a plain GPIO by platform_spi.c throughout the transaction. */
+	pinctrl-0 = <&spi0_sck_default &spi0_mosi_default &spi0_miso_default>;
+	pinctrl-1 = <&spi0_sck_sleep &spi0_mosi_sleep &spi0_miso_sleep>;
+
+	/* Add CS for the transceiver to the controller's cs-gpios array */
+	cs-gpios = <&gpio0 19 GPIO_ACTIVE_LOW>,  /* Flash chip (existing) */
+	           <&gpio0 7 GPIO_ACTIVE_LOW>;   /* Transceiver chip (new) */
+};
+
+/* The shield's generic overlay assumes reg = <0> for boards with no other
+ * SPI0 device. LP-CC2745R10-Q1 has an on-board flash at cs-gpios index 0,
+ * so the transceiver moves to index 1.
+ *
+ * reset-gpios/trx-host-spi-int-gpios/poci-gpios are also overridden here,
+ * directly against the real GPIO controller rather than through the
+ * shield's boosterpack_header reference - the connector's gpio-map is a
+ * fixed active-high passthrough (see the note in ti_bp_cc140xp.overlay) and
+ * cannot express the active-low polarity these three pins actually need on
+ * this board. Confirmed on hardware: without this override, TRX_Host_open()
+ * hangs forever waiting for a response, because the wrong RESET polarity
+ * holds the transceiver permanently in reset. */
+&ti_bp_cc140xp_trx {
+	reg = <1>;
+	spi-max-frequency = <12000000>;
+	reset-gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+	trx-host-spi-int-gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;
+	poci-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+};
+
+/* SPI1 uses DIO12 (SPI1_POCI) and DIO16 (SPI1_CSN) in its default pinctrl.
+ * With CONFIG_PM enabled, SPI1 re-applies PINCTRL_STATE_DEFAULT on every PM
+ * wake cycle, reconfiguring DIO12 from GPIO output (led0) to SPI1 input, and
+ * DIO16 from GPIO output (TRX RESET) to SPI1_CSN.  This causes the IOC
+ * transition glitch that produces the brief LOW on DIO16 each TX cycle, and
+ * prevents gpio_pin_toggle_dt from driving DIO12 (led0) at all.
+ * SPI1 has no child devices in any ti_cc140xp sample - disable it to release
+ * both pins. */
+&spi1 {
+	status = "disabled";
+};
+
+/* led1 lives on DIO16, which this shield's RESET line also uses. Disable it
+ * so it can never contend with reset-gpios for the pin. */
+&led1 {
+	status = "disabled";
+};

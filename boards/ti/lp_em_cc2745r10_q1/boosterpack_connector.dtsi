@@ -41,3 +41,5 @@
 					<40 0 &gpio0 0  0>;
 	};
 };
+
+boosterpack_spi: &spi0 {};

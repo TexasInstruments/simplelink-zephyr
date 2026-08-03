@@ -1,0 +1,82 @@
+/*
+ * Copyright (c) 2026 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Reuses the same physical reset/CS wiring as the other ti_cc140xp samples
+ * (DIO16 reset, DIO7 CS), since the TRX only has one physical reset line and
+ * one CS line. This sample bypasses the ti_cc140xp driver itself - SSBL is a
+ * different wire protocol from TRX_Host.
+ *
+ * Built with --shield ti_bp_cc140xp like the other samples, even though this
+ * one doesn't use the shield's ti_cc140xp device node - the shield's
+ * LP-CC2745R10-Q1 board overlay is what disables &spi1/&led1 (both of which
+ * also claim DIO16 on this board), so nothing else contends for the pin.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pinctrl/cc27xx-pinctrl.h>
+
+/ {
+	/* zephyr,user holds ad-hoc, binding-free GPIO properties */
+	zephyr,user {
+		reset-gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+		trigger-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
+		/* Diagnostic only - not used by the SSBL protocol */
+		int-gpios = <&gpio0 28 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/*
+ * The board's default spi0 pinctrl already maps hardware CS to DIO7
+ * (spi0_cs_default: pinmux = <7 DIO7_SPI0_CSN>), the same pin used as
+ * trigger-gpios above. The CC27xx SPI driver auto-detects that 4th pin and
+ * drives CS itself around each spi_transceive() call.
+ *
+ * Extra pinctrl state to drive CS/trigger (DIO7) as plain GPIO during the
+ * reset/trigger sequence: once any spi_transceive() call claims DIO7 for
+ * SPI0_CSN, gpio_pin_configure_dt()/gpio_pin_set_dt() alone can no longer
+ * move it back. This driver's PINCTRL_STATE_CS_SW_CONTROLLED convention
+ * (spi_cc23x0_cc27xx.c) exists for exactly this case: SCK/MOSI/MISO stay on
+ * their SPI function, only CS is remuxed to GPIO. ssbl_host.c applies this
+ * state after the pinctrl-priming dummy transfer, then restores
+ * PINCTRL_STATE_DEFAULT before the real Ping transfer.
+ */
+&pinctrl {
+	spi0_cs_gpio_ctrl: spi0_cs_gpio_ctrl {
+		pinmux = <7 DIO7_GPIO7>;
+		input-enable;
+		input-schmitt-enable;
+		bias-disable;
+	};
+};
+
+&spi0 {
+	pinctrl-2 = <&spi0_sck_default
+		     &spi0_mosi_default
+		     &spi0_miso_default
+		     &spi0_cs_gpio_ctrl>;
+	pinctrl-names = "default", "sleep", "cs_sw_controlled";
+};
+
+/*
+ * System ROM unconditionally write/erase/read-protects the last 96 KiB of
+ * main flash (0xE8000-0x100000) for HSM firmware, regardless of any
+ * CCFG/FCFG flashProt configuration (TRM swcu195a.pdf, Section 8.7 "HSM
+ * FW"). ssbl_fw_partition is placed at 0x77000 to stay clear of that region,
+ * reclaiming slot1_partition's range - this sample is flashed as a
+ * standalone image via UniFlash, not through MCUboot, so slot1 is unused.
+ * CC27xx internal flash is memory-mapped, so the sample accesses this
+ * partition's fixed address directly rather than through the flash driver
+ * API.
+ */
+/delete-node/ &slot1_partition;
+
+&flash0 {
+	partitions {
+		ssbl_fw_partition: partition@77000 {
+			label = "ssbl-fw-update";
+			reg = <0x00077000 0x0006d000>;
+		};
+	};
+};

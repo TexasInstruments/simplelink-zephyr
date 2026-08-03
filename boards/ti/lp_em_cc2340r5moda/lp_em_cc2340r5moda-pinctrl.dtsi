@@ -19,6 +19,16 @@
 		input-enable;
 	};
 
+	uart0_rts_default: uart0_rts_default {
+		pinmux = <8 DIO8_UART0_RTS>;
+		bias-disable;
+	};
+	uart0_cts_default: uart0_cts_default {
+		pinmux = <2 DIO2_UART0_CTS>;
+		bias-pull-up;
+		input-enable;
+	};
+
 	/* SPI0 */
 
 	/* SPI SCLK: Can be connected to DIO18 by connecting pins 3 and 5 on header P6  */

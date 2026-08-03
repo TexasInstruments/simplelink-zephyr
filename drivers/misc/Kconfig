@@ -14,5 +14,6 @@ source "drivers/misc/devmux/Kconfig"
 source "drivers/misc/nordic_vpr_launcher/Kconfig"
 source "drivers/misc/mcux_flexio/Kconfig"
 source "drivers/misc/ti_cc35xx_hsm/Kconfig"
+source "drivers/misc/ti_cc140xp/Kconfig"
 
 endmenu

@@ -630,7 +630,7 @@ static void spi_cc23x0_cc27xx_dma_xfer_config(const struct device *dev)
 	data->dma_cfg_tx.head_block = &data->block_cfg_tx;
 	data->dma_cfg_tx.source_data_size = SPI_CC23X0_CC27XX_DFS;
 	data->dma_cfg_tx.dest_data_size = SPI_CC23X0_CC27XX_DFS;
-#ifdef CONFIG_HAS_CC27XX_SDK
+#ifdef CONFIG_SOC_SERIES_CC27XX
 	/*
 	 * Set burst length to 2. With this, the dma_config() API, will set
 	 * the DMA arbitration size to 2.
@@ -764,7 +764,7 @@ static int spi_cc23x0_cc27xx_dma_start(const struct device *dev, enum transfer_d
 		dma_stop(cfg->dma_dev, cfg->dma_channel_tx);
 		SPIClearInt(cfg->base, SPI_DMA_DONE_TX);
 		SPIEnableInt(cfg->base, SPI_DMA_DONE_TX);
-#ifdef CONFIG_HAS_CC27XX_SDK
+#ifdef CONFIG_SOC_SERIES_CC27XX
 		/*
 		 * This is a workaround for a DMA errata UDMA_01.
 		 */
@@ -1174,11 +1174,19 @@ static int spi_cc23x0_cc27xx_pm_action(const struct device *dev, enum pm_device_
 		}
 #endif
 		SPIDisable(cfg->base);
-		spi_cc23x0_cc27xx_pinctrl_apply_sleep_state(dev, data->ctx.config);
+		CLKCTLDisable(CLKCTL_BASE, cfg->clock_id);
+		if (data->ctx.config != NULL) {
+			spi_cc23x0_cc27xx_pinctrl_apply_sleep_state(dev, data->ctx.config);
+		}
 		return 0;
 	case PM_DEVICE_ACTION_RESUME:
+		CLKCTLEnable(CLKCTL_BASE, cfg->clock_id);
+		if (data->ctx.config != NULL) {
+			spi_cc23x0_cc27xx_pinctrl_apply_active_state(dev, data->ctx.config);
+			/* Disable SPI to clear any stale hardware state before next configure */
+			SPIDisable(cfg->base);
+		}
 		/* Force SPI to be reconfigured at next transfer */
-		spi_cc23x0_cc27xx_pinctrl_apply_active_state(dev, data->ctx.config);
 		data->ctx.config = NULL;
 		return 0;
 	default:

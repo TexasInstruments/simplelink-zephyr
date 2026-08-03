@@ -1,0 +1,32 @@
+# TI CC140xP driver configuration
+# Copyright (c) 2026 Texas Instruments Incorporated
+# SPDX-License-Identifier: Apache-2.0
+
+config TI_CC140XP
+	bool "TI CC140xP Transceiver"
+	default y
+	depends on DT_HAS_TI_CC140XP_TRX_ENABLED
+	depends on SPI
+	depends on GPIO
+	select SPI_ASYNC
+	select CRC
+	select RING_BUFFER
+	help
+	  This option enables the driver for the TI CC140xP Transceiver.
+	  The device is connected via 3-wire SPI with manual CS control
+	  and an additional interrupt pin.
+
+if TI_CC140XP
+
+config TI_CC140XP_INIT_PRIORITY
+	int "TI CC140xP driver initialization priority"
+	default 80
+	help
+	  Driver initialization priority for the TI CC140xP transceiver.
+	  Must be initialized after SPI and GPIO subsystems.
+
+module = TI_CC140XP
+module-str = ti_cc140xp
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TI_CC140XP

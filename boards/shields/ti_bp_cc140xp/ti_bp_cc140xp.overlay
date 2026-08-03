@@ -1,0 +1,29 @@
+/*
+ * Copyright (c) 2026 Texas Instruments Incorporated
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Note: the "ti,boosterpack-header" gpio-map used below is a fixed
+ * pin-passthrough - every map entry's consumer AND target flags are
+ * hardcoded to 0 (active-high) by the board's own connector.dtsi, and the
+ * nexus requires an exact match on the consumer's flags field. It cannot
+ * propagate a custom polarity (e.g. active-low) through to the target
+ * controller. Boards/samples that need a different polarity than what the
+ * connector's map provides must override the affected *-gpios property
+ * directly against the real GPIO controller (bypassing this nexus), the
+ * same way cs-gpios is already overridden below for LP-CC2745R10-Q1.
+ */
+&boosterpack_spi {
+	cs-gpios = <&boosterpack_header 18 0>;
+
+	ti_cc140xp: ti_bp_cc140xp_trx: ti_cc140xp@0 {
+		compatible = "ti,cc140xp-trx";
+		reg = <0>;
+		spi-max-frequency = <4000000>;
+		reset-gpios = <&boosterpack_header 36 0>;
+		trx-host-spi-int-gpios = <&boosterpack_header 10 0>;
+		poci-gpios = <&boosterpack_header 14 0>;
+	};
+};

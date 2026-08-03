@@ -2,7 +2,7 @@ identifier: lp_em_cc2755p20
 name: TI SimpleLink CC2755P20 LaunchPad
 type: mcu
 arch: arm
-ram: 256
+ram: 288
 flash: 2048
 toolchain:
   - zephyr

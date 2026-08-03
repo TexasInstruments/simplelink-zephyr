@@ -1,0 +1,50 @@
+/*
+ * Example device tree overlay for TI CC140xP transceiver
+ *
+ * Copy this to your application's overlay file and adjust
+ * the SPI bus, pins, and other parameters as needed.
+ *
+ * See also samples/shields/ti_bp_cc140xp/new_board.overlay.example for a more
+ * thoroughly-commented version of this same pattern, plus every existing
+ * ti_cc140xp_* sample's own boards/*.overlay for hardware-verified
+ * examples across several SoCs.
+ *
+ * Default pin configuration:
+ *   - SCLK:  Configured in board DTS
+ *   - MISO:  Configured in board DTS
+ *   - MOSI:  Configured in board DTS
+ *   - CS:    GPIO pin (specify in cs-gpios array)
+ *   - RESET: GPIO pin for transceiver reset
+ *   - INT:   GPIO pin for transceiver interrupt
+ *   - POCI:  GPIO pin for the TRX ready handshake (required by the binding)
+ *
+ * GPIO_ACTIVE_LOW vs GPIO_ACTIVE_HIGH below depends entirely on your
+ * board's actual wiring - get it wrong and the transceiver never responds,
+ * hanging ti_cc140xp_host_open() forever with no log output. Confirm
+ * against your schematic, don't guess.
+ */
+
+&spi1 {
+	status = "okay";
+
+	/* Add the transceiver's CS pin to the controller's cs-gpios array.
+	 * The index must match the reg property of the device.
+	 */
+	cs-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;  /* CS for device @0 */
+
+	ti_cc140xp: ti_cc140xp@0 {
+		compatible = "ti,cc140xp-trx";
+		reg = <0>;
+		spi-max-frequency = <12000000>;
+
+		/* Transceiver reset pin */
+		reset-gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
+
+		/* Transceiver interrupt pin */
+		trx-host-spi-int-gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;
+
+		/* POCI (MISO) GPIO - polled after CS assert for the TRX ready
+		 * handshake, in addition to the SPI controller's own MISO line. */
+		poci-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
+	};
+};

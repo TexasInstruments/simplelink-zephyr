@@ -73,7 +73,7 @@ pipeline
         --retry-failed 3 --timeout-multiplier 2 --clobber-output -W \
         -j $(nproc)'
 
-        TWISTER_ADDITIONAL_ARGS = '--fixture gpio_loopback --fixture gpio_spi_loopback --fixture pwm_loopback'
+        TWISTER_ADDITIONAL_ARGS = '--fixture gpio_loopback --fixture gpio_spi_loopback --fixture pwm_loopback --fixture external_flash_mx25r80'
 
         /* Avoid building large binary files */
         TWISTER_KCONFIG_OVERRIDES = '-x CONFIG_BUILD_OUTPUT_BIN=n'

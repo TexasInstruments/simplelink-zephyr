@@ -1,0 +1,17 @@
+sample:
+  name: TI CC140xP Wi-SUN MDR RX Sample
+  description: Sample application demonstrating TI CC140xP transceiver driver Wi-SUN Multi-Data-Rate (MDR) RX functionality
+common:
+  tags:
+    - drivers
+    - prop_rf
+    - shield
+  depends_on: spi gpio
+tests:
+  sample.shields.ti_bp_cc140xp.ti_cc140xp_mdr_rx:
+    harness: shield
+    extra_args: SHIELD=ti_bp_cc140xp
+    platform_allow:
+      - lp_em_cc2745r10_q1/cc2745r10_q1
+    integration_platforms:
+      - lp_em_cc2745r10_q1/cc2745r10_q1

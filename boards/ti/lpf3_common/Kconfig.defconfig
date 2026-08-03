@@ -103,3 +103,8 @@ config OBJ_CORE_SEM
 
 config TRACING_SEMAPHORE
 		default n
+
+# Use Deep Power-Down mode when the external flash is enabled but not
+# being accessed.
+config SPI_NOR_IDLE_IN_DPD
+	default y

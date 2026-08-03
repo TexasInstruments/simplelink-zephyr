@@ -1,0 +1,7 @@
+&spi0 {
+	status = "okay";
+};
+
+&mx25r80 {
+	status = "okay";
+};

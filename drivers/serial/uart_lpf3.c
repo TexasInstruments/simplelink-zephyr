@@ -436,6 +436,14 @@ static void uart_lpf3_irq_callback_set(const struct device *dev, uart_irq_callba
 					void *user_data)
 {
 	struct uart_lpf3_data *data = dev->data;
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS) && \
+	(defined(UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_LPF3_DMA_DRIVEN))
+	/* Exclusive callbacks: registering the interrupt-driven callback clears
+	 * any previously registered async callback.
+	 */
+	data->async_callback = NULL;
+	data->async_user_data = NULL;
+#endif
 
 	data->callback = cb;
 	data->user_data = user_data;
@@ -449,14 +457,18 @@ static int uart_lpf3_async_callback_set(const struct device *dev, uart_callback_
 					void *user_data)
 {
 	struct uart_lpf3_data *data = dev->data;
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS) && \
+	(defined(UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_LPF3_DMA_DRIVEN))
+	/* Exclusive callbacks: registering the async callback clears any
+	 * previously registered interrupt-driven callback so the ISR does not
+	 * invoke a stale handler while the DMA path is active.
+	 */
+	data->callback = NULL;
+	data->user_data = NULL;
+#endif
 
-#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS)
-	data->async_callback = NULL;
-	data->async_user_data = NULL;
-#else
 	data->async_callback = callback;
 	data->async_user_data = user_data;
-#endif
 
 	return 0;
 }

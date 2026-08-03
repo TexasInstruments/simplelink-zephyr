@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2026 Texas Instruments Incorporated
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The ti_bp_cc140xp shield's LP-CC2745R10-Q1 board overlay defaults to
+ * spi-max-frequency = 12000000, matching the other ti_cc140xp samples. This
+ * sample runs at 8000000 instead - lowering it resolved intermittent SPI
+ * transport errors during AT-command RF diagnostics testing (see the SPI
+ * clock/VDDS threshold discussion earlier this session).
+ */
+
+&ti_bp_cc140xp_trx {
+	spi-max-frequency = <8000000>;
+};

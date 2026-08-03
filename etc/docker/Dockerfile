@@ -38,24 +38,23 @@ RUN pip3 --proxy wwwgate.ti.com install --no-cache-dir -r ./scripts/requirements
 # Install ti-openocd from hardcoded URL to currently used version, to be manually bumped when needed
 # Note: Any update to OpenOCD udev rules must be applied to the lab nodes as well.
 #   Ref: https://bitbucket.itg.ti.com/projects/DEVOPS/repos/ansible-playbook-jenkins-agent/browse/roles/openocd/defaults/main.yml#5
-ENV TI_OPENOCD_INSTALL_URL=http://vmtgpejenkins00.toro.design.ti.com:8080/view/build/job/build.openocd.all/58/artifact/bin/openocd_linux_1.4.1.58.zip
+ENV TI_OPENOCD_INSTALL_URL=http://vmtgpejenkins00.toro.design.ti.com:8080/job/build.openocd.linux/lastSuccessfulBuild/artifact/build/openocd_linux_rebase.87.zip
 ENV TI_OPENOCD_INSTALL_DIR=/home/developer/ti_openocd
-# ENV OPENOCD_BASE=${TI_OPENOCD_INSTALL_DIR}/openocd/bin
-# ENV OPENOCD=${OPENOCD_BASE}/bin/openocd
-# ENV OPENOCD_DEFAULT_PATH=${OPENOCD_BASE}/share/openocd/scripts
+
 RUN wget ${TI_OPENOCD_INSTALL_URL}
 RUN mkdir -p ${TI_OPENOCD_INSTALL_DIR}
 RUN unzip $(basename ${TI_OPENOCD_INSTALL_URL}) -d ${TI_OPENOCD_INSTALL_DIR}
-RUN chmod +x ${TI_OPENOCD_INSTALL_DIR}/openocd/bin/bin/openocd
+RUN chmod +x ${TI_OPENOCD_INSTALL_DIR}/openocd/bin/openocd
 
 # These rules need to be applied at the host, but no harm in applying them here too
-RUN cp ${TI_OPENOCD_INSTALL_DIR}/openocd/bin/share/openocd/contrib/60-openocd.rules /etc/udev/rules.d/60-openocd.rules
+RUN cp ${TI_OPENOCD_INSTALL_DIR}/openocd/share/openocd/contrib/60-openocd.rules /etc/udev/rules.d/60-openocd.rules
 
 
 # Install Zephyr SDK
 ARG ZEPHYR_SDK_VERSION
 ENV ZEPHYR_SDK_VERSION=${ZEPHYR_SDK_VERSION}
 ENV ZEPHYR_SDK_INSTALL_DIR=/home/developer/zephyr-sdk-${ZEPHYR_SDK_VERSION}
+ENV ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 RUN wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZEPHYR_SDK_VERSION}/zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-x86_64_minimal.tar.xz --timeout 3600
 RUN wget -O - "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZEPHYR_SDK_VERSION}/sha256.sum" | shasum --check --ignore-missing
 RUN tar xf zephyr-sdk-${ZEPHYR_SDK_VERSION}_linux-x86_64_minimal.tar.xz

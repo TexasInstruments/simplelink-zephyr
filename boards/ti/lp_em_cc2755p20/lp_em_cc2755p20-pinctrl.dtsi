@@ -66,7 +66,7 @@
 		bias-disable;
 	};
 	spi0_cs_default: spi0_cs_default {
-		pinmux = <7 DIO7_SPI0_CSN>;
+		pinmux = <19 DIO19_GPIO19>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;
@@ -76,7 +76,7 @@
 		pinmux = <3 DIO3_GPIO3>;
 		input-enable;
 		input-schmitt-enable;
-		bias-pull-up;
+		bias-disable;
 	};
 	spi0_mosi_sleep: spi0_mosi_sleep {
 		pinmux = <5 DIO5_GPIO5>;
@@ -91,7 +91,7 @@
 		bias-disable;
 	};
 	spi0_cs_sleep: spi0_cs_sleep {
-		pinmux = <7 DIO7_GPIO7>;
+		pinmux = <19 DIO19_GPIO19>;
 		input-enable;
 		input-schmitt-enable;
 		bias-disable;
@@ -122,10 +122,10 @@
 		bias-disable;
 	};
 	spi1_cs_default: spi1_cs_default {
-		pinmux = <16 DIO16_SPI1_CSN>;
+		pinmux = <16 DIO16_GPIO16>;
 		input-enable;
 		input-schmitt-enable;
-		bias-pull-up;
+		bias-disable;
 	};
 
 	spi1_sck_sleep: spi1_sck_sleep {
@@ -150,7 +150,7 @@
 		pinmux = <16 DIO16_GPIO16>;
 		input-enable;
 		input-schmitt-enable;
-		bias-pull-up;
+		bias-disable;
 	};
 
 	/* ADC channels. */
