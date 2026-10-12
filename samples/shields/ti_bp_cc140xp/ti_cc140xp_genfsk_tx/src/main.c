@@ -39,8 +39,15 @@ LOG_MODULE_REGISTER(genfsk_tx, LOG_LEVEL_INF);
 /* Reference of the PHY configuration on the TRX */
 #define RF_CONFIG_REFERENCE (0xF000000D)
 
-/* Transmission frequency in Hz */
-#define FREQUENCY           (868000U)
+/* Set to 1 to use the extended radio command (TRX_RadioCommand_ExtTransmit)
+ * instead of the regular TRX_RadioCommand_Transmit. The extended command takes
+ * frequency in Hz (vs kHz) and adds a fixed_length field.
+ */
+#define USE_EXTENDED_COMMANDS (0)
+
+/* Transmission frequency. Regular commands use kHz; extended commands use Hz. */
+#define RF_FREQUENCY_KHZ (868000U)
+#define RF_FREQUENCY_HZ  (RF_FREQUENCY_KHZ * 1000U)
 
 /* Device tree nodes */
 #define TI_CC140XP_NODE DT_NODELABEL(ti_cc140xp)
@@ -241,11 +248,12 @@ int main(void)
 	TRX_DeviceConfigData deviceConfig = {
 		.dioConfig = {
 			.dio0 = DIO0_UNCHANGED,
-			.dio2 = DIO2_HIGH_PA,
-			.dio3 = DIO3_LOW_PA_AND_LNA,
+			.dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+			.dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
 			.dio4 = DIO4_UNCHANGED,
 			.dio5 = DIO5_UNCHANGED,
 			.dio6 = DIO6_UNCHANGED,
+			.dio7 = DIO7_UNCHANGED,
 		},
 		.clockConfig = TRX_ClockConfig_XOSC,
 		.powerMode = {
@@ -308,6 +316,30 @@ int main(void)
 	LOG_INF("PHY configuration persisted successfully");
 
 	LOG_INF("Creating TX command...");
+
+#if USE_EXTENDED_COMMANDS
+	/* Create an extended TX command
+	 * Extended Transmit: frequency is in Hz and adds a fixed_length field.
+	 */
+	cmd_tx.slot = TX_CMD_SLOT;
+	cmd_tx.enable_on_true = false;
+	cmd_tx.enable_on_false = false;
+	cmd_tx.enable_on_compare = false;
+	cmd_tx.trigger = Command_Trigger_Immediate;
+	cmd_tx.conflict_policy = TRX_ConflictPolicy_AlwaysInterrupt;
+	cmd_tx.allow_delay = false;
+	cmd_tx.cmd_id = TRX_RadioCommand_ExtTransmit;
+	cmd_tx.params.extTx.phy0.config_id = RF_CONFIG_ID;
+	cmd_tx.params.extTx.phy0.option_mask = TRX_PHY_FEATURE_WHITENING_DISABLED_2GFSK50KBPS;
+	cmd_tx.params.extTx.pa = TRX_TxPa_High;
+	cmd_tx.params.extTx.stream_id = TX_STREAM_ID;
+	cmd_tx.params.extTx.frequency = RF_FREQUENCY_HZ;
+	cmd_tx.params.extTx.modem = TRX_RadioCommand_Modem_FSK;
+	// cmd_tx.params.extTx.power.rawValue = TRX_MAX_POWER;
+	cmd_tx.params.extTx.power.dBm = 22; // 22 dBm
+	cmd_tx.params.extTx.power.fraction = 1; // +0.5 dBm. Total power = 22.5 dBm
+	cmd_tx.params.extTx.fixed_length = TX_PACKET_LENGTH;
+#else
 	cmd_tx.slot = TX_CMD_SLOT;
 	cmd_tx.cmd_id = TRX_RadioCommand_Transmit;
 	cmd_tx.enable_on_true = false;
@@ -320,12 +352,12 @@ int main(void)
 	cmd_tx.params.tx.phy0.option_mask = TRX_PHY_FEATURE_WHITENING_DISABLED_2GFSK50KBPS;
 	cmd_tx.params.tx.pa = TRX_TxPa_High;
 	cmd_tx.params.tx.stream_id = TX_STREAM_ID;
-	cmd_tx.params.tx.frequency = FREQUENCY;
+	cmd_tx.params.tx.frequency = RF_FREQUENCY_KHZ;
 	cmd_tx.params.tx.modem = TRX_RadioCommand_Modem_FSK;
-	/* Use the last (highest) entry in the calibrated High-PA power table */
-	cmd_tx.params.tx.power =
-		TRX_txPowerLevelsHigh_2gfsk50kbps.powerLevels[
-			TRX_txPowerLevelsHigh_2gfsk50kbps.numEntries - 1];
+	// cmd_tx.params.tx.power.rawValue = TRX_MAX_POWER;
+	cmd_tx.params.tx.power.dBm = 21; // 21 dBm
+	cmd_tx.params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
+#endif
 
 	LOG_INF("Storing TX command...");
 	status = ti_cc140xp_store_cmds(ti_cc140xp_dev, &cmd_tx, 1U, NULL,
@@ -337,7 +369,11 @@ int main(void)
 		return -1;
 	}
 	k_sem_take(&cmd_store_complete_sem, K_FOREVER);
-	LOG_INF("TX command stored - transmitting on %u Hz", FREQUENCY);
+#if USE_EXTENDED_COMMANDS
+	LOG_INF("TX command stored - transmitting on %u Hz", RF_FREQUENCY_HZ);
+#else
+	LOG_INF("TX command stored - transmitting on %u kHz", RF_FREQUENCY_KHZ);
+#endif
 
 	/* GenFSK 1-byte header carries payload length; set once before loop */
 	tx_packet[0] = TX_PAYLOAD_LENGTH;

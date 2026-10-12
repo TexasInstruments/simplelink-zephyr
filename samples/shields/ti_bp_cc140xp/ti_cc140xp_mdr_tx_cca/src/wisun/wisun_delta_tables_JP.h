@@ -68,3 +68,4 @@ int16_t get_wisun_channelPlanId_from_channelPlanIdIdx_JP(uint8_t channelPlanIdId
 int16_t get_wisun_channel_from_frequency_JP(uint16_t channelPlanId, uint32_t frequency);
 uint32_t get_wisun_frequency_from_channel_JP(uint16_t channelPlanId, int16_t channel);
 #endif // WISUN_DELTA_TABLES_JP_H
+

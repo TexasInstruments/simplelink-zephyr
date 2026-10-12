@@ -1,0 +1,43 @@
+/*
+ * Wireless UART Bridge - Devicetree Overlay
+ * For CC2745 LaunchPad + CC140xP BoosterPack
+ *
+ * UART: uart0 @ 115200 8N1 (console)
+ * LED0: Green LED (DIO12) - toggles on RF TX
+ * LED1: Red LED (DIO16) - NOT USED (conflicts with TRX reset on this board)
+ * CC140xP: SPI0 @ 12MHz, CS index 1 (flash at index 0)
+ * Note: Board-specific overlay lp_em_cc2745r10_q1_cc2745r10_q1.overlay provides
+ *       the correct GPIO pin mappings (active-low for reset/int/POCI)
+ *       and disables SPI1/led1 to avoid pin conflicts.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+    chosen {
+        zephyr,console = &uart0;
+        zephyr,shell-uart = &uart0;
+    };
+
+    aliases {
+        led0 = &led0;  /* Green LED - DIO12 */
+        /* led1 disabled in board overlay due to pin conflict with TRX reset */
+    };
+};
+
+&uart0 {
+    current-speed = <115200>;
+};
+
+/*
+ * Note: The following SPI0/TRX configuration is OVERRIDDEN by the board-specific
+ * overlay (lp_em_cc2745r10_q1_cc2745r10_q1.overlay) which correctly sets:
+ * - reg = <1> (CS index 1, flash at index 0)
+ * - reset-gpios = <&gpio0 16 GPIO_ACTIVE_LOW>
+ * - trx-host-spi-int-gpios = <&gpio0 28 GPIO_ACTIVE_LOW>
+ * - poci-gpios = <&gpio0 4 GPIO_ACTIVE_LOW>
+ * - spi-max-frequency = <12000000>
+ * - Disables spi1 and led1
+ *
+ * This overlay provides the base configuration; the board overlay fixes it.
+ */

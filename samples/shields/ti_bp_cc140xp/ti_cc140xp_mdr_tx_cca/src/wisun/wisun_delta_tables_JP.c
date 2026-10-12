@@ -375,3 +375,4 @@ uint32_t get_wisun_frequency_from_channel_JP(uint16_t channelPlanId, int16_t cha
         default: return WISUN_FREQ_INVALID;
     }
 }
+

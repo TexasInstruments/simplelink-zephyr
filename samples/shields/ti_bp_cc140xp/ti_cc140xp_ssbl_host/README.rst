@@ -57,6 +57,16 @@ one physical reset line and one CS line on the board):
   - RESET:         DIO16
   - INT (diagnostic only, unused by SSBL): DIO28
 
+Board Specific Settings
+=======================
+
+Note: If you are using the BP-CC140xP-8-FE as the evaluation board for the CC140x
+device, the frequency range to use in the examples must be 862-870 MHz.
+If you are using the BP-CC140xP-9-FE as the evaluation board for the CC140x
+device, the frequency range to use in the examples must be 902-928 MHz.
+These limitations are due to the presence of a SAW filter which limit the
+frequency range on RX.
+
 Preparing the firmware blob
 ============================
 

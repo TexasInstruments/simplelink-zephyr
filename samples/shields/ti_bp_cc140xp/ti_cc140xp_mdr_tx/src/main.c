@@ -438,11 +438,12 @@ int main(void)
 	TRX_DeviceConfigData deviceConfig = {
 		.dioConfig = {
 			.dio0 = DIO0_UNCHANGED,
-			.dio2 = DIO2_HIGH_PA,
-			.dio3 = DIO3_LOW_PA_AND_LNA,
+			.dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+			.dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
 			.dio4 = DIO4_UNCHANGED,
 			.dio5 = DIO5_UNCHANGED,
 			.dio6 = DIO6_UNCHANGED,
+			.dio7 = DIO7_UNCHANGED,
 		},
 		.clockConfig = TRX_ClockConfig_XOSC,
 		.powerMode = {
@@ -510,7 +511,7 @@ int main(void)
 	 * It maps each supported PHY (modem + option_mask) to a Wi-SUN channel plan ID index.
 	 */
 	uint32_t *pData = (uint32_t *)RF_CONFIG_PTR;
-	TRX_WisunMdrMappingTable *map = (TRX_WisunMdrMappingTable *)&pData[12];
+	TRX_WisunMdrMappingTable *map = (TRX_WisunMdrMappingTable *)&pData[15];
 
 	uint8_t hdrIdx = getMdrHeaderIdx(map);
 	int16_t hdrChannelPlanId = getMdrHeaderChannelPlanId(map, hdrIdx);

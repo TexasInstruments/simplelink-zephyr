@@ -272,11 +272,12 @@ int main(void)
 	TRX_DeviceConfigData deviceConfig = {
 		.dioConfig = {
 			.dio0 = DIO0_UNCHANGED,
-			.dio2 = DIO2_HIGH_PA,
-			.dio3 = DIO3_LOW_PA_AND_LNA,
+			.dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+			.dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
 			.dio4 = DIO4_UNCHANGED,
 			.dio5 = DIO5_UNCHANGED,
 			.dio6 = DIO6_UNCHANGED,
+			.dio7 = DIO7_UNCHANGED,
 		},
 		.clockConfig = TRX_ClockConfig_XOSC,
 		.powerMode = {
@@ -368,7 +369,9 @@ int main(void)
 	cmd_tx.params.tx.stream_id = TX_STREAM_ID;
 	cmd_tx.params.tx.frequency = FREQUENCY;
 	cmd_tx.params.tx.modem = TRX_RadioCommand_Modem_FSK;
-	cmd_tx.params.tx.power = TRX_txPowerLevelsHigh_wisun.powerLevels[TRX_txPowerLevelsHigh_wisun.numEntries - 1];
+	// cmd_tx.params.tx.power = TRX_txPowerLevelsHigh_wisun.powerLevels[TRX_txPowerLevelsHigh_wisun.numEntries - 1];
+	cmd_tx.params.tx.power.dBm = 21; // 21 dBm
+	cmd_tx.params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
 
 	/* Store the TX command to the TRX */
 	status = ti_cc140xp_store_cmds(ti_cc140xp_dev, &cmd_tx, 1U, NULL,

@@ -982,7 +982,7 @@ static void configureDefaultTxCmd(Radio_Trx_Object *handle)
     else
     {
         pCmdTx->params.tx.power.dBm = handle->txPower;
-        pCmdTx->params.tx.power.fraction = 0;
+        pCmdTx->params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
     }
 }
 
@@ -1020,7 +1020,7 @@ static void configureDefaultMdrCmds(Radio_Trx_Object *handle)
     else
     {
         pMdrTx->params.tx.power.dBm = handle->txPower;
-        pMdrTx->params.tx.power.fraction = 0;
+        pMdrTx->params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
     }
 
     // CS Cmd
@@ -1112,7 +1112,7 @@ static void configureDefaultTxTestCmd(Radio_Trx_Object *handle)
     else
     {
         pTxTest->params.txTest.power.dBm = handle->txPower;
-        pTxTest->params.txTest.power.fraction = 0;
+        pTxTest->params.txTest.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
     }
 }
 
@@ -1270,11 +1270,12 @@ bool Radio_Trx_setupPhy(uint8_t phyIndex, uint8_t phyIndex2)
         TRX_DeviceConfigData deviceConfig = {
             .dioConfig = {
                 .dio0 = DIO0_UNCHANGED,
-                .dio2 = DIO2_HIGH_PA,
-                .dio3 = DIO3_LOW_PA_AND_LNA,
+                .dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+                .dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
                 .dio4 = DIO4_UNCHANGED,
                 .dio5 = DIO5_UNCHANGED,
                 .dio6 = DIO6_UNCHANGED,
+                .dio7 = DIO7_UNCHANGED,
             },
             .clockConfig = TRX_ClockConfig_XOSC,
             .powerMode = {
@@ -1425,7 +1426,7 @@ bool Radio_Trx_enableMdr(uint8_t region)
         radioObject.region = region;
 
         uint32_t *pData = (uint32_t *)(PhySettings_Trx_supportedMdrPhys.rfConfig);
-        TRX_WisunMdrMappingTable *wisun_map = (TRX_WisunMdrMappingTable *)&(pData[12]);
+        TRX_WisunMdrMappingTable *wisun_map = (TRX_WisunMdrMappingTable *)&(pData[15]);
         PhySettings_Trx_supportedMdrPhys.mappingTable = wisun_map;
     }
     else
@@ -2505,11 +2506,11 @@ bool Radio_Trx_setPower(int8_t i8TxPowerDbm)
     {
         pCmdTx->params.tx.power.dBm = i8TxPowerDbm;
         pCmdMdrTx->params.tx.power.dBm = i8TxPowerDbm;
-        pCmdTxTest->params.tx.power.dBm = i8TxPowerDbm;
+        pCmdTxTest->params.txTest.power.dBm = i8TxPowerDbm;
 
-        pCmdTx->params.tx.power.fraction = 0;
-        pCmdMdrTx->params.tx.power.fraction = 0;
-        pCmdTxTest->params.tx.power.fraction = 0;
+        pCmdTx->params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
+        pCmdMdrTx->params.tx.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
+        pCmdTxTest->params.txTest.power.fraction = 1; // +0.5 dBm. Total power = 21.5 dBm
     }
 
     return true;

@@ -187,11 +187,12 @@ int main(void)
 	TRX_DeviceConfigData deviceConfig = {
 		.dioConfig = {
 			.dio0 = DIO0_UNCHANGED,
-			.dio2 = DIO2_HIGH_PA,
-			.dio3 = DIO3_LOW_PA_AND_LNA,
+			.dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+			.dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
 			.dio4 = DIO4_UNCHANGED,
 			.dio5 = DIO5_UNCHANGED,
 			.dio6 = DIO6_UNCHANGED,
+			.dio7 = DIO7_UNCHANGED,
 		},
 		.clockConfig = TRX_ClockConfig_XOSC,
 		.powerMode   = {
@@ -267,7 +268,9 @@ int main(void)
 	cmd_tx_test.params.tx.pa                   = TRX_TxPa_High;
 	cmd_tx_test.params.txTest.frequency        = FREQUENCY;
 	cmd_tx_test.params.txTest.modem            = TRX_RadioCommand_Modem_FSK;
-	cmd_tx_test.params.txTest.power.rawValue   = TRX_MAX_POWER;
+	// cmd_tx_test.params.txTest.power.rawValue = TRX_MAX_POWER;
+	cmd_tx_test.params.txTest.power.dBm      = 21; // 21 dBm
+	cmd_tx_test.params.txTest.power.fraction = 1;  // +0.5 dBm. Total power = 21.5 dBm
 	cmd_tx_test.params.txTest.mode             = TRX_TxTestMode_Unmodulated;
 	cmd_tx_test.params.txTest.pattern          = TX_TEST_PATTERN;
 

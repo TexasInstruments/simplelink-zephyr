@@ -1,0 +1,20 @@
+sample:
+  name: TI CC140xP UART Bridge
+  description: UART to RF bridge using CC140xP BoosterPack on CC2745 LaunchPad
+  category: shields
+  keywords:
+    - uart
+    - rf
+    - cc140xp
+    - cc2745
+    - bridge
+    - wireless
+  integration_platforms:
+    - lp_em_cc2745r10_q1/cc2745r10_q1
+  harness: console
+  harness_config:
+    type: multi_line
+    regex:
+      - "TI CC140xP UART Bridge Starting"
+      - "RF initialized: RX listening on 915000 kHz, TX ready"
+      - "All threads started - bridge operational"

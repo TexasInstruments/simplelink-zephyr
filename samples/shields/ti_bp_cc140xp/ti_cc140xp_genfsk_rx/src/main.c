@@ -28,7 +28,16 @@ LOG_MODULE_REGISTER(genfsk_rx, LOG_LEVEL_INF);
 #define RF_CONFIG_ID        (1U)
 #define FE_CONFIG_REFERENCE (0xFEFEFEFEU)
 #define RF_CONFIG_REFERENCE (0xF000000DU)
-#define FREQUENCY           (868000U)
+
+/* Set to 1 to use the extended radio command (TRX_RadioCommand_ExtReceive)
+ * instead of the regular TRX_RadioCommand_Receive. The extended command takes
+ * frequency in Hz (vs kHz) and adds fixed_length and rssi_threshold fields.
+ */
+#define USE_EXTENDED_COMMANDS (0)
+
+/* Receive frequency. Regular commands use kHz; extended commands use Hz. */
+#define RF_FREQUENCY_KHZ (868000U)
+#define RF_FREQUENCY_HZ  (RF_FREQUENCY_KHZ * 1000U)
 
 /* GenFSK 50 kbps PHY settings */
 #include "settings/rcl_settings_2gfsk50kbps.h"
@@ -311,11 +320,12 @@ int main(void)
 	TRX_DeviceConfigData deviceConfig = {
 		.dioConfig = {
 			.dio0 = DIO0_UNCHANGED,
-			.dio2 = DIO2_HIGH_PA,
-			.dio3 = DIO3_LOW_PA_AND_LNA,
+			.dio2 = DIO2_HIGH_PA,        // Must not be changed when using the boosterpack
+			.dio3 = DIO3_LOW_PA_AND_LNA, // Must not be changed when using the boosterpack
 			.dio4 = DIO4_UNCHANGED,
 			.dio5 = DIO5_UNCHANGED,
 			.dio6 = DIO6_UNCHANGED,
+			.dio7 = DIO7_UNCHANGED,
 		},
 		.clockConfig = TRX_ClockConfig_XOSC,
 		.powerMode = {
@@ -387,6 +397,32 @@ int main(void)
 	LOG_INF("PHY configuration persisted successfully");
 
 	LOG_INF("Creating RX command...");
+
+#if USE_EXTENDED_COMMANDS
+	/* Create an extended RX command
+	 * Extended Receive: frequency is in Hz and a fixed/max packet length is set.
+	 */
+	cmd_rx.slot = RX_CMD_SLOT;
+	cmd_rx.enable_on_true = false;
+	cmd_rx.enable_on_false = false;
+	cmd_rx.enable_on_compare = false;
+	cmd_rx.trigger = Command_Trigger_Immediate;
+	cmd_rx.conflict_policy = TRX_ConflictPolicy_AlwaysInterrupt;
+	cmd_rx.allow_delay = false;
+	cmd_rx.cmd_id = TRX_RadioCommand_ExtReceive;
+	cmd_rx.params.extRx.phy0.config_id = RF_CONFIG_ID;
+	cmd_rx.params.extRx.phy0.option_mask = TRX_PHY_FEATURE_WHITENING_DISABLED_2GFSK50KBPS;
+	cmd_rx.params.extRx.stream_id = RX_STREAM_ID;
+	cmd_rx.params.extRx.frequency = RF_FREQUENCY_HZ;
+	cmd_rx.params.extRx.modem = TRX_RadioCommand_Modem_FSK;
+	cmd_rx.params.extRx.enable_mdr = false;
+	cmd_rx.params.extRx.stream_early = true;
+	cmd_rx.params.extRx.timeout = 0U;
+	cmd_rx.params.extRx.repeat = true;
+	cmd_rx.params.extRx.search_strategy = TRX_Rx_SearchStrategy_Sync;
+	cmd_rx.params.extRx.fixed_length = RX_PAYLOAD_LENGTH; // max payload len (bytes, excl header/CRC)
+	cmd_rx.params.extRx.rssi_threshold = TRX_ExtReceiveRssiThreshold_UsePHY;
+#else
 	cmd_rx.slot = RX_CMD_SLOT;
 	cmd_rx.cmd_id = TRX_RadioCommand_Receive;
 	cmd_rx.enable_on_true = false;
@@ -398,13 +434,14 @@ int main(void)
 	cmd_rx.params.rx.phy0.config_id = RF_CONFIG_ID;
 	cmd_rx.params.rx.phy0.option_mask = TRX_PHY_FEATURE_WHITENING_DISABLED_2GFSK50KBPS;
 	cmd_rx.params.rx.stream_id = RX_STREAM_ID;
-	cmd_rx.params.rx.frequency = FREQUENCY;
+	cmd_rx.params.rx.frequency = RF_FREQUENCY_KHZ;
 	cmd_rx.params.rx.modem = TRX_RadioCommand_Modem_FSK;
 	cmd_rx.params.rx.enable_mdr = false;
 	cmd_rx.params.rx.stream_early = true;
 	cmd_rx.params.rx.timeout = 0U;
 	cmd_rx.params.rx.repeat = true;
 	cmd_rx.params.rx.search_strategy = TRX_Rx_SearchStrategy_Sync;
+#endif
 
 	LOG_INF("Registering RX buffer...");
 	status = ti_cc140xp_register_rx_stream(ti_cc140xp_dev, RX_STREAM_ID,
@@ -428,7 +465,11 @@ int main(void)
 		return -1;
 	}
 	k_sem_take(&cmd_store_complete_sem, K_FOREVER);
-	LOG_INF("Listening on %u kHz", FREQUENCY);
+#if USE_EXTENDED_COMMANDS
+	LOG_INF("Listening on %u Hz", RF_FREQUENCY_HZ);
+#else
+	LOG_INF("Listening on %u kHz", RF_FREQUENCY_KHZ);
+#endif
 
 	/* RX repeats automatically — sleep forever */
 	while (1) {

@@ -188,7 +188,7 @@ static void rx_callback(TRX_Host_Handle handle, uintptr_t pCmdOrData,
 			/* Decode MDR modem type, mdrByte, and optionMask from packet header */
 			uint32_t *pData = (uint32_t *)RF_CONFIG_PTR;
 			TRX_WisunMdrMappingTable *map =
-				(TRX_WisunMdrMappingTable *)&pData[12];
+				(TRX_WisunMdrMappingTable *)&pData[15];
 
 			mdr_rate = 0U;
 			if (hdr->common.modulation == TRX_PayloadHeader_Modulation_FSK) {
@@ -370,7 +370,7 @@ int main(void)
 
 	/* Locate MDR mapping table at word offset 12 of LRF_mainRegConfig_wisun */
 	uint32_t *pData = (uint32_t *)RF_CONFIG_PTR;
-	TRX_WisunMdrMappingTable *map = (TRX_WisunMdrMappingTable *)&pData[12];
+	TRX_WisunMdrMappingTable *map = (TRX_WisunMdrMappingTable *)&pData[15];
 
 	uint8_t mdr_header_idx = 0U;
 

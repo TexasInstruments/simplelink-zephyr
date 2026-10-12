@@ -35,6 +35,16 @@ The shield wires the following pin assignments on the LP_EM_CC2745R10_Q1:
 For other boards, see samples/shields/ti_bp_cc140xp/new_board.overlay.example for
 a starting point.
 
+Board Specific Settings
+=======================
+
+Note: If you are using the BP-CC140xP-8-FE as the evaluation board for the CC140x
+device, the frequency range to use in the examples must be 862-870 MHz.
+If you are using the BP-CC140xP-9-FE as the evaluation board for the CC140x
+device, the frequency range to use in the examples must be 902-928 MHz.
+These limitations are due to the presence of a SAW filter which limit the
+frequency range on RX.
+
 Sample Output
 =============
 
